@@ -63,8 +63,8 @@ async def create_mission(body: MissionIn, user=Depends(get_current_user)):
     for p in providers:
         if not p.get("is_bot") and body.category not in p.get("services", []):
             continue
-        # In-shop-only businesses don't travel to the client → not invited to come-to-me missions.
-        if p.get("role") == "business" and p.get("service_mode") == "in_shop":
+        # In-shop-only providers/businesses don't travel to the client → not invited.
+        if not p.get("is_bot") and p.get("service_mode") == "in_shop":
             continue
         if haversine(body.lat, body.lng, p.get("lat", TREVISO["lat"]), p.get("lng", TREVISO["lng"])) <= p.get("radius_km", 10):
             invited.append(p)

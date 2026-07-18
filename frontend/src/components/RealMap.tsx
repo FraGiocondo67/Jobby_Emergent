@@ -74,7 +74,6 @@ export default function RealMap({ center, markers = [], radiusKm, height = 240, 
         React.createElement("iframe", {
           srcDoc: html,
           style: { border: "none", width: "100%", height: "100%", background: "#E9EEE9" },
-          scrolling: "no",
         })
       ) : (
         <WebView

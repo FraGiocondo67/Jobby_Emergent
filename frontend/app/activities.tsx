@@ -48,10 +48,15 @@ export default function Activities() {
     setLoading(true);
     const payload: any = { services: selected, radius_km: radiusKm };
     if (business) payload.service_mode = mode;
-    const updated = await api.updateProfile(payload);
-    setUser(updated);
-    setLoading(false);
-    router.back();
+    try {
+      const updated = await api.updateProfile(payload);
+      setUser(updated);
+      router.back();
+    } catch {
+      // Surface nothing intrusive; stay on screen so the user can retry.
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Businesses that operate in-shop only don't need a travel radius.
