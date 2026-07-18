@@ -146,6 +146,15 @@ export default function ProfileTab() {
           </View>
         </View>
 
+        <Pressable testID="admin-row" style={[styles.listRow, shadow.card]} onPress={() => router.push("/admin")}>
+          <View style={[styles.rowIcon, { backgroundColor: "#FEEAE2" }]}><Ionicons name="settings" size={22} color={colors.primary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>{t("adminPanel")}</Text>
+            <Text style={styles.rowSub}>{t("manageCatalog")}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </Pressable>
+
         <Pressable testID="logout-button" style={styles.logoutRow} onPress={onLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.error} />
           <Text style={styles.logoutText}>{t("logout")}</Text>

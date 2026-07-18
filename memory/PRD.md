@@ -52,6 +52,11 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Ownership guards added on booking/mission lifecycle endpoints.
 - Verified via testing agent: 25/25 Sprint-3 backend flows passing. Profile screen visually confirmed.
 
+## Implemented (2026-07-18 — Sprint 3.1: refactor + Admin UI)
+- **Backend split into routers/modules**: `core.py` (db/helpers), `models.py`, `deps.py` (auth/admin deps), `trust.py` (score engine), `catalog.py` (catalog + seed), and `routers/` (auth, catalog_routes, missions, bookings, wallet, chat). `server.py` now only wires routers + startup. All prior endpoints preserved (verified end-to-end).
+- **In-app Admin screen** (`/admin`): token-gated (X-Admin-Token), lists all categories grouped by kind with activate/deactivate switches + "Recalculate Trust Scores". Linked from Profile.
+- Regression verified via curl: mission pending→matched→confirmed→in_progress→completed→review→trust; admin toggle round-trip; payment guard.
+
 ## Backlog
 ### P1
 - Provider ownership/authorization checks on mission/booking mutation endpoints.

@@ -33,6 +33,18 @@ async function request(path: string, options: RequestInit = {}) {
   return ct.includes("application/json") ? res.json() : res.text();
 }
 
+async function adminRequest(path: string, adminToken: string, options: RequestInit = {}) {
+  const token = await getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Admin-Token": adminToken,
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${BASE}/api${path}`, { ...options, headers });
+  if (!res.ok) throw new Error(`admin_request_failed_${res.status}`);
+  return res.json();
+}
+
 export const api = {
   createSession: (session_token: string) =>
     request("/auth/session", { method: "POST", body: JSON.stringify({ session_token }) }),
@@ -73,6 +85,13 @@ export const api = {
 
   // trust
   trust: () => request("/trust"),
+
+  // admin (X-Admin-Token)
+  adminCategories: (token: string) => adminRequest("/admin/categories", token),
+  adminToggleCategory: (catId: string, token: string) =>
+    adminRequest(`/admin/categories/${catId}/toggle`, token, { method: "POST" }),
+  adminRecalcTrust: (token: string) =>
+    adminRequest("/admin/trust/recalc", token, { method: "POST" }),
 
   // bookings extra
   startBooking: (id: string) => request(`/bookings/${id}/start`, { method: "POST" }),
