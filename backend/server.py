@@ -555,6 +555,8 @@ async def get_wallet(user=Depends(get_current_user)):
 
 @api_router.post("/wallet/add")
 async def add_funds(body: WalletIn, user=Depends(get_current_user)):
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="invalid_amount")
     new_balance = round(user.get("wallet_balance", 0) + body.amount, 2)
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"wallet_balance": new_balance}})
     await db.transactions.insert_one({
@@ -574,6 +576,8 @@ class PaymentIn(BaseModel):
 
 @api_router.post("/payments")
 async def make_payment(body: PaymentIn, user=Depends(get_current_user)):
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="invalid_amount")
     balance = user.get("wallet_balance", 0)
     if body.amount > balance:
         raise HTTPException(status_code=400, detail="insufficient_funds")
@@ -638,6 +642,8 @@ async def get_messages(conversation_id: str, user=Depends(get_current_user)):
     convo = await db.conversations.find_one({"conversation_id": conversation_id}, {"_id": 0})
     if not convo:
         raise HTTPException(status_code=404, detail="Not found")
+    if convo["user_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
     msgs = await db.messages.find({"conversation_id": conversation_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
     return {"conversation": convo, "messages": msgs}
 
@@ -647,6 +653,8 @@ async def send_message(conversation_id: str, body: MessageIn, user=Depends(get_c
     convo = await db.conversations.find_one({"conversation_id": conversation_id}, {"_id": 0})
     if not convo:
         raise HTTPException(status_code=404, detail="Not found")
+    if convo["user_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
     msg = {
         "message_id": new_id("msg"), "conversation_id": conversation_id,
         "sender_id": user["user_id"], "text": body.text, "created_at": now_utc().isoformat(),

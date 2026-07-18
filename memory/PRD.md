@@ -32,6 +32,16 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Backend: 8 seeded verified provider bots around Treviso, reviews recompute provider rating, earnings aggregation, duplicate-review guard.
 - Verified via testing agent: 10/10 backend flows passing.
 
+## Implemented (2026-07-18 — Redesign v2, matching provided screenshots + logo)
+- **UI redesign** to match screenshots: warm off-white theme, orange primary / green (payments) / purple (proximity) accents, emoji category icons, official JOBBY logo on onboarding (navy) + home header.
+- **Home**: greeting, wallet balance pill, search, "Explore the map" card, 3-col category grid (Pulizie, Babysitting, Pet Sitting, Tuttofare, Hospitality, Assistenza, Tecnico, Prossimità[badge 7], Pagamenti[badge 4]), floating "+ Request service".
+- **Server-managed categories**: GET /api/categories tree (7 services + Prossimità businesses + Pagamenti services), each with localized labels (IT/EN) + quick-questions.
+- **Dynamic request flow** (/request/[id]): renders quick-questions (select/number/text) → services/proximity broadcast a mission; payments deduct wallet.
+- **Wallet**: balance, add funds, transactions (GET/POST /api/wallet). **Payments**: /api/payments with insufficient-funds + amount>0 guards.
+- **Richieste** tab (missions + bookings + payments), **Chat** tab (conversations + threads, ownership-checked), **Map** explore screen, **Wallet** screen.
+- Tabs: Home · Richieste · Chat · Profile.
+- Verified via testing agent: 21/21 new backend flows passing; Home & Pagamenti screens visually confirmed.
+
 ## Backlog
 ### P1
 - Provider ownership/authorization checks on mission/booking mutation endpoints.
