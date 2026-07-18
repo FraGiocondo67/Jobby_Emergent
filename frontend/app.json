@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.jobbymvpupdate.eijtrr",
+      "bundleIdentifier": "com.frafra1067.jobbyclean",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Find trusted providers near you"
       }
