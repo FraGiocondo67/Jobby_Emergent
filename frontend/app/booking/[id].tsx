@@ -43,9 +43,16 @@ export default function BookingDetail() {
     setBusy(false);
   };
 
+  const startSvc = async () => {
+    setBusy(true);
+    await api.startBooking(id as string);
+    await load();
+    setBusy(false);
+  };
+
   if (!b) return <View style={styles.container} />;
 
-  const isProvider = user?.role === "provider";
+  const isProvider = user?.role === "provider" || user?.role === "business";
   const partnerName = isProvider ? b.customer_name : b.provider_name;
 
   return (
@@ -94,6 +101,9 @@ export default function BookingDetail() {
         </View>
 
         {b.status === "confirmed" ? (
+          <Button testID="start-button" label={isProvider ? t("startService") : t("complete")} loading={busy} onPress={isProvider ? startSvc : complete} />
+        ) : null}
+        {b.status === "in_progress" ? (
           <Button testID="complete-button" label={t("complete")} loading={busy} onPress={complete} />
         ) : null}
 

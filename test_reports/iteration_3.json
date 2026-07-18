@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 3 backend testing of JOBBY Sprint 3 (categories in DB with admin toggle, 3 roles, simulated KYC, request status flow pending→matched→confirmed→in_progress→completed[+disputed], wallet with payment-method/bank-account, Trust Score engine + events + admin recalc, X-Admin-Token gating). Wrote /app/backend/tests/test_jobby_sprint3.py — 25/25 pytests passed against the public preview URL. Categories return grouped {standard:9, proximity:16, payment:4} + providers_online + manifesto. Admin GET/POST /admin/categories properly requires X-Admin-Token (403 without/with wrong); toggle flips active and removes/reappears the category from GET /categories. Toggled 'sarta' off then back on — DB verified all 29 categories active at end of run. Roles switchable via PUT /profile with services persisted. Verification start->pending, complete->verified + kyc subscore=100. Wallet PUT payment-method persists; IBAN masked to last-6 (starts with '*'). /wallet/add and /payments reject amount<=0 (fixed since iter 2). Full status flow succeeds: mission created pending, bot auto-accepts within ~10s → matched, /select → booking confirmed, /start → in_progress + check_in_on_time=true, /complete → completed. Trust: after review provider_score>0 with all 8 subscores and 'review' trust_events entry; rate-client logs client_trust_events + non-zero client_score; dispute recomputes both and logs events on both sides; kyc subscore=100 after verification. Admin /admin/trust/recalc returns recalculated>=1 without token → 403. Auth guards: all new endpoints return 401 without Bearer.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/bookings/{id}/start", "issue": "No ownership check — any authenticated user with a valid Bearer can advance any booking to in_progress and flip check_in_on_time=true. Should verify caller is booking.provider_id."},
+      {"endpoint": "POST /api/bookings/{id}/complete", "issue": "No ownership check — any authenticated user can mark any booking completed, which also triggers recalc_provider_trust for another user's provider."},
+      {"endpoint": "POST /api/bookings/{id}/review", "issue": "No ownership check — any authenticated user can post a review as if they were the customer. Should verify user_id == booking.customer_id."},
+      {"endpoint": "POST /api/bookings/{id}/rate-client", "issue": "No ownership check — should verify user_id == booking.provider_id. Also recalc_client_trust is called twice in the handler (once before, once after log_trust_event) — remove the first redundant call."},
+      {"endpoint": "POST /api/bookings/{id}/dispute", "issue": "No ownership check; any authenticated user can dispute any booking (sets status=disputed and damages both trust scores)."},
+      {"endpoint": "POST /api/missions/{id}/select", "issue": "Still no check that caller is mission.customer_id (raised in iter 1 & 2, still open)."},
+      {"endpoint": "GET/POST /api/chat/{conversation_id}", "issue": "Ownership checks now present — verified reading the code (convo.user_id == user_id). Was flagged in iter 2, now fixed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_jobby_sprint3.py",
+    "/app/test_reports/pytest/sprint3_results.xml"
+  ],
+  "action_items": [
+    "Add ownership guards to booking lifecycle endpoints (/start, /complete, /review, /rate-client, /dispute) and to /missions/{id}/select — currently any authenticated user can drive any booking's state and mangle trust scores.",
+    "Remove the duplicate recalc_client_trust call inside POST /bookings/{id}/rate-client (called both before and after log_trust_event).",
+    "server.py is now ~830 lines (over the 700-line guideline) — consider splitting into routers (auth, categories, missions, bookings, wallet, chat, trust, admin) before Sprint 4.",
+    "Replace deprecated @app.on_event('startup'/'shutdown') with FastAPI lifespan context manager.",
+    "Seed script (seed_categories) uses $setOnInsert only — editing STANDARD_SERVICES/PROXIMITY_BUSINESS/PAYMENT_SERVICES in code won't update existing category docs (emoji/label/questions). Consider $set of non-active fields on every startup, or add a migration route."
+  ],
+  "critical_code_review_comments": [
+    "Booking lifecycle endpoints lack authorization checks — any Bearer holder can advance/complete/review/dispute someone else's booking (see minor issues).",
+    "rate_client handler calls recalc_client_trust twice; the first invocation's result is overwritten and log_trust_event is fed the pre-log score (works but confusing).",
+    "verification/complete calls both recalc_provider_trust and recalc_client_trust regardless of the user's role — fine for the one-account-switchable model but redundant work if the user is only a client.",
+    "get_categories groups by kind by hardcoding 'standard' as fallback bucket — any future 'kind' typo would silently be misclassified.",
+    "Deprecated FastAPI @app.on_event still used (also flagged iter 1 & 2)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_jobby_sprint3.py (new)",
+    "/app/test_reports/pytest/sprint3_results.xml (new)",
+    "/app/test_reports/iteration_3.json (new)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "not tested (per request — Emergent Google OAuth cannot be automated)"},
+  "seed_data_creation": "Tests insert synthetic TEST_ users + user_sessions directly into MongoDB (test_database) to obtain Bearer tokens, then cleanup users/sessions/missions/bookings/transactions/service_requests/trust_events/client_trust_events/reviews/disputes after each test. For Trust tests, a temporary session is inserted for the auto-accepting bot provider to inspect its /api/trust view. Bot providers seeded at server startup are reused. Category toggle test flips 'sarta' off then on — final DB state verified: 29 categories, none inactive.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "BASE_URL from frontend/.env EXPO_PUBLIC_BACKEND_URL. Auth = Emergent Google OAuth; for protected endpoints insert users+user_sessions directly in Mongo (see _mk_user helper). Admin endpoints require header X-Admin-Token=jobby-admin-7c2f9a (from backend/.env ADMIN_TOKEN). Category catalog is now in DB (collection 'categories', 29 docs: 9 standard, 16 proximity, 4 payment); toggling active removes it from GET /categories. Trust engine: PROVIDER_WEIGHTS has 8 subscores (kyc, punctuality, quality, communication, cancellation, completed, dispute, tenure); CLIENT_WEIGHTS has 7 (identity, education, brief, payment, cancellation, tips, reviews). Provider trust recalced on: /verification/complete, /profile role change, /bookings/{id}/complete, /bookings/{id}/review, /bookings/{id}/dispute, /admin/trust/recalc. trust_events (provider side) and client_trust_events (client side) log 'review', 'client_rated', 'dispute' with score_after and meta. Bots auto-accept any category (is_bot bypass in create_mission). Bot auto-accept latency: 2-9s per bot.",
+  "rca_of_issue": "N/A — all iter-3 tests green. Only hardening remarks: (1) booking lifecycle & mission-select endpoints missing ownership guards (highest-priority remaining hole); (2) minor double-recalc in rate-client; (3) server.py past 700 lines — refactor recommended before Sprint 4."
+}

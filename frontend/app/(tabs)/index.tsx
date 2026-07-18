@@ -24,7 +24,7 @@ function CustomerHome() {
   const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [cats, setCats] = useState<any[]>([]);
+  const [tiles, setTiles] = useState<any[]>([]);
   const [online, setOnline] = useState(0);
   const [balance, setBalance] = useState(user?.wallet_balance || 0);
   const [query, setQuery] = useState("");
@@ -33,7 +33,13 @@ function CustomerHome() {
   const load = useCallback(async () => {
     try {
       const [c, w] = await Promise.all([api.categories(), api.wallet()]);
-      setCats(c.categories);
+      const std = (c.standard || []).map((s: any) => ({ ...s, kind: "service" }));
+      const built = [
+        ...std,
+        { cat_id: "prossimita", emoji: "🏪", label: { it: "Prossimità", en: "Proximity" }, kind: "proximity", accent: "purple", badge: (c.proximity || []).length },
+        { cat_id: "pagamenti", emoji: "💳", label: { it: "Pagamenti", en: "Payments" }, kind: "payment", accent: "green", badge: (c.payment || []).length },
+      ];
+      setTiles(built);
       setOnline(c.providers_online);
       setBalance(w.balance);
     } catch {}
@@ -41,15 +47,15 @@ function CustomerHome() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const filtered = useMemo(
-    () => cats.filter((c) => c.label[lang].toLowerCase().includes(query.toLowerCase())),
-    [cats, query, lang]
+    () => tiles.filter((c) => c.label[lang].toLowerCase().includes(query.toLowerCase())),
+    [tiles, query, lang]
   );
 
   const openCategory = (c: any) => {
     Haptics.selectionAsync().catch(() => {});
-    if (c.type === "proximity") router.push(`/list/prossimita`);
-    else if (c.type === "payment") router.push(`/list/pagamenti`);
-    else router.push(`/request/${c.id}`);
+    if (c.kind === "proximity") router.push(`/list/prossimita`);
+    else if (c.kind === "payment") router.push(`/list/pagamenti`);
+    else router.push(`/request/${c.cat_id}?type=service`);
   };
 
   const accentStyle = (c: any) => {
@@ -102,8 +108,8 @@ function CustomerHome() {
           <View style={styles.grid}>
             {filtered.map((c) => (
               <Pressable
-                key={c.id}
-                testID={`category-${c.id}`}
+                key={c.cat_id}
+                testID={`category-${c.cat_id}`}
                 style={[styles.tile, accentStyle(c), shadow.card]}
                 onPress={() => openCategory(c)}
               >

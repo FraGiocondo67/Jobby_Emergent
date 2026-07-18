@@ -64,6 +64,18 @@ export const api = {
   // wallet
   wallet: () => request("/wallet"),
   addFunds: (amount: number) => request("/wallet/add", { method: "POST", body: JSON.stringify({ amount }) }),
+  setPaymentMethod: (data: any) => request("/wallet/payment-method", { method: "PUT", body: JSON.stringify(data) }),
+  setBankAccount: (data: any) => request("/wallet/bank-account", { method: "PUT", body: JSON.stringify(data) }),
+
+  // verification (simulated KYC)
+  startVerification: () => request("/verification/start", { method: "POST" }),
+  completeVerification: () => request("/verification/complete", { method: "POST" }),
+
+  // trust
+  trust: () => request("/trust"),
+
+  // bookings extra
+  startBooking: (id: string) => request(`/bookings/${id}/start`, { method: "POST" }),
 
   // payments
   pay: (data: { service_id: string; label: string; amount: number; answers: any }) =>

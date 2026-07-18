@@ -14,7 +14,7 @@ export default function RichiesteTab() {
 
 function StatusPill({ status }: { status: string }) {
   const { t } = useLang();
-  const map: Record<string, string> = { confirmed: colors.primary, completed: colors.success, broadcasting: colors.warning, booked: colors.brand };
+  const map: Record<string, string> = { pending: colors.warning, matched: "#E07B39", confirmed: colors.blue, in_progress: colors.brand, completed: colors.success, booked: colors.brand, disputed: colors.error };
   const c = map[status] || colors.muted;
   const label = (t as any)(`status_${status}`) || status;
   return <View style={[styles.pill, { backgroundColor: c + "22" }]}><Text style={[styles.pillText, { color: c }]}>{label}</Text></View>;

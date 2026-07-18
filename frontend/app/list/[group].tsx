@@ -7,10 +7,10 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 
-const GROUPS: Record<string, { catId: string | null; emoji: string; titleKey: any; accent: "purple" | "green" | "orange"; mode: string }> = {
-  prossimita: { catId: "prossimita", emoji: "🏪", titleKey: "proximity", accent: "purple", mode: "proximity" },
-  pagamenti: { catId: "pagamenti", emoji: "💳", titleKey: "payments", accent: "green", mode: "payment" },
-  all: { catId: null, emoji: "✨", titleKey: "selectService", accent: "orange", mode: "service" },
+const GROUPS: Record<string, { key: string; emoji: string; titleKey: any; subKey: any; accent: "purple" | "green" | "orange"; mode: string }> = {
+  prossimita: { key: "proximity", emoji: "🏪", titleKey: "proximity", subKey: "searchNearby", accent: "purple", mode: "proximity" },
+  pagamenti: { key: "payment", emoji: "💳", titleKey: "payments", subKey: "selectService", accent: "green", mode: "payment" },
+  all: { key: "standard", emoji: "✨", titleKey: "selectService", subKey: "whatDoYouNeed", accent: "orange", mode: "service" },
 };
 
 export default function ListScreen() {
@@ -20,28 +20,20 @@ export default function ListScreen() {
   const insets = useSafeAreaInsets();
   const cfg = GROUPS[group as string] || GROUPS.all;
   const [items, setItems] = useState<any[]>([]);
-  const [subtitle, setSubtitle] = useState("");
 
   useEffect(() => {
     (async () => {
       try {
-        if (cfg.catId) {
-          const c = await api.getCategory(cfg.catId);
-          setItems(c.subcategories || []);
-          setSubtitle(c.subtitle?.[lang] || "");
-        } else {
-          const c = await api.categories();
-          setItems(c.categories.filter((x: any) => x.type === "service"));
-          setSubtitle("");
-        }
+        const c = await api.categories();
+        setItems(c[cfg.key] || []);
       } catch {}
     })();
-  }, [cfg.catId, lang]);
+  }, [cfg.key]);
 
   const arrowColor = cfg.accent === "purple" ? colors.purple : cfg.accent === "green" ? colors.green : colors.primary;
 
   const onPress = (item: any) => {
-    router.push(`/request/${item.id}?type=${cfg.mode}`);
+    router.push(`/request/${item.cat_id}?type=${cfg.mode}`);
   };
 
   const itemSub = (item: any) => {
@@ -61,13 +53,13 @@ export default function ListScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
         <Text style={styles.bigEmoji}>{cfg.emoji}</Text>
         <Text style={styles.title}>{t(cfg.titleKey)}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        <Text style={styles.subtitle}>{t(cfg.subKey)}</Text>
 
         <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
           {items.map((item) => (
             <Pressable
-              key={item.id}
-              testID={`list-item-${item.id}`}
+              key={item.cat_id}
+              testID={`list-item-${item.cat_id}`}
               style={[styles.row, cfg.accent === "purple" && { borderColor: colors.purpleBorder }, cfg.accent === "green" && { borderColor: colors.greenBorder }, shadow.card]}
               onPress={() => onPress(item)}
             >
