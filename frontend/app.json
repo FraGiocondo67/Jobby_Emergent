@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.jobbymvpupdate.eijtrr"
+      "bundleIdentifier": "com.emergent.jobbymvpupdate.eijtrr",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Find trusted providers near you"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +21,8 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.jobbymvpupdate.eijtrr"
+      "package": "com.emergent.jobbymvpupdate.eijtrr",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "web": {
       "bundler": "metro",

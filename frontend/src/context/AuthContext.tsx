@@ -1,0 +1,123 @@
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
+import { Platform } from "react-native";
+import { api, setToken, clearToken, getToken } from "@/src/api";
+
+WebBrowser.maybeCompleteAuthSession();
+
+type User = any;
+type AuthState = {
+  user: User | null;
+  loading: boolean;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+  setUser: (u: User) => void;
+};
+
+const AuthContext = createContext<AuthState>({} as AuthState);
+export const useAuth = () => useContext(AuthContext);
+
+async function processSessionId(sessionId: string) {
+  const res = await fetch(
+    "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+    { headers: { "X-Session-ID": sessionId } }
+  );
+  if (!res.ok) throw new Error("session-data failed");
+  const data = await res.json();
+  const backend = await api.createSession(data.session_token);
+  await setToken(backend.session_token);
+  return backend.user;
+}
+
+function extractSessionId(url: string): string | null {
+  if (!url) return null;
+  const hashMatch = url.match(/#.*session_id=([^&]+)/);
+  if (hashMatch) return decodeURIComponent(hashMatch[1]);
+  const queryMatch = url.match(/[?&]session_id=([^&]+)/);
+  if (queryMatch) return decodeURIComponent(queryMatch[1]);
+  return null;
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const me = await api.me();
+      setUser(me);
+    } catch {
+      setUser(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // Web: check URL for session_id first
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          const sid = extractSessionId(window.location.href);
+          if (sid) {
+            const u = await processSessionId(sid);
+            setUser(u);
+            window.history.replaceState(null, "", window.location.pathname);
+            setLoading(false);
+            return;
+          }
+        } else {
+          const initial = await Linking.getInitialURL();
+          const sid = initial ? extractSessionId(initial) : null;
+          if (sid) {
+            const u = await processSessionId(sid);
+            setUser(u);
+            setLoading(false);
+            return;
+          }
+        }
+        const token = await getToken();
+        if (token) await refresh();
+      } catch {
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [refresh]);
+
+  const login = useCallback(async () => {
+    const redirectUrl =
+      Platform.OS === "web" && typeof window !== "undefined"
+        ? window.location.origin + "/"
+        : Linking.createURL("");
+    const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.location.href = authUrl;
+      return;
+    }
+    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+    if (result.type === "success" && result.url) {
+      const sid = extractSessionId(result.url);
+      if (sid) {
+        const u = await processSessionId(sid);
+        setUser(u);
+      }
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch {}
+    await clearToken();
+    setUser(null);
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh, setUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
