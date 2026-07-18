@@ -64,7 +64,7 @@ export default function ProfileDetails() {
         </Pressable>
       </View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 160 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 220 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <Text style={styles.title}>{t("personalDetails")}</Text>
 
           <Text style={styles.label}>{t("addressLabel")}</Text>
