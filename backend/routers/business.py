@@ -13,7 +13,8 @@ router = APIRouter()
 async def list_businesses(category: str, lat: float = TREVISO["lat"], lng: float = TREVISO["lng"], user=Depends(get_current_user)):
     """Real registered businesses (no bots) that offer the given category, sorted by distance."""
     biz = await db.users.find(
-        {"role": "business", "online": True, "is_bot": {"$ne": True}, "services": category},
+        {"role": "business", "online": True, "is_bot": {"$ne": True}, "services": category,
+         "approval_status": {"$nin": ["rejected", "suspended"]}},
         {"_id": 0}).to_list(300)
     result = []
     for b in biz:

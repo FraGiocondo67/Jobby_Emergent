@@ -14,7 +14,8 @@ router = APIRouter()
 async def providers_nearby(lat: float, lng: float, category: Optional[str] = None, user=Depends(get_current_user)):
     # Real registered providers/businesses only (exclude demo bots).
     providers = await db.users.find(
-        {"role": {"$in": ["provider", "business"]}, "online": True, "is_bot": {"$ne": True}},
+        {"role": {"$in": ["provider", "business"]}, "online": True, "is_bot": {"$ne": True},
+         "approval_status": {"$nin": ["rejected", "suspended"]}},
         {"_id": 0}).to_list(300)
     result = []
     for p in providers:

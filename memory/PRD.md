@@ -67,6 +67,8 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Verified via testing agent (iter 6 & 7): all backend + frontend flows pass.
 
 ## Backlog (open)
+- **Phase 3 (next):** (a) Backend admin APIs — user management list + Approve/Suspend/Reject (clients auto-approved; providers/business need approval), and revenue monitoring; (b) **separate Web App project** for backend management (deployable to Netlify, connects to backend APIs with admin token); (c) **real Stripe** payments (test key `STRIPE_API_KEY` present; user's live key at the end).
+- Crypto payout currently stores wallet addresses (BTC, USDT_TRC20, USDC_ERC20, USDT_ERC20, XRP); actual crypto settlement not wired.
 ### P1
 - Provider ownership/authorization checks on mission/booking mutation endpoints.
 - Provider profile detail screen with full review list.
