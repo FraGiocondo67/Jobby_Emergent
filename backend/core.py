@@ -15,7 +15,10 @@ db = client[os.environ['DB_NAME']]
 ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', 'change-me')
 
 TREVISO = {"lat": 45.6669, "lng": 12.2433}
-EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+EMERGENT_SESSION_URL = os.environ.get(
+    "EMERGENT_SESSION_URL",
+    "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+)
 
 
 def now_utc():
