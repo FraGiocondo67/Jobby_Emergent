@@ -25,10 +25,26 @@ async def list_businesses(category: str, lat: float = TREVISO["lat"], lng: float
             "verified": b.get("verified", False), "trust_score": b.get("trust_score", 0),
             "service_mode": b.get("service_mode", "both"), "distance_km": dist,
             "lat": b.get("lat"), "lng": b.get("lng"),
+            "price_list": b.get("price_list", []),
             "approval_status": b.get("approval_status", "approved"),
         })
     result.sort(key=lambda x: x["distance_km"])
     return result
+
+
+@router.get("/businesses/detail/{business_id}")
+async def business_detail(business_id: str, user=Depends(get_current_user)):
+    b = await db.users.find_one({"user_id": business_id, "role": "business"}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="business_not_found")
+    return {
+        "user_id": b["user_id"], "name": b.get("business_name") or b["name"], "picture": b.get("picture", ""),
+        "rating": b.get("rating", 0), "reviews_count": b.get("reviews_count", 0), "bio": b.get("bio", ""),
+        "verified": b.get("verified", False), "trust_score": b.get("trust_score", 0),
+        "service_mode": b.get("service_mode", "both"), "address": b.get("address", ""),
+        "price_list": b.get("price_list", []), "services": b.get("services", []),
+        "approval_status": b.get("approval_status", "approved"),
+    }
 
 
 @router.post("/business-requests")
@@ -44,6 +60,7 @@ async def create_business_request(body: BusinessRequestIn, user=Depends(get_curr
         "business_id": body.business_id, "business_name": biz.get("business_name") or biz["name"],
         "business_picture": biz.get("picture", ""), "category": body.category, "category_label": label,
         "note": body.note, "address": body.address, "lat": body.lat, "lng": body.lng,
+        "budget": body.budget,
         "status": "pending", "response": None,
         "created_at": now_utc().isoformat(), "updated_at": now_utc().isoformat(),
     }

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,8 @@ function CustomerRequests() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [bizReqs, setBizReqs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
+  const [sortDir, setSortDir] = useState<"newest" | "oldest">("newest");
 
   const load = useCallback(async () => {
     try {
@@ -41,7 +43,25 @@ function CustomerRequests() {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const empty = missions.length === 0 && payments.length === 0 && bookings.length === 0 && bizReqs.length === 0;
+  const merged = useMemo(() => {
+    const list: any[] = [];
+    missions.forEach((m) => list.push({ key: `m-${m.mission_id}`, type: "mission", created_at: m.created_at, status: m.status, data: m }));
+    bizReqs.forEach((r) => list.push({ key: `b-${r.request_id}`, type: "biz", created_at: r.created_at, status: r.status, data: r }));
+    bookings.forEach((b) => list.push({ key: `k-${b.booking_id}`, type: "booking", created_at: b.created_at, status: b.status, data: b }));
+    payments.forEach((p) => list.push({ key: `p-${p.request_id}`, type: "payment", created_at: p.created_at, status: "completed", data: p }));
+    const activeStatuses = ["pending", "matched", "confirmed", "in_progress", "booked"];
+    const phase = (s: string) => (activeStatuses.includes(s) ? "active" : "completed");
+    let out = list;
+    if (filter === "active") out = list.filter((x) => phase(x.status) === "active");
+    else if (filter === "completed") out = list.filter((x) => phase(x.status) === "completed");
+    return [...out].sort((a, b) => {
+      const da = new Date(a.created_at || 0).getTime();
+      const dbt = new Date(b.created_at || 0).getTime();
+      return sortDir === "newest" ? dbt - da : da - dbt;
+    });
+  }, [missions, bizReqs, bookings, payments, filter, sortDir]);
+
+  const empty = merged.length === 0;
 
   const openChat = async (otherId: string) => {
     try {
@@ -54,72 +74,97 @@ function CustomerRequests() {
     }
   };
 
+  const renderMission = (m: any) => (
+    <Pressable key={`m-${m.mission_id}`} testID={`req-mission-${m.mission_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/mission/radar?id=${m.mission_id}`)}>
+      <Text style={{ fontSize: 26 }}>🔎</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardTitle}>{m.category}</Text>
+        <Text style={styles.cardSub}>{m.date} · {m.time} · {m.accepted?.length || 0} {t("accepted")}</Text>
+        {m.budget ? <Text style={styles.budgetSub}>💰 {t("budgetLabel")}: €{Number(m.budget).toFixed(0)}</Text> : null}
+        <View style={{ marginTop: 6 }}><StatusPill status={m.status} /></View>
+      </View>
+    </Pressable>
+  );
+
+  const renderBiz = (r: any) => (
+    <View key={`b-${r.request_id}`} testID={`req-biz-${r.request_id}`} style={[styles.card, { flexDirection: "column", alignItems: "stretch" }, shadow.card]}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+        <Text style={{ fontSize: 26 }}>🏪</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>{r.business_name}</Text>
+          <Text style={styles.cardSub}>{r.category_label?.[lang] || r.category} · {r.note}</Text>
+          {r.budget ? <Text style={styles.budgetSub}>💰 {t("budgetLabel")}: €{Number(r.budget).toFixed(0)}</Text> : null}
+          <View style={{ marginTop: 6 }}><StatusPill status={r.status} /></View>
+        </View>
+      </View>
+      {r.status === "confirmed" && r.response ? (
+        <>
+          <Text style={styles.bizInfo}>
+            {r.response.mode === "delivery" ? t("mode_delivery") : t("mode_pickup")} · {r.response.eta || "—"} · €{(r.response.price || 0).toFixed(2)}
+            {r.response.delivery_cost ? ` + €${r.response.delivery_cost.toFixed(2)}` : ""}
+          </Text>
+          <Pressable testID={`biz-chat-${r.request_id}`} style={styles.chatBtn} onPress={() => openChat(r.business_id)}>
+            <Text style={styles.chatBtnText}>💬 {t("chat")}</Text>
+          </Pressable>
+        </>
+      ) : null}
+    </View>
+  );
+
+  const renderBooking = (b: any) => (
+    <Pressable key={`k-${b.booking_id}`} testID={`req-booking-${b.booking_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/booking/${b.booking_id}`)}>
+      <Text style={{ fontSize: 26 }}>🧾</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardTitle}>{b.provider_name}</Text>
+        <Text style={styles.cardSub}>{b.category} · {b.date} · {b.time}</Text>
+        <View style={{ marginTop: 6 }}><StatusPill status={b.status} /></View>
+      </View>
+      <Text style={styles.cardPrice}>€{b.total.toFixed(2)}</Text>
+    </Pressable>
+  );
+
+  const renderPayment = (p: any) => (
+    <View key={`p-${p.request_id}`} style={[styles.card, shadow.card]} testID={`req-payment-${p.request_id}`}>
+      <Text style={{ fontSize: 26 }}>💳</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardTitle}>{p.label}</Text>
+        <Text style={styles.cardSub}>{new Date(p.created_at).toLocaleDateString()}</Text>
+        <View style={{ marginTop: 6 }}><StatusPill status="completed" /></View>
+      </View>
+      <Text style={styles.cardPrice}>€{p.amount.toFixed(2)}</Text>
+    </View>
+  );
+
+  const FILTERS: { id: "all" | "active" | "completed"; key: any }[] = [
+    { id: "all", key: "filterAll" }, { id: "active", key: "filterActive" }, { id: "completed", key: "filterCompleted" },
+  ];
+
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}><Text style={styles.headerTitle}>{t("richieste")}</Text></View>
+      <View style={styles.filterBar}>
+        <View style={styles.filterChips}>
+          {FILTERS.map((f) => (
+            <Pressable key={f.id} testID={`filter-${f.id}`} style={[styles.chip, filter === f.id && styles.chipOn]} onPress={() => setFilter(f.id)}>
+              <Text style={[styles.chipText, filter === f.id && styles.chipTextOn]}>{t(f.key)}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable testID="sort-toggle" style={styles.sortBtn} onPress={() => setSortDir((s) => (s === "newest" ? "oldest" : "newest"))}>
+          <Text style={styles.sortText}>{sortDir === "newest" ? "↓ " + t("sortNewest") : "↑ " + t("sortOldest")}</Text>
+        </Pressable>
+      </View>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 100 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />} showsVerticalScrollIndicator={false}>
         {empty ? (
           <View style={styles.empty}><Text style={{ fontSize: 40 }}>📋</Text><Text style={styles.emptyText}>{t("noRequests")}</Text></View>
         ) : null}
 
-        {missions.map((m) => (
-          <Pressable key={m.mission_id} testID={`req-mission-${m.mission_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/mission/radar?id=${m.mission_id}`)}>
-            <Text style={{ fontSize: 26 }}>🔎</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{m.category}</Text>
-              <Text style={styles.cardSub}>{m.date} · {m.time} · {m.accepted?.length || 0} {t("accepted")}</Text>
-              <View style={{ marginTop: 6 }}><StatusPill status={m.status} /></View>
-            </View>
-          </Pressable>
-        ))}
-
-        {bizReqs.map((r) => (
-          <View key={r.request_id} testID={`req-biz-${r.request_id}`} style={[styles.card, { flexDirection: "column", alignItems: "stretch" }, shadow.card]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-              <Text style={{ fontSize: 26 }}>🏪</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{r.business_name}</Text>
-                <Text style={styles.cardSub}>{r.category_label?.[lang] || r.category} · {r.note}</Text>
-                <View style={{ marginTop: 6 }}><StatusPill status={r.status} /></View>
-              </View>
-            </View>
-            {r.status === "confirmed" && r.response ? (
-              <>
-                <Text style={styles.bizInfo}>
-                  {r.response.mode === "delivery" ? t("mode_delivery") : t("mode_pickup")} · {r.response.eta || "—"} · €{(r.response.price || 0).toFixed(2)}
-                  {r.response.delivery_cost ? ` + €${r.response.delivery_cost.toFixed(2)}` : ""}
-                </Text>
-                <Pressable testID={`biz-chat-${r.request_id}`} style={styles.chatBtn} onPress={() => openChat(r.business_id)}>
-                  <Text style={styles.chatBtnText}>💬 {t("chat")}</Text>
-                </Pressable>
-              </>
-            ) : null}
-          </View>
-        ))}
-
-        {bookings.map((b) => (
-          <Pressable key={b.booking_id} testID={`req-booking-${b.booking_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/booking/${b.booking_id}`)}>
-            <Text style={{ fontSize: 26 }}>🧾</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{b.provider_name}</Text>
-              <Text style={styles.cardSub}>{b.category} · {b.date} · {b.time}</Text>
-              <View style={{ marginTop: 6 }}><StatusPill status={b.status} /></View>
-            </View>
-            <Text style={styles.cardPrice}>€{b.total.toFixed(2)}</Text>
-          </Pressable>
-        ))}
-
-        {payments.map((p) => (
-          <View key={p.request_id} style={[styles.card, shadow.card]} testID={`req-payment-${p.request_id}`}>
-            <Text style={{ fontSize: 26 }}>💳</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{p.label}</Text>
-              <Text style={styles.cardSub}>{new Date(p.created_at).toLocaleDateString()}</Text>
-              <View style={{ marginTop: 6 }}><StatusPill status="completed" /></View>
-            </View>
-            <Text style={styles.cardPrice}>€{p.amount.toFixed(2)}</Text>
-          </View>
-        ))}
+        {merged.map((item) =>
+          item.type === "mission" ? renderMission(item.data)
+            : item.type === "biz" ? renderBiz(item.data)
+            : item.type === "booking" ? renderBooking(item.data)
+            : renderPayment(item.data)
+        )}
       </ScrollView>
     </View>
   );
@@ -175,6 +220,15 @@ const styles = StyleSheet.create({
   card: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.md, gap: spacing.md },
   cardTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface, textTransform: "capitalize" },
   cardSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 1 },
+  budgetSub: { fontSize: fsize.sm, fontFamily: font.bold, color: colors.green, marginTop: 2 },
+  filterBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md, backgroundColor: colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm },
+  filterChips: { flexDirection: "row", gap: spacing.sm, flex: 1 },
+  chip: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  chipOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  chipText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurfaceTertiary },
+  chipTextOn: { color: "#fff" },
+  sortBtn: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary },
+  sortText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurface },
   cardPrice: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface },
   bizInfo: { fontSize: fsize.base, fontFamily: font.medium, color: colors.success, marginTop: spacing.md },
   chatBtn: { marginTop: spacing.md, alignSelf: "flex-start", backgroundColor: colors.purpleBg, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill },

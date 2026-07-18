@@ -83,13 +83,17 @@ async def seed_categories():
     for s in STANDARD_SERVICES:
         order += 1
         await db.categories.update_one({"cat_id": s["cat_id"]},
-            {"$setOnInsert": {**s, "kind": "standard", "active": True, "order": order}}, upsert=True)
+            {"$setOnInsert": {**s, "kind": "standard", "active": True, "order": order, "commission_pct": 10.0}}, upsert=True)
     for pid, emoji, it, en in PROXIMITY_BUSINESS:
         order += 1
         await db.categories.update_one({"cat_id": pid},
             {"$setOnInsert": {"cat_id": pid, "emoji": emoji, "label": L(it, en), "kind": "proximity",
-                              "active": True, "order": order, "questions": [q_note()]}}, upsert=True)
+                              "active": True, "order": order, "questions": [q_note()], "commission_pct": 10.0}}, upsert=True)
     for p in PAYMENT_SERVICES:
         order += 1
         await db.categories.update_one({"cat_id": p["cat_id"]},
             {"$setOnInsert": {**p, "kind": "payment", "active": True, "order": order}}, upsert=True)
+    # Migration: ensure every service/proximity category has a commission (default 10%).
+    await db.categories.update_many(
+        {"kind": {"$in": ["standard", "proximity"]}, "commission_pct": {"$exists": False}},
+        {"$set": {"commission_pct": 10.0}})

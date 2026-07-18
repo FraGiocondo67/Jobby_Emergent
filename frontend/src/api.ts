@@ -105,6 +105,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ active }),
     }),
+  adminSetCommission: (catId: string, commissionPct: number, token: string) =>
+    adminRequest(`/admin/categories/${catId}/commission`, token, {
+      method: "POST",
+      body: JSON.stringify({ commission_pct: commissionPct }),
+    }),
   adminRecalcTrust: (token: string) =>
     adminRequest("/admin/trust/recalc", token, { method: "POST" }),
 
@@ -127,7 +132,8 @@ export const api = {
   // proximity businesses (directed requests)
   businesses: (category: string, lat: number, lng: number) =>
     request(`/businesses?category=${category}&lat=${lat}&lng=${lng}`),
-  createBusinessRequest: (data: { business_id: string; category: string; note: string; address: string; lat: number; lng: number }) =>
+  getBusinessDetail: (businessId: string) => request(`/businesses/detail/${businessId}`),
+  createBusinessRequest: (data: { business_id: string; category: string; note: string; address: string; lat: number; lng: number; budget?: number | null }) =>
     request("/business-requests", { method: "POST", body: JSON.stringify(data) }),
   businessRequests: () => request("/business-requests"),
   incomingBusinessRequests: () => request("/business-requests/incoming"),

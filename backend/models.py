@@ -51,6 +51,7 @@ class MissionIn(BaseModel):
     time: str
     duration_hours: float
     recurrence: str = "once"
+    budget: Optional[float] = None   # optional client budget proposal (€)
 
 
 class AcceptIn(BaseModel):
@@ -118,6 +119,7 @@ class BusinessRequestIn(BaseModel):
     address: str = ""
     lat: float = 0.0
     lng: float = 0.0
+    budget: Optional[float] = None   # optional client budget proposal (€)
 
 
 class BusinessResponseIn(BaseModel):

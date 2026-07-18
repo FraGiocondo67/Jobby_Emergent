@@ -26,6 +26,7 @@ export default function RequestScreen() {
   const [coords, setCoords] = useState(TREVISO);
   const [date, setDate] = useState("2026-06-20");
   const [time, setTime] = useState("10:00");
+  const [budget, setBudget] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -73,6 +74,7 @@ export default function RequestScreen() {
           date, time,
           duration_hours: duration,
           recurrence: "once",
+          budget: budget.trim() ? Number(budget) : null,
         });
         router.replace(`/mission/radar?id=${m.mission_id}`);
       }
@@ -164,6 +166,9 @@ export default function RequestScreen() {
                   <TextInput testID="time-input" style={styles.input} value={time} onChangeText={setTime} placeholder="HH:MM" placeholderTextColor={colors.muted} />
                 </View>
               </View>
+              <Text style={styles.label}>{t("budgetOptional")}</Text>
+              <TextInput testID="budget-input" style={styles.input} value={budget} onChangeText={setBudget} keyboardType="numeric" placeholder="€ 0.00" placeholderTextColor={colors.muted} />
+              <Text style={styles.budgetHint}>{t("budgetHint")}</Text>
             </>
           )}
         </ScrollView>
@@ -198,6 +203,7 @@ const styles = StyleSheet.create({
   stepVal: { fontSize: fsize.xl, fontFamily: font.medium, color: colors.onSurface, width: 54, textAlign: "center" },
   input: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: fsize.lg, fontFamily: font.regular, color: colors.onSurface },
   row2: { flexDirection: "row", gap: spacing.md },
+  budgetHint: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: spacing.sm },
   footer: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: colors.divider },
   successWrap: { alignItems: "center", justifyContent: "center", padding: spacing.xl },
   successTitle: { fontSize: fsize["2xl"], fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.lg },

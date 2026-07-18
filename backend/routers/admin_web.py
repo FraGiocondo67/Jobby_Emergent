@@ -124,6 +124,8 @@ ADMIN_HTML = """<!DOCTYPE html>
   .sw:after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s}
   .sw.on:after{left:23px}
   .muted{color:var(--muted)}
+  .comm{margin-top:6px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .comm input{width:70px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px}
   .hidden{display:none}
   .sec{font-size:13px;text-transform:uppercase;color:var(--muted);margin:18px 0 8px;font-weight:700}
   .err{color:#DE4B3F;font-size:14px;margin:8px 0}
@@ -191,11 +193,18 @@ async function loadCats(){
   for(const k in groups){
     html+='<div class="sec">'+groups[k]+'</div>';
     c.filter(x=>x.kind===k).forEach(x=>{
-      html+=`<div class="row"><span class="em">${x.emoji||'🧩'}</span><div class="t"><b>${x.label.en}</b><div class="muted">${x.cat_id}</div></div>
+      const comm=(k!=='payment')?`<div class="comm">Commission %
+        <input type="number" min="0" max="100" step="0.5" value="${x.commission_pct!=null?x.commission_pct:10}" id="comm-${x.cat_id}" onchange="setCommission('${x.cat_id}',this.value)"/></div>`:'';
+      html+=`<div class="row"><span class="em">${x.emoji||'🧩'}</span><div class="t"><b>${x.label.en}</b><div class="muted">${x.cat_id}</div>${comm}</div>
         <div class="sw ${x.active?'on':''}" onclick="toggleCat('${x.cat_id}',this)"></div></div>`;
     });
   }
   document.getElementById('categories').innerHTML=html;
+}
+async function setCommission(id,val){
+  const pct=parseFloat(val);if(isNaN(pct))return;
+  try{await api('/admin/categories/'+id+'/commission',{method:'POST',body:JSON.stringify({commission_pct:pct})});}
+  catch(e){alert('Invalid commission');}
 }
 async function toggleCat(id,el){const desired=!el.classList.contains('on');const r=await api('/admin/categories/'+id+'/set',{method:'POST',body:JSON.stringify({active:desired})});el.classList.toggle('on',r.active);}
 async function loadUsers(){

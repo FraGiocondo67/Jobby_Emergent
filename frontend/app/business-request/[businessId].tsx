@@ -25,8 +25,16 @@ export default function BusinessRequestScreen() {
   const [note, setNote] = useState("");
   const [address, setAddress] = useState("Via Roma 12, Treviso");
   const [coords, setCoords] = useState({ lat: user?.lat || TREVISO.lat, lng: user?.lng || TREVISO.lng });
+  const [budget, setBudget] = useState("");
+  const [detail, setDetail] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  React.useEffect(() => {
+    (async () => {
+      try { setDetail(await api.getBusinessDetail(businessId as string)); } catch {}
+    })();
+  }, [businessId]);
 
   const useMyLocation = async () => {
     try {
@@ -49,6 +57,7 @@ export default function BusinessRequestScreen() {
         address,
         lat: coords.lat,
         lng: coords.lng,
+        budget: budget.trim() ? Number(budget) : null,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSuccess(true);
@@ -81,6 +90,18 @@ export default function BusinessRequestScreen() {
           <Text style={styles.bizName}>{name}</Text>
           <Text style={styles.bizCat}>{label}</Text>
 
+          {detail?.price_list?.length ? (
+            <View style={styles.priceCard}>
+              <Text style={styles.priceTitle}>{t("priceListTitle")}</Text>
+              {detail.price_list.map((it: any, i: number) => (
+                <View key={i} style={styles.priceRow} testID={`biz-price-${i}`}>
+                  <Text style={styles.priceName}>{it.name}{it.unit ? ` · ${it.unit}` : ""}</Text>
+                  <Text style={styles.priceVal}>€{Number(it.price).toFixed(2)}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           <Text style={styles.label}>{t("whatDoYouNeed")}</Text>
           <TextInput
             testID="breq-note"
@@ -91,6 +112,9 @@ export default function BusinessRequestScreen() {
             placeholderTextColor={colors.muted}
             multiline
           />
+
+          <Text style={styles.label}>{t("budgetOptional")}</Text>
+          <TextInput testID="breq-budget" style={styles.input} value={budget} onChangeText={setBudget} keyboardType="numeric" placeholder="€ 0.00" placeholderTextColor={colors.muted} />
 
           <Text style={styles.label}>{t("address")}</Text>
           <TextInput testID="breq-address" style={styles.input} value={address} onChangeText={setAddress} placeholderTextColor={colors.muted} />
@@ -117,6 +141,11 @@ const styles = StyleSheet.create({
   label: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurfaceTertiary, marginTop: spacing.lg, marginBottom: spacing.sm },
   input: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: fsize.lg, fontFamily: font.regular, color: colors.onSurface },
   textarea: { minHeight: 100, textAlignVertical: "top" },
+  priceCard: { backgroundColor: colors.purpleBg, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },
+  priceTitle: { fontSize: fsize.base, fontFamily: font.bold, color: colors.purple, marginBottom: spacing.sm },
+  priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
+  priceName: { fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface, flex: 1 },
+  priceVal: { fontSize: fsize.base, fontFamily: font.bold, color: colors.purple },
   hint: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted, marginTop: spacing.lg, textAlign: "center" },
   footer: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: colors.divider },
   successWrap: { alignItems: "center", justifyContent: "center", padding: spacing.xl },

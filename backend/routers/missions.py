@@ -74,6 +74,7 @@ async def create_mission(body: MissionIn, user=Depends(get_current_user)):
            "category": body.category, "service_type": body.service_type, "config": body.config,
            "address": body.address, "lat": body.lat, "lng": body.lng, "date": body.date, "time": body.time,
            "duration_hours": body.duration_hours, "recurrence": body.recurrence, "status": "pending",
+           "budget": body.budget,
            "invited_provider_ids": [p["user_id"] for p in invited], "accepted": [], "chosen_provider_id": None,
            "created_at": now_utc().isoformat()}
     await db.missions.insert_one(doc)
@@ -115,14 +116,16 @@ async def select_provider(mission_id: str, body: SelectIn, user=Depends(get_curr
     if not accept:
         raise HTTPException(status_code=400, detail="Provider has not accepted")
     labor = round(accept["price"], 2)
-    jobby_fee = round(labor * 0.15, 2)
+    cat = await db.categories.find_one({"cat_id": m["category"]}, {"_id": 0})
+    commission_pct = float(cat.get("commission_pct", 10.0)) if cat else 10.0
+    jobby_fee = round(labor * commission_pct / 100.0, 2)
     booking_id = new_id("bkg")
     await db.bookings.insert_one({
         "booking_id": booking_id, "mission_id": mission_id, "customer_id": user["user_id"],
         "customer_name": user["name"], "provider_id": body.provider_id, "provider_name": accept["name"],
         "provider_picture": accept.get("picture", ""), "category": m["category"], "service_type": m["service_type"],
         "address": m["address"], "date": m["date"], "time": m["time"], "duration_hours": m["duration_hours"],
-        "labor_cost": labor, "jobby_fee": jobby_fee, "total": round(labor + jobby_fee, 2),
+        "labor_cost": labor, "jobby_fee": jobby_fee, "commission_pct": commission_pct, "total": round(labor + jobby_fee, 2),
         "status": "confirmed", "payment_status": "unpaid", "check_in_on_time": False, "reviewed": False, "client_rated": False,
         "created_at": now_utc().isoformat()})
     await db.missions.update_one({"mission_id": mission_id}, {"$set": {"status": "booked", "chosen_provider_id": body.provider_id}})

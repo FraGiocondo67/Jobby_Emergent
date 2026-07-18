@@ -192,6 +192,7 @@ function ProviderHome() {
                   <Text style={styles.missionTitle}>{m.category} · {m.duration_hours}{t("hours")}</Text>
                   <Text style={styles.missionSub}>{m.address}</Text>
                   <Text style={styles.missionSub}>{m.date} · {m.time}</Text>
+                  {m.budget ? <Text style={styles.budgetTag}>💰 {t("budgetLabel")}: €{Number(m.budget).toFixed(0)}</Text> : null}
                 </View>
                 <Text style={styles.missionPrice}>€{((user?.hourly_rate || 13) * m.duration_hours).toFixed(0)}</Text>
               </View>
@@ -288,6 +289,7 @@ function BusinessHome() {
                   <Text style={styles.missionSub}>{r.client_name}</Text>
                   <Text style={styles.missionSub}>{r.note}</Text>
                   {r.address ? <Text style={styles.missionSub}>📍 {r.address}</Text> : null}
+                  {r.budget ? <Text style={styles.budgetTag}>💰 {t("budgetLabel")}: €{Number(r.budget).toFixed(0)}</Text> : null}
                 </View>
                 <View style={[styles.pill, { backgroundColor: (statusColor[r.status] || colors.muted) + "22" }]}>
                   <Text style={[styles.pillText, { color: statusColor[r.status] || colors.muted }]}>{t(`status_${r.status}` as any) || r.status}</Text>
@@ -393,6 +395,7 @@ const styles = StyleSheet.create({
   missionRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   missionTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface, textTransform: "capitalize" },
   missionSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 1 },
+  budgetTag: { fontSize: fsize.sm, fontFamily: font.bold, color: colors.green, marginTop: 4 },
   missionPrice: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.brand },
   actionRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
   acceptedTag: { marginTop: spacing.md, fontSize: fsize.sm, fontFamily: font.medium, color: colors.warning },

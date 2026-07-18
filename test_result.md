@@ -189,3 +189,18 @@
   - Backend: /bookings/{id}/pay creates session; /payments/status doesn't mark paid for unpaid session; 404/403 guards.
   - Frontend (CLIENT demo-preview-token-123): open a confirmed unpaid booking -> 'Pay now' button visible, Complete hidden until paid; tapping pay initiates Stripe checkout (verify checkout.stripe.com session/redirect; DO NOT complete card).
   Credentials: CLIENT demo-preview-token-123. A booking exists: bkg_7c6591810676 (may already be used). Provider biz-test-token-999.
+
+## agent_communication (2026-06 fork — Phase A: Categories & Requests)
+-agent: "main"
+-message: |
+  PHASE A implemented (Categories & Requests enhancements):
+  1) Category commission (default 10%) REPLACES the old fixed 15% jobby_fee. Each category has commission_pct (migration set 10.0 on all standard/proximity cats). Admin: POST /api/admin/categories/{cat_id}/commission {commission_pct 0-100}. missions.py select_provider now computes jobby_fee = labor * commission_pct/100 and stores commission_pct on the booking. Admin UI (/api/admin/ui Categories tab) has an editable commission % input per service/proximity category.
+  2) Budget proposal field for clients: MissionIn.budget + BusinessRequestIn.budget (optional). Shown on request/[id].tsx (service) and business-request/[businessId].tsx. Provider sees "💰 Budget: €X" on incoming missions (index.tsx ProviderHome) and business sees it on incoming requests (BusinessHome). Also shown in richieste.tsx cards.
+  3) Backend-configured dynamic forms: already driven by category.questions via request/[id].tsx (unchanged, confirmed working).
+  4) Editable pricing for proximity businesses: business edits price_list in profile-details.tsx (existing). NEW GET /api/businesses/detail/{business_id} returns price_list; business-request screen now displays the business price list to the client. list_businesses also returns price_list.
+  5) Client requests filtering + date sorting: richieste.tsx CustomerRequests now merges missions+bizReqs+bookings+payments into one list with filter chips (All/Active/Completed, testID filter-all/active/completed) and a sort toggle (testID sort-toggle, Newest/Oldest by created_at).
+  Curl-verified: commission migration (all cats=10), set commission (12.5 ok, 150=400 invalid), mission budget stored (80.0), business detail price_list (2 items).
+  TEST both:
+  - Backend: POST /api/admin/categories/{id}/commission (valid+invalid+404); create mission with budget; business detail endpoint (404 unknown); confirm booking uses category commission_pct (create mission -> provider accept -> client select -> booking.jobby_fee == labor*pct/100 and booking.commission_pct present).
+  - Frontend (CLIENT demo-preview-token-123): richieste filter chips + sort toggle work; request/[id] shows budget field; business-request shows price list + budget. (BUSINESS biz-test-token-999).
+  Credentials: CLIENT demo-preview-token-123; BUSINESS biz-test-token-999; Admin token jobby-admin-7c2f9a. Storage key jobby_session_token.

@@ -1,0 +1,41 @@
+{
+  "summary": "Phase A (Categories & Requests) fully validated. Backend: 12/12 pytest cases pass — per-category commission admin endpoint (200/400/404/no-token), mission budget persistence, end-to-end booking with commission_pct=10.0 and jobby_fee = labor * 10% for pulizie, business detail (price_list + 404), and business-request budget storage. Pulizie commission reset to 10.0 at end as required. Frontend (Expo web, mobile viewport 390x844, CLIENT token): richieste tab shows filter-all/filter-active/filter-completed chips + sort-toggle, all tappable without crash and merged list renders (missions, biz requests, bookings) with 'Budget: €X' badges shown. /request/pulizie?type=service renders budget-input (single-page form with location/date/budget) — filled '80' successfully. /business-request/user_2f996c8a010a?cat=lavanderia shows biz-price-0 (Camicia €2.50), biz-price-1 (Pantalone €1.80), breq-note, and breq-budget input — filled '50' successfully.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking on Expo web but should migrate to boxShadow for RN 0.76+/react-native-web compatibility. Reference: /app/frontend/src/theme.ts (shadow.card)"},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents.' Non-blocking, but should be migrated."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_a_categories_requests.py",
+    "/app/test_reports/pytest/phase_a_results.xml"
+  ],
+  "action_items": [
+    "Optional cleanup: migrate 'shadow*' style props to 'boxShadow' (RN 0.76+ deprecation).",
+    "Optional cleanup: migrate 'props.pointerEvents' to 'style.pointerEvents'.",
+    "Note (docs): frontend auth token is stored as JSON.stringify(token) in localStorage — test agents should set 'jobby_session_token' with a JSON-encoded string (e.g. `JSON.stringify('demo-preview-token-123')`), not a raw string. This is expected behavior of storage-base.retrieve()."
+  ],
+  "critical_code_review_comments": [
+    "missions.py select_provider correctly reads category.commission_pct with 10.0 fallback and persists commission_pct+jobby_fee on the booking doc.",
+    "catalog.seed_categories() sets commission_pct=10.0 via $setOnInsert AND has an update_many migration to backfill legacy docs — good defensive coding.",
+    "admin_set_commission validates 0<=pct<=100 and returns invalid_pct/Not found appropriately.",
+    "business_detail returns 404 with 'business_not_found' detail as required; excludes MongoDB _id."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_a_categories_requests.py (new)",
+    "/app/test_reports/pytest/phase_a_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (all 4 flows verified)"},
+  "seed_data_creation": "One TEST_ mission (pulizie, budget=80) + one business-request (lavanderia, budget=50) created via CLIENT token during pytest run. Auto-accepted by bots and converted to a booking; verified booking.commission_pct=10.0 and jobby_fee=labor*0.10.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Frontend auth: set localStorage['jobby_session_token'] = JSON.stringify('demo-preview-token-123'). All Phase A testIDs are in place: filter-all/filter-active/filter-completed, sort-toggle, budget-input, biz-price-{i}, breq-budget, breq-note. Business user_2f996c8a010a currently has 2 price_list items (Camicia, Pantalone) and services=[pulizie, tecnico, lavanderia]. Pulizie commission is 10.0 (reset by test).",
+  "rca_of_issue": "No open bugs. Only observation: on the first UI probe attempt the token was set as a raw string, causing a JSON.parse warning and 401s. This was a test-harness error, not an app bug — after setting JSON.stringify('demo-preview-token-123') all authenticated flows worked."
+}

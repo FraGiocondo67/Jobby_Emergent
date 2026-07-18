@@ -48,6 +48,22 @@ class CategoryActiveIn(BaseModel):
     active: bool
 
 
+class CategoryCommissionIn(BaseModel):
+    commission_pct: float
+
+
+@router.post("/admin/categories/{cat_id}/commission")
+async def admin_set_commission(cat_id: str, body: CategoryCommissionIn, _=Depends(require_admin)):
+    """Set the JOBBY commission percentage applied to bookings in this category."""
+    pct = round(float(body.commission_pct), 2)
+    if pct < 0 or pct > 100:
+        raise HTTPException(status_code=400, detail="invalid_pct")
+    res = await db.categories.update_one({"cat_id": cat_id}, {"$set": {"commission_pct": pct}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"cat_id": cat_id, "commission_pct": pct}
+
+
 @router.post("/admin/categories/{cat_id}/set")
 async def admin_set_category(cat_id: str, body: CategoryActiveIn, _=Depends(require_admin)):
     """Idempotent activate/deactivate: sets the exact desired state (no flip drift)."""
