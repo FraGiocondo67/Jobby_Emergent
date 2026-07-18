@@ -231,6 +231,11 @@ export const strings = {
     noPriceItems: "Nessuna voce nel listino",
     itemName: "Nome prodotto/servizio",
     day_mon: "Lun", day_tue: "Mar", day_wed: "Mer", day_thu: "Gio", day_fri: "Ven", day_sat: "Sab", day_sun: "Dom",
+    topupSuccess: "Ricarica completata",
+    topupError: "Impossibile avviare il pagamento",
+    verifyingPayment: "Verifica pagamento in corso...",
+    securedByStripe: "Pagamenti sicuri con Stripe",
+    error: "Errore",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -462,6 +467,11 @@ export const strings = {
     noPriceItems: "No items in the price list",
     itemName: "Product/service name",
     day_mon: "Mon", day_tue: "Tue", day_wed: "Wed", day_thu: "Thu", day_fri: "Fri", day_sat: "Sat", day_sun: "Sun",
+    topupSuccess: "Top-up complete",
+    topupError: "Could not start the payment",
+    verifyingPayment: "Verifying payment...",
+    securedByStripe: "Payments secured by Stripe",
+    error: "Error",
   },
 };
 

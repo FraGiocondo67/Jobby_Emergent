@@ -1,0 +1,53 @@
+{
+  "summary": "Phase 3 (Backend user management, Revenue monitoring, real Stripe checkout, separate Admin Web app) validated end-to-end. Backend pytest: 10/10 PASSED — admin stats now includes pending_approvals/revenue/topups_volume/gmv/jobby_fees; admin users list exposes approval_status/phone/business_name/online; POST /api/admin/users/{id}/status handles approved|suspended|rejected with 400 on invalid status and 404 on unknown user; missing admin token is rejected (403). Real Stripe: POST /api/wallet/topup/checkout with package_id=p25 returns a real checkout.stripe.com URL + session_id; invalid package returns 400; GET /api/wallet/topup/status/{session_id} for an unpaid session returns payment_status='initiated' (or 'unpaid'), credited=false, and does NOT change the wallet balance. Admin Web (served via python3 -m http.server on /app/admin-web/index.html): Connect with Backend URL + jobby-admin-7c2f9a succeeds; Dashboard shows Revenue monitoring cards (Revenue €15.6, GMV €119.6, Top-ups €0, Payments vol €0) and Operations cards; Users tab lists all users (Francesco Franzin user_2f996c8a010a shown as business, approved, with Suspend/Reject buttons); clicking Suspend then Approve on Francesco correctly transitions approval_status suspended→approved and Francesco is LEFT APPROVED at end. Mobile Wallet: tapping add-25 initiates POST /api/wallet/topup/checkout and the browser navigates to https://checkout.stripe.com/c/pay/cs_test_… (real Stripe Checkout page rendered with €25.00, Apple Pay + Card form). 'Pagamenti sicuri con Stripe' (💳) note is visible; no mock badge on the balance hero card.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "shadow style props",
+        "issue": "Repeated console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Emitted on every screen using shadow.card in /app/frontend/src/theme.ts. Cosmetic only, but should migrate to boxShadow for RN Web (SDK 52+). Reference: /app/frontend/src/theme.ts"
+      },
+      {
+        "component": "props.pointerEvents",
+        "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Reference: check RN components across app (Expo SDK 52+ migration)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase3_admin_stripe.py",
+    "/app/test_reports/pytest/iter10_phase3.xml"
+  ],
+  "action_items": [
+    "(Optional cleanup) Old wallet transactions in DB still carry the label 'Wallet top-up (simulated)' from previous mock top-ups. Consider a one-time backfill/migration or just leave them as historical entries. New Stripe top-ups correctly use label 'Wallet top-up €X (Stripe)'.",
+    "(Optional) Migrate shadow.* → boxShadow in /app/frontend/src/theme.ts to silence RN Web deprecation warnings (carry-over from iter9).",
+    "(Optional) Replace props.pointerEvents with style.pointerEvents where used."
+  ],
+  "critical_code_review_comments": [
+    "admin_web.py:59-69 admin_set_user_status: correctly validates status enum, sets provider_approved=true on approve, returns 404 when user not found — all covered by tests.",
+    "admin_web.py:24-27 admin_stats: aggregates topups_volume from transactions{type:topup,status:paid} and revenue from bookings jobby_fee — clean and consistent.",
+    "payments_stripe.py:31-32,44-48: server-defined TOPUP_PACKAGES prevents client tampering; payment_transactions doc created with credited=false — solid pattern.",
+    "payments_stripe.py:52-69 _credit_if_paid: idempotent credit (checks tx.credited before crediting) — verified: repeated status calls on same unpaid session don't double-credit and don't change balance.",
+    "frontend wallet.tsx:57-73 buy(): on web uses window.location.href = url which produces a real Stripe navigation — verified via Playwright; native falls back to WebBrowser.openBrowserAsync + pollStatus.",
+    "admin-web/index.html is a single self-contained static file (~160 lines) with sensible localStorage persistence and clean role-conditional action buttons; safe to host on Netlify as-is."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase3_admin_stripe.py (new)",
+    "/app/test_reports/pytest/iter10_phase3.xml (new)",
+    "/app/test_reports/iteration_10.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 pytest)",
+    "frontend": "100% (Admin Web dashboard/users/suspend-approve, Wallet Stripe redirect all verified)"
+  },
+  "seed_data_creation": "No new seed data required. Reused user_demopreview01 (Bearer demo-preview-token-123) and user_2f996c8a010a (Francesco). Francesco was toggled suspended→approved during testing and LEFT APPROVED at end as instructed. Stripe payment_transactions rows created for p25 checkout sessions remain in DB with payment_status='initiated', credited=false (expected — no real card completion done).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 3 complete and green. Admin Web at /app/admin-web/index.html is a pure static file — deploy to Netlify by uploading the folder (no build step). Real Stripe test-mode key is in backend/.env (sk_test_emergent via Emergent proxy). To smoke-test Stripe end-to-end without real card, use pytest test_status_unpaid_does_not_credit — verifies idempotency + no premature crediting. Frontend uses EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL) — protected as-is. Note: the app's Storage util JSON-stringifies values, so if you seed a session token via localStorage in Playwright, use JSON.stringify('...').",
+  "rca_of_issue": "N/A — no bugs found."
+}

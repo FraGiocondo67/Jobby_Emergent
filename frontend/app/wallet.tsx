@@ -1,34 +1,76 @@
-import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import * as WebBrowser from "expo-web-browser";
 import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
+
+const PACKAGES = [
+  { id: "p10", amt: 10 },
+  { id: "p25", amt: 25 },
+  { id: "p50", amt: 50 },
+];
 
 export default function Wallet() {
   const { t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ session_id?: string }>();
   const [balance, setBalance] = useState(0);
   const [txs, setTxs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
     try { const w = await api.wallet(); setBalance(w.balance); setTxs(w.transactions); } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const add = async (amount: number) => {
+  const pollStatus = useCallback(async (sessionId: string) => {
+    setChecking(true);
+    for (let i = 0; i < 6; i++) {
+      try {
+        const s = await api.topupStatus(sessionId);
+        if (s.payment_status === "paid") {
+          await load();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          Alert.alert(t("topupSuccess"), `+€${(s.amount || 0).toFixed(2)}`);
+          break;
+        }
+        if (s.status === "expired") break;
+      } catch {}
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    setChecking(false);
+  }, [load, t]);
+
+  // Handle return from Stripe on web (redirect adds ?session_id=...)
+  useEffect(() => {
+    if (params.session_id) { pollStatus(params.session_id as string); }
+  }, [params.session_id, pollStatus]);
+
+  const buy = async (pkg: { id: string; amt: number }) => {
     setBusy(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    const r = await api.addFunds(amount);
-    setBalance(r.balance);
-    await load();
-    setBusy(false);
+    Haptics.selectionAsync().catch(() => {});
+    try {
+      const origin = Platform.OS === "web" && typeof window !== "undefined"
+        ? window.location.origin
+        : (process.env.EXPO_PUBLIC_BACKEND_URL || "");
+      const { url, session_id } = await api.topupCheckout(pkg.id, origin);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = url;
+      } else {
+        await WebBrowser.openBrowserAsync(url);
+        await pollStatus(session_id);
+      }
+    } catch {
+      Alert.alert(t("error") || "Error", t("topupError"));
+    } finally { setBusy(false); }
   };
 
   return (
@@ -43,17 +85,20 @@ export default function Wallet() {
         <View style={styles.hero}>
           <Text style={styles.heroLabel}>{t("balance")}</Text>
           <Text style={styles.heroValue}>€{balance.toFixed(2)}</Text>
-          <View style={styles.mockBadge}><Text style={styles.mockText}>{t("mockNote")}</Text></View>
         </View>
 
         <Text style={styles.section}>{t("addFunds")}</Text>
+        {checking ? (
+          <View style={styles.checking}><ActivityIndicator color={colors.brand} /><Text style={styles.checkingText}>{t("verifyingPayment")}</Text></View>
+        ) : null}
         <View style={styles.addRow}>
-          {[10, 25, 50].map((a) => (
-            <Pressable key={a} testID={`add-${a}`} style={styles.addChip} disabled={busy} onPress={() => add(a)}>
-              <Text style={styles.addChipText}>+€{a}</Text>
+          {PACKAGES.map((p) => (
+            <Pressable key={p.id} testID={`add-${p.amt}`} style={styles.addChip} disabled={busy} onPress={() => buy(p)}>
+              <Text style={styles.addChipText}>+€{p.amt}</Text>
             </Pressable>
           ))}
         </View>
+        <Text style={styles.stripeNote}>💳 {t("securedByStripe")}</Text>
 
         <Text style={styles.section}>{t("transactions")}</Text>
         {txs.length === 0 ? (
@@ -87,6 +132,9 @@ const styles = StyleSheet.create({
   heroValue: { color: "#fff", fontSize: 44, fontFamily: font.bold, marginTop: 4 },
   mockBadge: { marginTop: spacing.sm, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: spacing.md, paddingVertical: 3, borderRadius: radius.pill },
   mockText: { color: "#fff", fontSize: fsize.sm, fontFamily: font.medium },
+  checking: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
+  checkingText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.brand },
+  stripeNote: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: spacing.sm },
   section: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.xl, marginBottom: spacing.md },
   addRow: { flexDirection: "row", gap: spacing.md },
   addChip: { flex: 1, height: 54, borderRadius: radius.md, borderWidth: 1, borderColor: colors.greenBorder, backgroundColor: colors.greenBg, alignItems: "center", justifyContent: "center" },

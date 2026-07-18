@@ -76,6 +76,9 @@ export const api = {
   // wallet
   wallet: () => request("/wallet"),
   addFunds: (amount: number) => request("/wallet/add", { method: "POST", body: JSON.stringify({ amount }) }),
+  topupCheckout: (packageId: string, originUrl: string) =>
+    request("/wallet/topup/checkout", { method: "POST", body: JSON.stringify({ package_id: packageId, origin_url: originUrl }) }),
+  topupStatus: (sessionId: string) => request(`/wallet/topup/status/${sessionId}`),
   setPaymentMethod: (data: any) => request("/wallet/payment-method", { method: "PUT", body: JSON.stringify(data) }),
   setBankAccount: (data: any) => request("/wallet/bank-account", { method: "PUT", body: JSON.stringify(data) }),
   setCryptoWallet: (data: { token: string; name: string; address: string; network: string }) =>

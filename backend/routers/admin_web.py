@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 from core import db
 from deps import require_admin
@@ -14,6 +15,7 @@ async def admin_stats(_=Depends(require_admin)):
     clients = await db.users.count_documents({"role": "client"})
     providers = await db.users.count_documents({"role": {"$in": ["provider", "business"]}})
     online = await db.users.count_documents({"role": {"$in": ["provider", "business"]}, "online": True})
+    pending = await db.users.count_documents({"role": {"$in": ["provider", "business"]}, "approval_status": "pending"})
     missions = await db.missions.count_documents({})
     bookings = await db.bookings.find({}, {"_id": 0}).to_list(5000)
     completed = len([b for b in bookings if b.get("status") == "completed"])
@@ -21,12 +23,16 @@ async def admin_stats(_=Depends(require_admin)):
     fees = round(sum(b.get("jobby_fee", 0) for b in bookings), 2)
     payments = await db.service_requests.find({"kind": "payment"}, {"_id": 0}).to_list(5000)
     pay_vol = round(sum(p.get("amount", 0) for p in payments), 2)
+    topups = await db.transactions.find({"type": "topup", "status": "paid"}, {"_id": 0}).to_list(5000)
+    topup_vol = round(sum(t.get("amount", 0) for t in topups), 2)
     cats_total = await db.categories.count_documents({})
     cats_active = await db.categories.count_documents({"active": True})
     return {
         "users": users, "clients": clients, "providers": providers, "providers_online": online,
+        "pending_approvals": pending,
         "missions": missions, "bookings": len(bookings), "completed": completed,
         "gmv": gmv, "jobby_fees": fees, "payments_count": len(payments), "payments_volume": pay_vol,
+        "topups_volume": topup_vol, "revenue": round(fees, 2),
         "categories_total": cats_total, "categories_active": cats_active,
     }
 
@@ -37,10 +43,30 @@ async def admin_users(_=Depends(require_admin)):
     return [{
         "user_id": u["user_id"], "name": u.get("name"), "email": u.get("email"), "role": u.get("role"),
         "verification_status": u.get("verification_status", "unverified"),
+        "approval_status": u.get("approval_status", "approved"),
         "trust_score": u.get("trust_score", 0), "client_trust_score": u.get("client_trust_score", 0),
         "rating": u.get("rating", 0), "wallet_balance": u.get("wallet_balance", 0),
         "is_bot": u.get("is_bot", False), "services": u.get("services", []),
+        "online": u.get("online", False), "phone": u.get("phone", ""), "address": u.get("address", ""),
+        "business_name": u.get("business_name", ""), "created_at": u.get("created_at", ""),
     } for u in users]
+
+
+class UserStatusIn(BaseModel):
+    status: str  # approved | suspended | rejected
+
+
+@router.post("/admin/users/{user_id}/status")
+async def admin_set_user_status(user_id: str, body: UserStatusIn, _=Depends(require_admin)):
+    if body.status not in ("approved", "suspended", "rejected"):
+        raise HTTPException(status_code=400, detail="invalid_status")
+    upd = {"approval_status": body.status}
+    if body.status == "approved":
+        upd["provider_approved"] = True
+    res = await db.users.update_one({"user_id": user_id}, {"$set": upd})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="not_found")
+    return {"user_id": user_id, "approval_status": body.status}
 
 
 @router.get("/admin/bookings")

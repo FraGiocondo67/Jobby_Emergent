@@ -156,3 +156,17 @@
   - Removed card/bank setup from Wallet screen (wallet now = balance + add funds + transactions only).
   - Backend: PUT /wallet/crypto-wallet (validated tokens), GET /wallet returns crypto_wallets. Curl-verified.
   TEST both. Credentials: CLIENT demo-preview-token-123; BUSINESS biz-test-token-999 (Francesco, business, online, offers lavanderia). Storage key jobby_session_token.
+
+## agent_communication (2026-06 fork — Phase 3: Admin mgmt + Revenue + Stripe + Web App)
+-agent: "main"
+-message: |
+  PHASE 3 implemented:
+  1) Admin user management: GET /api/admin/users (now includes approval_status, phone, address, online, business_name); POST /api/admin/users/{id}/status {status: approved|suspended|rejected} (approve sets provider_approved=true). GET /api/admin/stats now includes pending_approvals, revenue (=jobby_fees), topups_volume. Curl-verified: suspend/approve OK, invalid=400, bad user=404.
+  2) REAL Stripe (emergentintegrations, test key added to backend/.env): POST /api/wallet/topup/checkout {package_id in p10/p25/p50/p100, origin_url} -> real checkout.stripe.com URL + session_id; GET /api/wallet/topup/status/{session_id} polls Stripe and idempotently credits wallet ONLY when payment_status=paid; POST /api/webhook/stripe. Curl-verified: real session URL created; invalid package=400.
+  3) Wallet screen (frontend) now uses Stripe: add-funds buttons (p10/p25/p50) call topup/checkout; on web it redirects to Stripe and returns to /wallet?session_id=... then polls status; on native opens WebBrowser then polls. Removed the old instant mock add.
+  4) Separate Web App at /app/admin-web (static, Netlify-ready): Dashboard (revenue + ops), Users (Approve/Suspend/Reject + filters), Categories toggle, Bookings. Connects via Backend URL + X-Admin-Token.
+  TEST:
+  - Backend: admin status transitions + stats fields + Stripe checkout create/status/invalid.
+  - Frontend: wallet 'add-25' initiates Stripe checkout (verify a checkout.stripe.com URL/redirect is produced; DO NOT need to complete card payment). Verify status endpoint does not credit an unpaid session.
+  - Admin Web App: serve /app/admin-web with a static server and Playwright-test connecting to backend https://jobby-mvp-update.preview.emergentagent.com with X-Admin-Token jobby-admin-7c2f9a; verify Users tab shows list and Approve/Suspend/Reject calls succeed (use Francesco user_2f996c8a010a; leave him 'approved' at the end).
+  Credentials: CLIENT demo-preview-token-123; BUSINESS biz-test-token-999; Admin token jobby-admin-7c2f9a.
