@@ -4,7 +4,7 @@ const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 const TOKEN_KEY = "jobby_session_token";
 
 export async function getToken() {
-  return await storage.getItem(TOKEN_KEY);
+  return await storage.getItem(TOKEN_KEY, null);
 }
 export async function setToken(t: string) {
   await storage.setItem(TOKEN_KEY, t);
@@ -90,6 +90,11 @@ export const api = {
   adminCategories: (token: string) => adminRequest("/admin/categories", token),
   adminToggleCategory: (catId: string, token: string) =>
     adminRequest(`/admin/categories/${catId}/toggle`, token, { method: "POST" }),
+  adminSetCategory: (catId: string, active: boolean, token: string) =>
+    adminRequest(`/admin/categories/${catId}/set`, token, {
+      method: "POST",
+      body: JSON.stringify({ active }),
+    }),
   adminRecalcTrust: (token: string) =>
     adminRequest("/admin/trust/recalc", token, { method: "POST" }),
 

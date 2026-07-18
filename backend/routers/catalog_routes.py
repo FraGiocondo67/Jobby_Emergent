@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 
 from core import db
 from deps import get_current_user, require_admin
@@ -41,6 +42,19 @@ async def admin_toggle_category(cat_id: str, _=Depends(require_admin)):
     new_active = not c.get("active", True)
     await db.categories.update_one({"cat_id": cat_id}, {"$set": {"active": new_active}})
     return {"cat_id": cat_id, "active": new_active}
+
+
+class CategoryActiveIn(BaseModel):
+    active: bool
+
+
+@router.post("/admin/categories/{cat_id}/set")
+async def admin_set_category(cat_id: str, body: CategoryActiveIn, _=Depends(require_admin)):
+    """Idempotent activate/deactivate: sets the exact desired state (no flip drift)."""
+    res = await db.categories.update_one({"cat_id": cat_id}, {"$set": {"active": body.active}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"cat_id": cat_id, "active": body.active}
 
 
 @router.post("/admin/trust/recalc")

@@ -162,7 +162,7 @@ async function loadCats(){
   }
   document.getElementById('categories').innerHTML=html;
 }
-async function toggleCat(id,el){const r=await api('/admin/categories/'+id+'/toggle',{method:'POST'});el.classList.toggle('on',r.active);}
+async function toggleCat(id,el){const desired=!el.classList.contains('on');const r=await api('/admin/categories/'+id+'/set',{method:'POST',body:JSON.stringify({active:desired})});el.classList.toggle('on',r.active);}
 async function loadUsers(){
   const u=await api('/admin/users');
   let rows=u.map(x=>`<tr><td>${x.name||''}${x.is_bot?' 🤖':''}<div class="muted">${x.email||''}</div></td>

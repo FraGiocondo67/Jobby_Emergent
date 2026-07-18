@@ -45,10 +45,16 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
-  const toggle = async (catId: string) => {
+  const setActive = async (catId: string, active: boolean) => {
     Haptics.selectionAsync().catch(() => {});
-    const r = await api.adminToggleCategory(catId, token.trim());
-    setCats((prev) => prev.map((c) => (c.cat_id === catId ? { ...c, active: r.active } : c)));
+    // Optimistic update to the exact desired state (idempotent — no flip drift).
+    setCats((prev) => prev.map((c) => (c.cat_id === catId ? { ...c, active } : c)));
+    try {
+      await api.adminSetCategory(catId, active, token.trim());
+    } catch {
+      // Roll back on failure so UI reflects the true server state.
+      setCats((prev) => prev.map((c) => (c.cat_id === catId ? { ...c, active: !active } : c)));
+    }
   };
 
   const recalc = async () => {
@@ -111,7 +117,7 @@ export default function Admin() {
                   <Switch
                     testID={`admin-toggle-${c.cat_id}`}
                     value={c.active}
-                    onValueChange={() => toggle(c.cat_id)}
+                    onValueChange={(v) => setActive(c.cat_id, v)}
                     trackColor={{ true: colors.brand, false: colors.borderStrong }}
                     thumbColor="#fff"
                   />
