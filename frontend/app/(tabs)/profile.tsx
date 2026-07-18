@@ -134,6 +134,16 @@ export default function ProfileTab() {
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Pressable>
 
+        {/* Personal details */}
+        <Pressable testID="profile-details" style={[styles.listRow, shadow.card]} onPress={() => router.push("/profile-details")}>
+          <View style={[styles.rowIcon, { backgroundColor: colors.surfaceTertiary }]}><Ionicons name="person-circle-outline" size={22} color={colors.onSurfaceTertiary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>{t("personalDetails")}</Text>
+            <Text style={styles.rowSub}>{isProvider ? t("detailsSubProvider") : t("detailsSubClient")}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </Pressable>
+
         {/* Payments & payout settings */}
         <Pressable testID="profile-payments" style={[styles.listRow, shadow.card]} onPress={() => router.push("/payments-settings")}>
           <View style={[styles.rowIcon, { backgroundColor: colors.blueBg }]}><Ionicons name="card" size={22} color={colors.blue} /></View>

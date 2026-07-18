@@ -6,7 +6,7 @@ from models import WalletIn, PaymentIn, PaymentMethodIn, BankAccountIn, CryptoWa
 
 router = APIRouter()
 
-ALLOWED_TOKENS = {"BTC", "USDT_TRC20", "USDC_ERC20", "USDT_ERC20", "XRP"}
+ALLOWED_TOKENS = {"USDT_TRC", "USDT_ETH", "USDC_ETH", "XRP", "BTC"}
 
 
 @router.get("/wallet")
@@ -30,7 +30,7 @@ async def add_funds(body: WalletIn, user=Depends(get_current_user)):
 
 @router.put("/wallet/payment-method")
 async def set_payment_method(body: PaymentMethodIn, user=Depends(get_current_user)):
-    pm = body.dict()
+    pm = body.dict(exclude={"cvv"})  # never persist CVV
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"payment_method": pm}})
     return {"payment_method": pm}
 
@@ -47,9 +47,21 @@ async def set_bank_account(body: BankAccountIn, user=Depends(get_current_user)):
 async def set_crypto_wallet(body: CryptoWalletIn, user=Depends(get_current_user)):
     if body.token not in ALLOWED_TOKENS:
         raise HTTPException(status_code=400, detail="invalid_token")
-    wallets = [w for w in user.get("crypto_wallets", []) if w.get("token") != body.token]
-    if body.address.strip():
-        wallets.append({"token": body.token, "address": body.address.strip()})
+    if not body.address.strip():
+        raise HTTPException(status_code=400, detail="address_required")
+    wallets = list(user.get("crypto_wallets", []))
+    wallets.append({
+        "wallet_id": new_id("cw"), "token": body.token,
+        "name": body.name.strip() or body.token, "address": body.address.strip(),
+        "network": body.network.strip(),
+    })
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"crypto_wallets": wallets}})
+    return {"crypto_wallets": wallets}
+
+
+@router.delete("/wallet/crypto-wallet/{wallet_id}")
+async def delete_crypto_wallet(wallet_id: str, user=Depends(get_current_user)):
+    wallets = [w for w in user.get("crypto_wallets", []) if w.get("wallet_id") != wallet_id]
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"crypto_wallets": wallets}})
     return {"crypto_wallets": wallets}
 

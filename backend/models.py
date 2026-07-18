@@ -6,6 +6,18 @@ class SessionIn(BaseModel):
     session_token: str
 
 
+class PriceItem(BaseModel):
+    name: str
+    price: float = Field(default=0.0, ge=0)
+    unit: Optional[str] = ""
+
+
+class Availability(BaseModel):
+    days: List[str] = []      # ["mon","tue","wed","thu","fri","sat","sun"]
+    start: str = ""           # "09:00"
+    end: str = ""             # "18:00"
+
+
 class ProfileUpdate(BaseModel):
     role: Optional[str] = None            # client | provider | business
     language: Optional[str] = None
@@ -18,6 +30,14 @@ class ProfileUpdate(BaseModel):
     online: Optional[bool] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    # contact & preferences
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    preferences: Optional[str] = None
+    # provider/business
+    availability: Optional[Availability] = None
+    price_list: Optional[List[PriceItem]] = None
 
 
 class MissionIn(BaseModel):
@@ -68,6 +88,7 @@ class PaymentMethodIn(BaseModel):
     card_last4: str
     card_brand: str = "visa"
     expiry: str
+    cvv: str = ""   # collected for setup; never persisted
 
 
 class BankAccountIn(BaseModel):
@@ -76,8 +97,10 @@ class BankAccountIn(BaseModel):
 
 
 class CryptoWalletIn(BaseModel):
-    token: str      # BTC | USDT_TRC20 | USDC_ERC20 | USDT_ERC20 | XRP
+    token: str      # USDT_TRC | USDT_ETH | USDC_ETH | XRP | BTC
+    name: str = ""
     address: str
+    network: str = ""
 
 
 class DisputeIn(BaseModel):

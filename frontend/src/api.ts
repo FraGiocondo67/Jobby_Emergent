@@ -78,8 +78,10 @@ export const api = {
   addFunds: (amount: number) => request("/wallet/add", { method: "POST", body: JSON.stringify({ amount }) }),
   setPaymentMethod: (data: any) => request("/wallet/payment-method", { method: "PUT", body: JSON.stringify(data) }),
   setBankAccount: (data: any) => request("/wallet/bank-account", { method: "PUT", body: JSON.stringify(data) }),
-  setCryptoWallet: (token: string, address: string) =>
-    request("/wallet/crypto-wallet", { method: "PUT", body: JSON.stringify({ token, address }) }),
+  setCryptoWallet: (data: { token: string; name: string; address: string; network: string }) =>
+    request("/wallet/crypto-wallet", { method: "PUT", body: JSON.stringify(data) }),
+  deleteCryptoWallet: (walletId: string) =>
+    request(`/wallet/crypto-wallet/${walletId}`, { method: "DELETE" }),
 
   // verification (simulated KYC)
   startVerification: () => request("/verification/start", { method: "POST" }),

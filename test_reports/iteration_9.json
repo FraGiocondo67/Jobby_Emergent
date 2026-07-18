@@ -1,0 +1,58 @@
+{
+  "summary": "Iteration 9: Full backend + frontend validation of pre-Phase-3 enhancements (crypto wallet redesign with dropdowns, card CVV, editable profile details, provider availability + price list). All 11 backend pytest cases PASSED (crypto add/list/delete, invalid token, empty address, CVV non-persistence, profile contact/preferences, availability, price_list). Frontend E2E: payments-settings (BUSINESS token) shows CVV field, crypto add form uses token dropdown → auto-suggests network → save creates card (crypto-wallet-<id>) → delete removes it. profile-details fully functional: address/phone/email/preferences fields save, day chips toggle, working hours persist, price list add/edit/delete works and persists via PUT /api/profile. All acceptance criteria met.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "profile-details.tsx",
+        "issue": "The 'Aggiungi voce' (add-price-item) button sits at y≈780 which overlaps the absolutely-positioned footer containing save-details (y≈778). When the price list is empty, the add button is visually hidden BEHIND the footer bar and touch/click can be intercepted by the Save button when not scrolled. Needs bottom padding on ScrollView contentContainerStyle (currently 160) or the footer to have a solid opaque background so it does not visually collide; alternatively move Aggiungi voce above the footer safe area.",
+        "testID": "add-price-item",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "profile-details",
+        "issues": [
+          "Add-price-item button overlaps with the fixed Salva footer at 390x844 viewport when price list is empty (only visible after user scrolls the ScrollView up)."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "shadow style props",
+        "issue": "Console emits repeated warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Multiple screens (payments-settings, profile-details, and others) use shadow.card from /app/frontend/src/theme.ts which likely still uses shadowColor/shadowOffset/shadowOpacity/shadowRadius on web. Migrate to boxShadow (RN 0.76+/Expo SDK 52 web). Reference: theme.ts (shadow.card)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_wallet_profile.py",
+    "/app/test_reports/pytest/iter9_wallet_profile.xml"
+  ],
+  "action_items": [
+    "Optional UX polish: increase profile-details ScrollView paddingBottom above the fixed footer (currently 160) OR reposition the 'Aggiungi voce' link so it never sits under the Salva footer when the list is empty.",
+    "Migrate shadow.* style props to boxShadow in /app/frontend/src/theme.ts to silence RN Web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "wallet.py:32-35: PaymentMethodIn.dict(exclude={'cvv'}) correctly strips CVV before persisting — verified by test.",
+    "wallet.py:46-59: crypto-wallet PUT validates token against ALLOWED_TOKENS and trims empty address — proper 400 errors returned.",
+    "auth.py:58-72: ProfileUpdate correctly persists new optional fields (address, phone, contact_email, preferences, availability, price_list) via dict-exclude-None pattern.",
+    "Dropdown.tsx: modal + testID pattern is clean; option testID format '{testID}-opt-{value}' works well for automation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_wallet_profile.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11)",
+    "frontend": "100% (all requested flows verified: payments CVV, crypto dropdown+add+delete, profile-details fields, availability chips, working hours, price list add/edit/persist)"
+  },
+  "seed_data_creation": "Reused existing seeded accounts (biz-test-token-999, demo-preview-token-123). Test data created was cleaned up (crypto wallets deleted after add; profile fields reset to empty at end of frontend flow).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All Iteration-9 enhancements (crypto dropdowns, CVV field, editable profile-details incl. availability + price_list) are working end-to-end. Only remaining polish item is the add-price-item button overlapping the fixed Salva footer when the price list is empty. shadow* deprecation warnings on RN Web are cosmetic. No blockers for Phase 3.",
+  "rca_of_issue": "N/A — no functional bugs found. Minor UX overlap: profile-details.tsx uses an absolutely positioned footer (position: absolute, bottom: 0) with paddingBottom: 160 on ScrollView, but the 'add-price-item' Pressable renders inline right above the footer, and when the price list is empty it can sit at y≈780 while the footer's Salva button occupies y≈778-832 — Playwright force-click succeeded only after scrollIntoView. Fix: either lift the priceHead above the footer via extra bottom margin, or make the fixed footer background solid + shorten ScrollView height."
+}
