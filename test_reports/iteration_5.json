@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 5 — end-to-end verification of the user complaint 'activated categories in the Admin Panel don't show on Home'. Backend: 14/14 pytests green in /app/backend/tests/test_iter5_home_admin_flow.py against the public preview URL (auth 401/200, categories 9/16/4 with correct shape and no _id leak, admin token gating 401/403 vs 200, admin toggle round-trip pulizie active→false→true reflected on GET /api/categories within one call, admin unknown cat_id→404, wallet get/add(+5.00 persistence)/reject amount<=0→400, mission POST /api/missions with category+service_type+config+date+time+lat+lng+duration_hours matches within 15s via seeded bots, /api/requests returns {payments, missions} object, /api/chat/conversations returns list). Frontend: authenticated Home rendered with the demo Bearer 'demo-preview-token-123' (stored under localStorage key jobby_session_token as JSON.stringify(...) because the storage wrapper JSON.parse's on retrieve). Home shows wallet pill €102.29, 'Treviso · 8 professionisti online', 11 tiles = 9 standard (sarta, pulizie, babysitting, petsitting, driver, tuttofare, hospitality, assistenza, tecnico) + Prossimità(badge 16) + Pagamenti(badge 4). UI round-trip proven: POST /api/admin/categories/pulizie/toggle → Home refreshed → Pulizie tile disappears (10 tiles). Toggle again → Pulizie tile reappears (11 tiles). Wallet pill taps → /wallet screen loads with balance and top-up ledger. Data-integrity finding: on entry, DB had 29/29 active categories but during backend suite a snapshot showed petsitting.active=false unexpectedly (no test toggles petsitting); reactivated via admin API; likely main agent's earlier reactivation script missed it or a race with a background task flipped it. All 29 categories are active at end of run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/requests", "issue": "Returns an object {payments:[], missions:[]} instead of a flat list — inconsistent with other list endpoints (documented in iter 4 but still present)."},
+      {"endpoint": "POST /api/admin/categories/{cat_id}/toggle", "issue": "Endpoint is a pure toggle (no explicit activate/deactivate). Two concurrent admin clicks return the item to its original state silently — consider PATCH with explicit {active: bool} to avoid the exact user-facing bug pattern that motivated this iteration."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "(tabs)/index CustomerHome", "issues": ["Wallet pill and logo overlap the greeting header at 390-width when name is long; padding/spacing OK for 'Franco'"]}
+    ],
+    "react_native_issues": [
+      {"component": "styles.floatWrap in app/(tabs)/index.tsx (line 131)", "issue": "Uses `pointerEvents=\"box-none\"` as a prop — React Native Web warns: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Move to style. Reference: /app/frontend/app/(tabs)/index.tsx:131"},
+      {"component": "shadow.card / shadow.float in src/theme.ts (used across Home tiles and floatBtn)", "issue": "RN Web warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Migrate shadow{Color,Offset,Opacity,Radius} to boxShadow for web parity. Reference: /app/frontend/src/theme.ts"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter5_home_admin_flow.py",
+    "/app/test_reports/pytest/iter5_home_admin.xml"
+  ],
+  "action_items": [
+    "Consider a startup migration that ensures ALL categories from catalog.py are active=true (defensive; the manual DB fix + reactivation of pulizie/petsitting during this run proves the toggle contract is correct but the DB is drifting to inactive somehow — investigate any admin UI or seed script that may flip active flags).",
+    "Migrate deprecated RN Web style props: move `pointerEvents` from prop to style (index.tsx:131) and convert `shadow*` StyleSheet entries to `boxShadow` in /app/frontend/src/theme.ts.",
+    "Change POST /api/admin/categories/{cat_id}/toggle to PATCH /api/admin/categories/{cat_id} with body {active: bool} for idempotency, OR add a POST /api/admin/categories/{cat_id}/activate + /deactivate pair; a double-tap in the admin UI silently reverts the change today."
+  ],
+  "critical_code_review_comments": [
+    "src/api.ts::getToken calls storage.getItem(TOKEN_KEY) but Storage.getItem's signature requires (key, fallback). No fallback passed → TypeScript-lax runtime call; storage returns undefined instead of null. Add explicit `null` fallback: `storage.getItem(TOKEN_KEY, null)`.",
+    "Storage on web JSON.stringify's on set and JSON.parse's on retrieve; documenting this in test_credentials.md would prevent testers from setting raw string in localStorage (as I did on first attempt) and thinking auth is broken.",
+    "AuthContext Index redirect: on very slow first load, Index effect may fire before AuthContext's setUser(me) completes if loading flips to false in a separate microtask — React 18 batching mitigates but hardening with `if (loading || (token && !user)) return` in Index would be safer.",
+    "Admin toggle endpoint is not idempotent (see minor issue above)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter5_home_admin_flow.py (new)",
+    "/app/test_reports/pytest/iter5_home_admin.xml (new)",
+    "/app/test_reports/iteration_5.json (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% for the requested flows (Home render, admin-toggle round-trip on Home, wallet screen navigation)"},
+  "seed_data_creation": "Used existing seed: user_id=user_demopreview01 + user_sessions.session_token=demo-preview-token-123 (Bearer). No additional seed data created; wallet test additive +€5.00 (balance is now 102.29 in demo). During the run I reactivated petsitting (was found active=false) and pulizie (toggled off/on as part of the round-trip test). DB ends with 29/29 categories active.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "BASE_URL from EXPO_PUBLIC_BACKEND_URL (public preview). Auth = Emergent Google OAuth in prod; for testing use the demo Bearer 'demo-preview-token-123' → for BACKEND: header 'Authorization: Bearer ...'. For FRONTEND WEB: localStorage.setItem('jobby_session_token', JSON.stringify('demo-preview-token-123')) — the storage wrapper JSON.parse's on retrieve, so the raw string form fails silently with '[storage] retrieve(parse error)'. To avoid the Index→/onboarding race (first cold nav to '/' before token is primed will redirect the URL), navigate directly to '/(tabs)' after priming storage: `await page.goto(BASE + '/(tabs)')`. Admin: header X-Admin-Token=jobby-admin-7c2f9a. Admin toggle is a pure toggle (not idempotent). GET /api/requests returns {payments, missions} object, not a list. Home component: `app/(tabs)/index.tsx` — testIDs available: wallet-pill, search-input, explore-map-card, category-<cat_id>, category-prossimita, category-pagamenti, request-service-button.",
+  "rca_of_issue": "Original user complaint RCA: 11 of 29 categories had active=false in DB (main agent's finding). GET /api/categories filters by {active:true} → those 11 disappeared from Home. Admin toggle endpoint works correctly (proven: toggle pulizie off → tile disappears from Home on next focus; toggle on → tile returns). No frontend caching issue — useFocusEffect reloads categories every time the Home tab regains focus. Root cause of the DB drift is upstream of the toggle path (main agent reactivated all in bulk). During this iteration I also observed petsitting.active=false unexpectedly on a fresh DB check — reactivated. RECOMMENDATION for main agent: add a startup migration in server.py that on boot upserts every catalog.MANIFESTO entry with {active: True} unless an admin-explicit deactivation flag is set (needs a new field like `admin_deactivated:true` to preserve intentional deactivations), OR guarantee that whatever process is flipping categories to inactive is fixed. The API contract itself is verified correct end-to-end."
+}

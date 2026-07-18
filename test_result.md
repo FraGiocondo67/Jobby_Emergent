@@ -101,3 +101,14 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+## agent_communication (2026-06 fork)
+-agent: "main"
+-message: |
+  User reports: "app is not working; activated categories in in-app Admin Panel but they don't show in user Home."
+  Investigation: Backend fully working (all endpoints 200). Found 11 of 29 categories were DEACTIVATED in DB (toggled off via admin). Reactivated all 29 (active=true). Home shows 9 standard services as tiles + aggregate "Prossimità" and "Pagamenti" tiles (proximity/payment businesses appear inside those lists, not as home tiles).
+  Please TEST (frontend+backend) using demo Bearer token `demo-preview-token-123` (user_id user_demopreview01, role client):
+  1) Authenticated Home renders 9 standard category tiles + Prossimità + Pagamenti tiles, wallet pill shows balance.
+  2) GET /api/categories returns 9 standard, 16 proximity, 4 payment (all active).
+  3) Admin toggle round-trip: POST /api/admin/categories/{cat_id}/toggle with X-Admin-Token `jobby-admin-7c2f9a`, then GET /api/categories reflects change. Re-activate after.
+  4) Wallet screen loads, add funds works. Request/mission creation flow works for a standard category.
+  5) Chat and Richieste tabs load without crash.
