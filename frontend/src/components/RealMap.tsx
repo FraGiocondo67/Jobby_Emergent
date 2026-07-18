@@ -54,7 +54,9 @@ export default function RealMap({ center, markers = [], radiusKm, height = 240, 
   var markers = ${markersJson};
   var group = [[${center.lat}, ${center.lng}]];
   markers.forEach(function(m){
-    var icon = L.divIcon({ className: '', html: '<div class="prov-pin">' + (m.emoji || '📍') + '</div>', iconSize: [34,34], iconAnchor: [17,17] });
+    var col = m.color || '#E07A3F';
+    var html = '<div class="prov-pin" style="border:2.5px solid ' + col + '">' + (m.emoji || '📍') + '</div>';
+    var icon = L.divIcon({ className: '', html: html, iconSize: [36,36], iconAnchor: [18,18] });
     var mk = L.marker([m.lat, m.lng], { icon: icon }).addTo(map);
     if (m.label) { mk.bindPopup(m.label); }
     group.push([m.lat, m.lng]);

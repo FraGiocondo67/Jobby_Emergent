@@ -31,6 +31,7 @@ async def providers_nearby(lat: float, lng: float, category: Optional[str] = Non
             "services": p.get("services", []), "lat": p.get("lat"), "lng": p.get("lng"),
             "role": p.get("role"), "service_mode": p.get("service_mode", "both"),
             "business_name": p.get("business_name", ""),
+            "approval_status": p.get("approval_status", "approved"),
         })
     result.sort(key=lambda x: x["distance_km"])
     return result

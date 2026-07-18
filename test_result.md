@@ -143,3 +143,16 @@
   CREDENTIALS FOR TESTING:
   - Client Bearer: demo-preview-token-123 (user_demopreview01, role client)
   - Business Bearer: biz-test-token-999 (user_2f996c8a010a 'Francesco Franzin', role business, online, offers lavanderia/pulizie/tecnico, service_mode both)
+
+## agent_communication (2026-06 fork — Phase 1 Map/Discovery + Phase 2 Payments relocation)
+-agent: "main"
+-message: |
+  PHASE 1 (Map & discovery):
+  - Explore Map (app/map.tsx) now has Providers/Businesses toggle tabs, shows BOTH provider (blue) and business (purple) pins + your location (green), a legend, and two lists ('Providers online (N)', 'Nearby businesses (M)') each with Stars rating + Trust Score chip. Unapproved providers/businesses show a 'Pending approval' badge.
+  - Proximity category screen (app/businesses/[category].tsx) now shows a map at top with the available businesses + trust score + pending badge in the list.
+  - Backend: /providers/nearby and /businesses now include role + approval_status; new users get approval_status (client=approved; provider/business=pending on role switch unless provider_approved).
+  PHASE 2 (Payments moved to Profile + crypto payout):
+  - New screen app/payments-settings.tsx opened from Profile row 'Payments & Payouts' (testID profile-payments). Client: card method. Provider/Business: bank IBAN + crypto payout wallets (BTC, USDT_TRC20, USDC_ERC20, USDT_ERC20, XRP).
+  - Removed card/bank setup from Wallet screen (wallet now = balance + add funds + transactions only).
+  - Backend: PUT /wallet/crypto-wallet (validated tokens), GET /wallet returns crypto_wallets. Curl-verified.
+  TEST both. Credentials: CLIENT demo-preview-token-123; BUSINESS biz-test-token-999 (Francesco, business, online, offers lavanderia). Storage key jobby_session_token.

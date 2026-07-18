@@ -9,6 +9,7 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Stars } from "@/src/components/UI";
+import RealMap from "@/src/components/RealMap";
 
 const TREVISO = { lat: 45.6669, lng: 12.2433 };
 
@@ -50,6 +51,16 @@ export default function BusinessesScreen() {
         <Text style={styles.title}>{(label as string) || t("proximity")}</Text>
         <Text style={styles.subtitle}>{t("chooseBusiness")}</Text>
 
+        {items.length > 0 ? (
+          <View style={{ marginTop: spacing.lg }}>
+            <RealMap
+              center={{ lat, lng }}
+              markers={items.map((b) => ({ lat: b.lat, lng: b.lng, emoji: "🏪", color: colors.purple, label: `${b.name} · ⭐${b.rating.toFixed(1)}` }))}
+              height={200}
+            />
+          </View>
+        ) : null}
+
         {items.length === 0 && !loading ? (
           <View style={styles.empty} testID="businesses-empty">
             <Text style={{ fontSize: 44 }}>🏪</Text>
@@ -74,7 +85,16 @@ export default function BusinessesScreen() {
                     <Stars rating={b.rating} size={12} />
                     <Text style={styles.rowSub}>{b.rating.toFixed(1)} · {b.distance_km} km</Text>
                   </View>
-                  <Text style={styles.modeTag}>{modeText(b.service_mode)}</Text>
+                  <View style={styles.tagRow}>
+                    <Text style={styles.trust}>🛡️ {t("trustScore")} {Math.round(b.trust_score || 0)}</Text>
+                    <Text style={styles.modeTag}>{modeText(b.service_mode)}</Text>
+                  </View>
+                  {b.approval_status !== "approved" ? (
+                    <View style={styles.pending}>
+                      <Ionicons name="time-outline" size={12} color={colors.warning} />
+                      <Text style={styles.pendingText}>{t("pendingApproval")}</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <Ionicons name="arrow-forward" size={22} color={colors.purple} />
               </Pressable>
@@ -102,7 +122,11 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.onSurface },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
   rowSub: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted },
-  modeTag: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.purple, marginTop: 2 },
+  tagRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: 3, flexWrap: "wrap" },
+  trust: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.brand },
+  modeTag: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.purple },
+  pending: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4, alignSelf: "flex-start", backgroundColor: "#FEF3E2", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
+  pendingText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.warning },
   empty: { alignItems: "center", gap: spacing.sm, paddingVertical: spacing["2xl"] },
   emptyTitle: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.sm },
   emptySub: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted, textAlign: "center", paddingHorizontal: spacing.lg },

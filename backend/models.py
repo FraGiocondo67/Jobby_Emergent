@@ -75,6 +75,11 @@ class BankAccountIn(BaseModel):
     iban: str
 
 
+class CryptoWalletIn(BaseModel):
+    token: str      # BTC | USDT_TRC20 | USDC_ERC20 | USDT_ERC20 | XRP
+    address: str
+
+
 class DisputeIn(BaseModel):
     reason: str
 

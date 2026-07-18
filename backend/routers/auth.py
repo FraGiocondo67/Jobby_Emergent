@@ -33,6 +33,7 @@ async def create_session(body: SessionIn):
             "wallet_balance": 92.29, "payment_method": None, "bank_account": None,
             "trust_score": 0.0, "trust_subscores": {}, "client_trust_score": 0.0, "client_trust_subscores": {},
             "is_admin": False, "lat": TREVISO["lat"], "lng": TREVISO["lng"], "created_at": now_utc().isoformat(),
+            "approval_status": "approved", "provider_approved": False,
         })
     session_token = data["session_token"]
     await db.user_sessions.delete_many({"user_id": user_id})
@@ -57,6 +58,13 @@ async def logout(authorization: Optional[str] = Header(None)):
 @router.put("/profile")
 async def update_profile(body: ProfileUpdate, user=Depends(get_current_user)):
     update = {k: v for k, v in body.dict().items() if v is not None}
+    if "role" in update:
+        new_role = update["role"]
+        if new_role == "client":
+            update["approval_status"] = "approved"
+        else:
+            # Providers/Businesses require admin approval (unless previously approved).
+            update["approval_status"] = "approved" if user.get("provider_approved") else "pending"
     if update:
         await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
     if "role" in update:

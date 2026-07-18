@@ -134,6 +134,16 @@ export default function ProfileTab() {
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Pressable>
 
+        {/* Payments & payout settings */}
+        <Pressable testID="profile-payments" style={[styles.listRow, shadow.card]} onPress={() => router.push("/payments-settings")}>
+          <View style={[styles.rowIcon, { backgroundColor: colors.blueBg }]}><Ionicons name="card" size={22} color={colors.blue} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>{t("paymentsSettings")}</Text>
+            <Text style={styles.rowSub}>{isProvider ? t("payoutSub") : t("paymentSub")}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </Pressable>
+
         {/* Language */}
         <View style={styles.section}>
           <Text style={styles.settingLabel}>{t("language")}</Text>

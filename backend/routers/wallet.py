@@ -2,16 +2,19 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from core import db, now_utc, new_id
 from deps import get_current_user
-from models import WalletIn, PaymentIn, PaymentMethodIn, BankAccountIn
+from models import WalletIn, PaymentIn, PaymentMethodIn, BankAccountIn, CryptoWalletIn
 
 router = APIRouter()
+
+ALLOWED_TOKENS = {"BTC", "USDT_TRC20", "USDC_ERC20", "USDT_ERC20", "XRP"}
 
 
 @router.get("/wallet")
 async def get_wallet(user=Depends(get_current_user)):
     txs = await db.transactions.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {"balance": round(user.get("wallet_balance", 0), 2), "transactions": txs,
-            "payment_method": user.get("payment_method"), "bank_account": user.get("bank_account"), "mock": True}
+            "payment_method": user.get("payment_method"), "bank_account": user.get("bank_account"),
+            "crypto_wallets": user.get("crypto_wallets", []), "mock": True}
 
 
 @router.post("/wallet/add")
@@ -38,6 +41,17 @@ async def set_bank_account(body: BankAccountIn, user=Depends(get_current_user)):
     ba = {"account_holder": body.account_holder, "iban": masked}
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"bank_account": ba}})
     return {"bank_account": ba}
+
+
+@router.put("/wallet/crypto-wallet")
+async def set_crypto_wallet(body: CryptoWalletIn, user=Depends(get_current_user)):
+    if body.token not in ALLOWED_TOKENS:
+        raise HTTPException(status_code=400, detail="invalid_token")
+    wallets = [w for w in user.get("crypto_wallets", []) if w.get("token") != body.token]
+    if body.address.strip():
+        wallets.append({"token": body.token, "address": body.address.strip()})
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"crypto_wallets": wallets}})
+    return {"crypto_wallets": wallets}
 
 
 @router.post("/payments")

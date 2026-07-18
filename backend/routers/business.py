@@ -24,6 +24,7 @@ async def list_businesses(category: str, lat: float = TREVISO["lat"], lng: float
             "verified": b.get("verified", False), "trust_score": b.get("trust_score", 0),
             "service_mode": b.get("service_mode", "both"), "distance_km": dist,
             "lat": b.get("lat"), "lng": b.get("lng"),
+            "approval_status": b.get("approval_status", "approved"),
         })
     result.sort(key=lambda x: x["distance_km"])
     return result

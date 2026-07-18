@@ -1,34 +1,24 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 
 export default function Wallet() {
-  const { user } = useAuth();
   const { t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [balance, setBalance] = useState(0);
   const [txs, setTxs] = useState<any[]>([]);
-  const [pm, setPm] = useState<any>(null);
-  const [bank, setBank] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [cardOpen, setCardOpen] = useState(false);
-  const [bankOpen, setBankOpen] = useState(false);
-  const [card, setCard] = useState({ card_holder: "", card_last4: "", expiry: "" });
-  const [iban, setIban] = useState({ account_holder: "", iban: "" });
-
-  const isProvider = user?.role === "provider" || user?.role === "business";
 
   const load = useCallback(async () => {
-    try { const w = await api.wallet(); setBalance(w.balance); setTxs(w.transactions); setPm(w.payment_method); setBank(w.bank_account); } catch {}
+    try { const w = await api.wallet(); setBalance(w.balance); setTxs(w.transactions); } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -40,8 +30,6 @@ export default function Wallet() {
     await load();
     setBusy(false);
   };
-  const saveCard = async () => { const r = await api.setPaymentMethod({ ...card, card_brand: "visa", card_last4: card.card_last4.slice(-4) }); setPm(r.payment_method); setCardOpen(false); };
-  const saveBank = async () => { const r = await api.setBankAccount(iban); setBank(r.bank_account); setBankOpen(false); };
 
   return (
     <View style={styles.container}>
@@ -66,39 +54,6 @@ export default function Wallet() {
             </Pressable>
           ))}
         </View>
-
-        <Text style={styles.section}>{t("paymentMethod")}</Text>
-        <Pressable style={[styles.setupRow, shadow.card]} testID="payment-method-row" onPress={() => setCardOpen((v) => !v)}>
-          <Ionicons name="card" size={22} color={colors.blue} />
-          <Text style={styles.setupText}>{pm ? `${(pm.card_brand || "").toUpperCase()} •••• ${pm.card_last4}` : t("notSet")}</Text>
-          <Text style={styles.setupAction}>{t("addCard")}</Text>
-        </Pressable>
-        {cardOpen ? (
-          <View style={styles.form}>
-            <TextInput testID="card-holder" style={styles.input} placeholder="Card holder" placeholderTextColor={colors.muted} value={card.card_holder} onChangeText={(v) => setCard({ ...card, card_holder: v })} />
-            <TextInput testID="card-number" style={styles.input} placeholder="Card number" placeholderTextColor={colors.muted} keyboardType="number-pad" value={card.card_last4} onChangeText={(v) => setCard({ ...card, card_last4: v })} />
-            <TextInput testID="card-expiry" style={styles.input} placeholder="MM/YY" placeholderTextColor={colors.muted} value={card.expiry} onChangeText={(v) => setCard({ ...card, expiry: v })} />
-            <Pressable testID="save-card" style={styles.saveBtn} onPress={saveCard}><Text style={styles.saveText}>{t("save")}</Text></Pressable>
-          </View>
-        ) : null}
-
-        {isProvider ? (
-          <>
-            <Text style={styles.section}>{t("bankAccount")}</Text>
-            <Pressable style={[styles.setupRow, shadow.card]} testID="bank-row" onPress={() => setBankOpen((v) => !v)}>
-              <Ionicons name="business" size={22} color={colors.green} />
-              <Text style={styles.setupText}>{bank ? bank.iban : t("notSet")}</Text>
-              <Text style={styles.setupAction}>{t("addBank")}</Text>
-            </Pressable>
-            {bankOpen ? (
-              <View style={styles.form}>
-                <TextInput testID="bank-holder" style={styles.input} placeholder="Account holder" placeholderTextColor={colors.muted} value={iban.account_holder} onChangeText={(v) => setIban({ ...iban, account_holder: v })} />
-                <TextInput testID="bank-iban" style={styles.input} placeholder="IBAN" placeholderTextColor={colors.muted} autoCapitalize="characters" value={iban.iban} onChangeText={(v) => setIban({ ...iban, iban: v })} />
-                <Pressable testID="save-bank" style={styles.saveBtn} onPress={saveBank}><Text style={styles.saveText}>{t("save")}</Text></Pressable>
-              </View>
-            ) : null}
-          </>
-        ) : null}
 
         <Text style={styles.section}>{t("transactions")}</Text>
         {txs.length === 0 ? (

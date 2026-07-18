@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 8 - Phase 1 (Explore Map + proximity category with providers AND businesses, trust score, pending badge) and Phase 2 (payments moved to Profile, crypto payouts, Wallet cleaned) verified end-to-end. Backend: 12/12 pytests green in /app/backend/tests/test_iter8_map_payments.py. GET /api/providers/nearby now returns providers AND businesses (business role present, trust_score & approval_status fields), requires auth. GET /api/businesses?category=lavanderia returns Francesco Franzin with trust_score + approval_status. PUT /api/wallet/crypto-wallet accepts all 5 valid tokens (BTC, USDT_TRC20, USDC_ERC20, USDT_ERC20, XRP) and rejects invalid with 400; empty address removes the entry; GET /api/wallet returns crypto_wallets[]. PUT /api/profile with role provider/business sets approval_status=pending when provider_approved=false, and back to client => approved. Frontend (mobile 390x844, Bearer via localStorage['jobby_session_token'] JSON-encoded): Explore Map (/map) renders RealMap iframe + tab-providers + tab-businesses (togglable), sheet shows map-business-<id> card for Francesco with Stars + Trust Score 65 chip; no pending badges shown because DB users are approval_status=approved (correct). Proximity category (/businesses/lavanderia) renders a RealMap at top (200px height) and each business-<id> row shows Stars + Trust Score chip + service_mode tag. Profile has profile-payments row that opens /payments-settings. Client mode of payments-settings shows only payment-method-row (bank-row/crypto rows correctly hidden). Business mode (biz-test-token-999) shows payment-method-row + bank-row + all 5 crypto rows (crypto-BTC, crypto-USDT_TRC20, crypto-USDC_ERC20, crypto-USDT_ERC20, crypto-XRP); tapping crypto-BTC opens crypto-addr-BTC input and save-crypto-BTC persists the address (verified — address 'TEST_UI_BTC_ADDR_xyz' displayed after save). Wallet screen no longer shows any card/bank/crypto setup — only balance, add-10/25/50, transactions list. RN Web carry-over warnings (shadow.*, pointerEvents) persist from prior iterations.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/providers/nearby", "issue": "Never filters out approval_status=rejected — a rejected business/provider will still appear in the map with a pending/other badge. Consider excluding rejected explicitly (approval_status: {$ne: 'rejected'})."},
+      {"endpoint": "GET /api/businesses", "issue": "Same as above — no exclusion of rejected businesses. Carry-over minor from iter7 also noted (no services filter validation on create_business_request)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "app/map.tsx", "issues": ["Filter tabs (tab-providers/tab-businesses) toggle visibility but there is no visual indication that they are 'inactive' filters (they just lose their coloured background). Add strikethrough or opacity 0.5 for clearer off state."]},
+      {"screen": "app/businesses/[category].tsx", "issues": ["Trust Score chip color is brand red — reads correctly, but when the pending badge is present (warning orange) plus the mode tag (purple), the tag row becomes visually noisy. Consider a subtle divider or capping to two chips per row."]}
+    ],
+    "react_native_issues": [
+      {"component": "shadow.card / shadow.float (src/theme)", "issue": "RN Web console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Carry-over from iter 5/6/7. Reference: /app/frontend/src/theme.ts"},
+      {"component": "styles.floatWrap in app/(tabs)/index.tsx (line ~133)", "issue": "RN Web warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Carry-over. Reference: /app/frontend/app/(tabs)/index.tsx:133"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_map_payments.py",
+    "/app/test_reports/pytest/iter8_map_payments.xml"
+  ],
+  "action_items": [
+    "(minor, backend) Exclude approval_status='rejected' from GET /api/providers/nearby and GET /api/businesses so rejected accounts do not pollute the map / proximity list.",
+    "(design) Add clearer off-state styling to Explore Map tab-providers / tab-businesses filter buttons (opacity 0.5 or dashed border) so users see they are excluded.",
+    "Carry-over: migrate shadow.* StyleSheet entries to boxShadow and pointerEvents prop to style.pointerEvents for RN Web parity (deprecation warnings still flooding console)."
+  ],
+  "critical_code_review_comments": [
+    "routers/wallet.py:47 — set_crypto_wallet writes the crypto_wallets array with no upper bound or address format validation. Consider validating address length per token (e.g. BTC ~26-35 chars, ETH ERC20 0x + 40 hex, XRP r + 24-34) at least as a soft guard.",
+    "routers/business.py:12 — list_businesses always requires online:true. If a user filters by a category where no business is currently online, the client sees an empty list with no cue that offline businesses exist. Return offline businesses with an `online:false` flag (or count) to inform the UI.",
+    "app/map.tsx:50-51 — providers = all.filter(role==='provider'); businesses = all.filter(role==='business'). The screen depends on backend always returning `role`. Field is now present in providers/nearby response (verified), but if the API is ever queried without auth or fails, the map silently shows the empty state without an error message. Add an error banner in the empty-state block.",
+    "app/payments-settings.tsx — walletFor is O(N) per token per render. Trivial for 5 tokens but worth noting. Also `card.card_last4.slice(-4)` silently truncates rather than validating length.",
+    "app/wallet.tsx still has leftover styles (setupRow, setupText, form, input, saveBtn, saveText) in the StyleSheet even though card/bank UI was removed. Dead code — safe to delete."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8_map_payments.py (new)",
+    "/app/test_reports/pytest/iter8_map_payments.xml (new)",
+    "/app/test_reports/iteration_8.json (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% for the requested Phase 1 (map tabs, trust chip, RealMap iframe, proximity category map + trust) and Phase 2 (profile-payments row → payments-settings, client vs business modes, all 5 crypto rows saveable, wallet cleaned) flows"},
+  "seed_data_creation": "None. Used pre-existing user_demopreview01 (client) and user_2f996c8a010a (Francesco Franzin, business). Tests wrote TEST_addr_<TOKEN> crypto wallet entries and one 'TEST_UI_BTC_ADDR_xyz' via UI onto Francesco's user doc — safe demo data. Role of demo client was toggled to provider/business/client during the profile approval test and restored at fixture teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend Bearer must be JSON-encoded when injected via localStorage: localStorage.setItem('jobby_session_token', JSON.stringify('demo-preview-token-123')). Only Francesco Franzin (user_2f996c8a010a, biz-test-token-999) is currently online with role=business and services including lavanderia — he now appears both in /api/providers/nearby AND /api/businesses. Map screen: /map (RealMap renders as <iframe> on web). Proximity category screen: /businesses/<category>. Profile row testID: profile-payments → routes to /payments-settings. Wallet no longer contains card/bank/crypto UI. To see crypto payout rows use the BUSINESS bearer; as CLIENT only payment-method-row is shown. Crypto row testIDs: crypto-BTC, crypto-USDT_TRC20, crypto-USDC_ERC20, crypto-USDT_ERC20, crypto-XRP; per-row inputs crypto-addr-<TOKEN>; save button save-crypto-<TOKEN>. To test the 'pending' badge visually you must first set approval_status='pending' on Francesco (or on a switched client that has provider_approved=false — PUT /api/profile role=provider does exactly that).",
+  "rca_of_issue": "N/A - feature verification pass, all requested Phase 1 and Phase 2 behaviours implemented and green."
+}
