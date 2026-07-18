@@ -382,6 +382,8 @@ async def review_booking(booking_id: str, body: ReviewIn, user=Depends(get_curre
     b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
     if not b:
         raise HTTPException(status_code=404, detail="Not found")
+    if b.get("reviewed"):
+        return {"ok": True}
     await db.reviews.insert_one({
         "review_id": new_id("rev"),
         "booking_id": booking_id,
