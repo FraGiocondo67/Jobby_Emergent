@@ -568,12 +568,22 @@ async def get_booking(booking_id: str, user=Depends(get_current_user)):
 
 @api_router.post("/bookings/{booking_id}/start")
 async def start_booking(booking_id: str, user=Depends(get_current_user)):
+    b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Not found")
+    if user["user_id"] not in (b["provider_id"], b["customer_id"]):
+        raise HTTPException(status_code=403, detail="forbidden")
     await db.bookings.update_one({"booking_id": booking_id}, {"$set": {"status": "in_progress", "check_in_on_time": True}})
     return await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
 
 
 @api_router.post("/bookings/{booking_id}/complete")
 async def complete_booking(booking_id: str, user=Depends(get_current_user)):
+    b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Not found")
+    if user["user_id"] not in (b["provider_id"], b["customer_id"]):
+        raise HTTPException(status_code=403, detail="forbidden")
     await db.bookings.update_one({"booking_id": booking_id}, {"$set": {"status": "completed"}})
     b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
     await recalc_provider_trust(b["provider_id"])
@@ -585,6 +595,8 @@ async def review_booking(booking_id: str, body: ReviewIn, user=Depends(get_curre
     b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
     if not b:
         raise HTTPException(status_code=404, detail="Not found")
+    if user["user_id"] != b["customer_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
     if b.get("reviewed"):
         return {"ok": True}
     await db.reviews.insert_one({"review_id": new_id("rev"), "booking_id": booking_id, "provider_id": b["provider_id"],
@@ -605,15 +617,15 @@ async def rate_client(booking_id: str, body: ClientRatingIn, user=Depends(get_cu
     b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
     if not b:
         raise HTTPException(status_code=404, detail="Not found")
+    if user["user_id"] != b["provider_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
     if b.get("client_rated"):
         return {"ok": True}
     await db.bookings.update_one({"booking_id": booking_id}, {"$set": {"client_rated": True}})
-    score = await recalc_client_trust(b["customer_id"])
-    await log_trust_event("client_trust_events", b["customer_id"], "client_rated", score,
+    await log_trust_event("client_trust_events", b["customer_id"], "client_rated", 0,
                           {"rating": body.rating, "brief_accuracy": body.brief_accuracy, "tip": body.tip, "booking_id": booking_id})
     score = await recalc_client_trust(b["customer_id"])
-    await db.users.update_one({"user_id": b["customer_id"]}, {"$set": {"client_trust_score": score}})
-    return {"ok": True}
+    return {"ok": True, "client_trust_score": score}
 
 
 @api_router.post("/bookings/{booking_id}/dispute")
@@ -621,6 +633,8 @@ async def dispute_booking(booking_id: str, body: DisputeIn, user=Depends(get_cur
     b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
     if not b:
         raise HTTPException(status_code=404, detail="Not found")
+    if user["user_id"] not in (b["provider_id"], b["customer_id"]):
+        raise HTTPException(status_code=403, detail="forbidden")
     against = "provider" if user["user_id"] == b["customer_id"] else "client"
     await db.disputes.insert_one({"dispute_id": new_id("dsp"), "booking_id": booking_id,
                                   "provider_id": b["provider_id"], "customer_id": b["customer_id"],

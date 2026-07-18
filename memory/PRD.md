@@ -42,6 +42,16 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Tabs: Home · Richieste · Chat · Profile.
 - Verified via testing agent: 21/21 new backend flows passing; Home & Pagamenti screens visually confirmed.
 
+## Implemented (2026-07-18 — Sprint 3, per "Jobby new.docx")
+- **Server-managed catalog in DB**: 9 standard services + 16 proximity businesses + 4 payment services; **admin can activate/deactivate** (X-Admin-Token gated) + admin trust recalc.
+- **3 roles on one account** (client · provider · business), switchable in Profile; providers/business pick candidate activities (/activities).
+- **Simulated KYC verification** (Sumsub-ready mock): /verification screen (document + selfie → verified), feeds Trust KYC subscore. MOCKED.
+- **Request statuses**: pending → matched → confirmed → in_progress → completed (+ disputed), colored pills; provider "Start service" transition.
+- **Wallet**: balance, top-up, **payment method (card)** + **bank account (IBAN)** setup — all SIMULATED.
+- **Trust Score engine**: weighted provider (8 factors) + client (7 factors) scores in Python/Mongo, trust_events + client_trust_events logs, auto-recalc on review / rate-client / dispute; shown in Profile.
+- Ownership guards added on booking/mission lifecycle endpoints.
+- Verified via testing agent: 25/25 Sprint-3 backend flows passing. Profile screen visually confirmed.
+
 ## Backlog
 ### P1
 - Provider ownership/authorization checks on mission/booking mutation endpoints.
