@@ -12,10 +12,13 @@ router = APIRouter()
 
 @router.get("/providers/nearby")
 async def providers_nearby(lat: float, lng: float, category: Optional[str] = None, user=Depends(get_current_user)):
-    providers = await db.users.find({"role": {"$in": ["provider", "business"]}, "online": True}, {"_id": 0}).to_list(300)
+    # Real registered providers/businesses only (exclude demo bots).
+    providers = await db.users.find(
+        {"role": {"$in": ["provider", "business"]}, "online": True, "is_bot": {"$ne": True}},
+        {"_id": 0}).to_list(300)
     result = []
     for p in providers:
-        if category and not p.get("is_bot") and category not in p.get("services", []):
+        if category and category not in p.get("services", []):
             continue
         dist = haversine(lat, lng, p.get("lat", TREVISO["lat"]), p.get("lng", TREVISO["lng"]))
         if dist > p.get("radius_km", 10):
@@ -26,6 +29,8 @@ async def providers_nearby(lat: float, lng: float, category: Optional[str] = Non
             "hourly_rate": p.get("hourly_rate", 13), "verified": p.get("verified", False),
             "trust_score": p.get("trust_score", 0), "bio": p.get("bio", ""), "distance_km": dist,
             "services": p.get("services", []), "lat": p.get("lat"), "lng": p.get("lng"),
+            "role": p.get("role"), "service_mode": p.get("service_mode", "both"),
+            "business_name": p.get("business_name", ""),
         })
     result.sort(key=lambda x: x["distance_km"])
     return result
@@ -57,6 +62,9 @@ async def create_mission(body: MissionIn, user=Depends(get_current_user)):
     invited = []
     for p in providers:
         if not p.get("is_bot") and body.category not in p.get("services", []):
+            continue
+        # In-shop-only businesses don't travel to the client → not invited to come-to-me missions.
+        if p.get("role") == "business" and p.get("service_mode") == "in_shop":
             continue
         if haversine(body.lat, body.lng, p.get("lat", TREVISO["lat"]), p.get("lng", TREVISO["lng"])) <= p.get("radius_km", 10):
             invited.append(p)

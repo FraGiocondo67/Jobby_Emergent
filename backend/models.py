@@ -14,6 +14,7 @@ class ProfileUpdate(BaseModel):
     hourly_rate: Optional[float] = None
     radius_km: Optional[float] = None
     services: Optional[List[str]] = None  # candidate activities
+    service_mode: Optional[str] = None    # outdoor | in_shop | both (business/provider)
     online: Optional[bool] = None
     lat: Optional[float] = None
     lng: Optional[float] = None

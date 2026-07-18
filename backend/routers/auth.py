@@ -28,6 +28,7 @@ async def create_session(body: SessionIn):
             "user_id": user_id, "email": email, "name": data.get("name", email.split("@")[0]),
             "picture": data.get("picture", ""), "role": "client", "language": "it", "bio": "",
             "business_name": "", "hourly_rate": 13.0, "radius_km": 10.0, "services": [], "online": False,
+            "service_mode": "both",
             "rating": 0.0, "reviews_count": 0, "verified": False, "verification_status": "unverified",
             "wallet_balance": 92.29, "payment_method": None, "bank_account": None,
             "trust_score": 0.0, "trust_subscores": {}, "client_trust_score": 0.0, "client_trust_subscores": {},

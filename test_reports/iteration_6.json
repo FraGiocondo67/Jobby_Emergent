@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 6 — verification of the map/radius/service-mode feature. Backend: 10/10 pytests green (+1 skipped, no data path) in /app/backend/tests/test_iter6_map_radius_mode.py. GET /api/providers/nearby returns ONLY real registered users (no is_bot, verified by absence of 'bot' in user_id) with new fields role/service_mode/business_name; results sorted by distance; 401 without auth. PUT /api/profile accepts and persists radius_km and service_mode in {outdoor,in_shop,both} (parametrized) and both together — verified via /auth/me round-trip. POST /api/missions for category=pulizie still matches (bots auto-accept within ~4s). In-shop exclusion test skipped because there is currently no real business user with service_mode=in_shop in the preview DB; code path in missions.create_mission is present and correct (line 67). Frontend (mobile viewport 390x844, demo Bearer): /map screen renders the real-map container with a native <iframe> using Leaflet + OSM tiles; provider list under it shows 1 real provider 'Francesco Franzin' (bots excluded); empty state correctly hidden. /activities as provider shows radius-slider only; as business shows all 3 mode chips (mode-outdoor / mode-in_shop / mode-both) plus radius-slider; selecting in_shop hides radius (in-shop-only businesses don't travel), selecting both restores it; Save persists {role:'business', service_mode:'both', radius_km:10} via PUT /api/profile — confirmed via /auth/me. Deprecation warnings from iter 5 still present (RN Web shadow*/pointerEvents) — no new RN issues introduced by this iteration.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/providers/nearby", "issue": "Each provider is returned even if lat/lng is missing (uses TREVISO fallback for distance calc). Doesn't cause failure but a real user without geo would appear falsely at Treviso center. Consider filtering out users with null lat/lng or requiring geo before role=provider/business."},
+      {"endpoint": "POST /api/missions", "issue": "In-shop exclusion logic only checks role=='business' && service_mode=='in_shop'. A provider (freelancer) with service_mode='in_shop' is NOT excluded even though semantically they also wouldn't travel. Consider making the exclusion role-agnostic: `if p.get('service_mode') == 'in_shop': continue`."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "app/activities.tsx", "issues": ["When mode='in_shop' the whole radius block disappears — good UX — but the transition is abrupt (no fade). Optional polish."]}
+    ],
+    "react_native_issues": [
+      {"component": "styles.floatWrap in app/(tabs)/index.tsx (line 131)", "issue": "Uses `pointerEvents=\"box-none\"` as a prop — RN Web warns: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Pre-existing from iter 5, still not fixed. Reference: /app/frontend/app/(tabs)/index.tsx:131"},
+      {"component": "shadow.card / shadow.float in src/theme.ts", "issue": "RN Web warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Pre-existing from iter 5. Reference: /app/frontend/src/theme.ts"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_map_radius_mode.py",
+    "/app/test_reports/pytest/iter6_map_radius_mode.xml"
+  ],
+  "action_items": [
+    "(minor) Extend in_shop exclusion in /app/backend/routers/missions.py:67 to also cover role=='provider' && service_mode=='in_shop' (currently only businesses are excluded).",
+    "(minor) In /app/backend/routers/missions.py:23-24, consider skipping providers with null lat/lng in /providers/nearby instead of substituting TREVISO defaults, to avoid ghost pins at the city center.",
+    "Carry-over from iter 5: migrate `pointerEvents` prop → style, and `shadow.*` StyleSheet entries → `boxShadow` for RN Web parity."
+  ],
+  "critical_code_review_comments": [
+    "RealMap.tsx web branch uses React.createElement('iframe', {srcDoc: html, scrolling: 'no'}) — `scrolling` is a deprecated HTML attribute (React 18 warns). Use CSS `overflow: hidden` in the style instead.",
+    "RealMap.tsx re-renders the whole HTML string on every markers array change, causing the leaflet map to re-init (visible flicker on frequent updates). For provider dashboard's 4s polling loop (app/(tabs)/index.tsx:153), consider passing a stable ref or diff-updating markers.",
+    "activities.tsx: `useState(user?.services || [])` captures initial user snapshot; if AuthContext refreshes user later the local `selected` state does not follow. Not caught in this test because navigating fresh to /activities remounts, but adding a useEffect to sync when `user?.services` changes would be defensive.",
+    "activities.tsx save() has no try/catch — a failing PUT /profile will hang the loading spinner and never reset. Wrap in try/finally."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter6_map_radius_mode.py (new)",
+    "/app/test_reports/pytest/iter6_map_radius_mode.xml (new)",
+    "/app/test_reports/iteration_6.json (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10, 1 skipped by design)", "frontend": "100% for the requested flows (map iframe render, provider list, empty-state hidden, radius slider, mode chips, save persistence)"},
+  "seed_data_creation": "None. Used existing demo user user_demopreview01 (Bearer demo-preview-token-123). Test flipped its role provider↔business and its radius/service_mode during runs; ORIGINAL VALUES RESTORED at end of frontend run (role=client, radius_km=25, service_mode=outdoor as captured pre-run). Backend suite also restores original radius/service_mode after every mutation.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Only one real (non-bot) provider is currently registered in the preview DB: 'Francesco Franzin' (user_2f996c8a010a, role=provider, service_mode=both, online=true). To exercise the in_shop-business exclusion path in POST /api/missions, a seed of at least one business user with service_mode='in_shop' + non-empty services is needed. The map iframe on web has data-testid='real-map' on the outer View, and a child <iframe srcDoc=...> — use `page.query_selector('[data-testid=\"real-map\"] iframe')`. Provider list cards use testID `map-provider-<user_id>`. Empty-state testID: `map-empty`. Activities screen testIDs: radius-slider, mode-outdoor, mode-in_shop, mode-both, save-activities-button, activity-<cat_id>, activities-back. Navigating directly to /activities logs a benign 'GO_BACK not handled' when Save presses router.back() with empty history — enter via Profile→activities-row for a natural back stack.",
+  "rca_of_issue": "N/A — this iteration is feature-verification, not bug RCA. All requested feature contracts pass."
+}

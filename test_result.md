@@ -112,3 +112,20 @@
   3) Admin toggle round-trip: POST /api/admin/categories/{cat_id}/toggle with X-Admin-Token `jobby-admin-7c2f9a`, then GET /api/categories reflects change. Re-activate after.
   4) Wallet screen loads, add funds works. Request/mission creation flow works for a standard category.
   5) Chat and Richieste tabs load without crash.
+
+## agent_communication (2026-06 fork — Real Map + radius + service_mode)
+-agent: "main"
+-message: |
+  New features implemented:
+  1) REAL interactive map (Leaflet + OpenStreetMap) via new component src/components/RealMap.tsx. Uses iframe on web (react-native-webview has no web build) and WebView on native. Used in Explore Map (app/map.tsx) and Provider Home (app/(tabs)/index.tsx). Verified rendering on web preview (Treviso streets + markers).
+  2) providers/nearby now returns ONLY real registered providers (is_bot excluded) + includes role/service_mode/business_name. Confirmed real provider 'Francesco Franzin' shows; bots excluded.
+  3) Service radius slider (1-50 km) in app/activities.tsx for providers & businesses -> saves radius_km.
+  4) Business service_mode selector (outdoor | in_shop | both) in activities.tsx -> saves service_mode. In-shop-only businesses are NOT invited to come-to-me missions (missions.py create_mission filter). Bots still used for mission auto-accept demo.
+  Please TEST both:
+  Backend (Bearer demo-preview-token-123):
+  - GET /api/providers/nearby?lat=45.6669&lng=12.2433 excludes bots, returns real providers with service_mode field
+  - PUT /api/profile accepts {radius_km, service_mode}
+  - POST /api/missions still matches (bots auto-accept) for a standard category
+  Frontend (inject demo token, storage key jobby_session_token):
+  - Explore Map screen shows a real map (iframe/leaflet) + provider list; empty state text if none
+  - Profile -> switch to Provider -> Activities shows radius slider; switch to Business -> Activities shows service_mode selector + radius

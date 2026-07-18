@@ -12,7 +12,7 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
-import MapCanvas from "@/src/components/MapCanvas";
+import RealMap from "@/src/components/RealMap";
 
 export default function HomeTab() {
   const { user } = useAuth();
@@ -163,7 +163,7 @@ function ProviderHome() {
     load();
   };
 
-  const pins = incoming.map((m) => ({ lat: m.lat, lng: m.lng, highlight: true }));
+  const pins = incoming.map((m) => ({ lat: m.lat, lng: m.lng, emoji: "📍", label: `${m.category} · ${m.address}` }));
 
   return (
     <View style={styles.container}>
@@ -178,7 +178,7 @@ function ProviderHome() {
         </View>
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 100 }} showsVerticalScrollIndicator={false}>
-        <MapCanvas center={{ lat: user?.lat || 45.6669, lng: user?.lng || 12.2433 }} pins={pins} height={200} />
+        <RealMap center={{ lat: user?.lat || 45.6669, lng: user?.lng || 12.2433 }} markers={pins} radiusKm={user?.radius_km || 10} height={200} />
         <Text style={styles.sectionTitle}>{t("incomingMissions")}</Text>
         {incoming.length === 0 ? (
           <View style={styles.empty}><Text style={{ fontSize: 40 }}>☕</Text><Text style={styles.emptyText}>{t("noMissions")}</Text></View>
