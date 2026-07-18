@@ -24,8 +24,8 @@ export function Button({
   style?: ViewStyle;
 }) {
   const bg =
-    variant === "primary" ? colors.brand : variant === "secondary" ? colors.surfaceSecondary : "transparent";
-  const fg = variant === "primary" ? colors.onBrandPrimary : colors.onSurface;
+    variant === "primary" ? colors.primary : variant === "secondary" ? colors.surfaceSecondary : "transparent";
+  const fg = variant === "primary" ? colors.onPrimary : colors.onSurface;
   return (
     <Pressable
       testID={testID}

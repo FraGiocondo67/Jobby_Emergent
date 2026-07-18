@@ -56,4 +56,25 @@ export const api = {
   reviewBooking: (id: string, rating: number, comment: string) =>
     request(`/bookings/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
   earnings: () => request("/earnings"),
+
+  // categories & discovery
+  categories: () => request("/categories"),
+  getCategory: (id: string) => request(`/categories/${id}`),
+
+  // wallet
+  wallet: () => request("/wallet"),
+  addFunds: (amount: number) => request("/wallet/add", { method: "POST", body: JSON.stringify({ amount }) }),
+
+  // payments
+  pay: (data: { service_id: string; label: string; amount: number; answers: any }) =>
+    request("/payments", { method: "POST", body: JSON.stringify(data) }),
+
+  // requests (Richieste)
+  requests: () => request("/requests"),
+
+  // chat
+  conversations: () => request("/chat/conversations"),
+  messages: (id: string) => request(`/chat/${id}`),
+  sendMessage: (id: string, text: string) =>
+    request(`/chat/${id}`, { method: "POST", body: JSON.stringify({ text }) }),
 };

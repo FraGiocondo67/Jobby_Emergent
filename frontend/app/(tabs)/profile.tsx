@@ -76,6 +76,15 @@ export default function ProfileTab() {
           <Ionicons name="swap-horizontal" size={22} color={colors.onBrandTertiary} />
         </Pressable>
 
+        <Pressable testID="profile-wallet" style={styles.walletRow} onPress={() => router.push("/wallet")}>
+          <View style={styles.walletIcon}><Ionicons name="wallet" size={22} color={colors.green} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.settingLabel}>{t("wallet")}</Text>
+            <Text style={styles.walletBalance}>€{(user?.wallet_balance ?? 0).toFixed(2)}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </Pressable>
+
         <View style={styles.section}>
           <Text style={styles.settingLabel}>{t("language")}</Text>
           <View style={styles.langRow}>
@@ -118,6 +127,9 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.onBrandTertiary },
   switchAction: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onBrandTertiary, marginTop: 1 },
   section: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  walletRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
+  walletIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.greenBg, alignItems: "center", justifyContent: "center" },
+  walletBalance: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.green, marginTop: 1 },
   settingLabel: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface },
   langRow: { flexDirection: "row", gap: spacing.sm },
   langChip: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary },

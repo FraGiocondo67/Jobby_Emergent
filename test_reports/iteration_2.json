@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 2 backend testing of JOBBY new endpoints (categories, wallet, payments, requests, chat) + Modello D on ANY category + 401 guards. Wrote /app/backend/tests/test_jobby_new_endpoints.py — 21/21 pytests passed against the public preview URL. Categories return 9 items with correct badges (prossimita=7, pagamenti=4), subcategory GETs include parent + parent_type. Wallet defaults 92.29, top-up creates transaction. Payments deduct wallet + create service_request + return 400 insufficient_funds when amount>balance. Requests aggregates {payments,missions}. Chat auto-creates conversation from booking, sends messages, returns 404 on unknown convo. Modello D bots auto-accept for 'babysitting' and 'tecnico' (invited regardless of services array — bots included via is_bot exception in create_mission).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/payments", "issue": "No validation that service_id belongs to a real payment subcategory or that amount > 0; a client can post amount=0 or negative to log a fake request. Consider validating body.amount > 0 and body.service_id in payment subcategory ids."},
+      {"endpoint": "POST /api/wallet/add", "issue": "No validation that amount > 0; a negative amount would silently reduce the wallet balance and create a mislabeled 'topup' transaction. Add amount > 0 guard."},
+      {"endpoint": "GET /api/chat/{conversation_id}", "issue": "No ownership check — any authenticated user can read any conversation's messages by guessing/knowing the id. Should verify convo.user_id == current user."},
+      {"endpoint": "POST /api/chat/{conversation_id}", "issue": "No ownership check — any authenticated user could inject messages into another user's conversation."},
+      {"endpoint": "POST /api/missions/{id}/select", "issue": "Existing issue from iter 1: no check that caller is the mission's customer."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_jobby_new_endpoints.py",
+    "/app/backend/tests/test_jobby_backend.py",
+    "/app/test_reports/pytest/jobby_new_results.xml"
+  ],
+  "action_items": [
+    "Add server-side validation: amount>0 on /wallet/add and /payments (currently silently accepts negative/zero).",
+    "Add ownership checks on GET/POST /chat/{conversation_id} (verify convo.user_id == current user) and /missions/{id}/select.",
+    "Optional: validate service_id in /payments is one of the pagamenti subcategory ids."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~720 lines — approaching the 700-line threshold; consider splitting into routers (auth, missions, bookings, wallet, chat, categories) before adding more features.",
+    "create_mission now invites bots via `if not p.get('is_bot') and body.category not in p.get('services', [])` — bots match ANY category as intended. Real (non-bot) providers still require category in services array. Behavior is correct per spec but worth documenting.",
+    "get_categories returns a shallow-copy dict from the CATEGORIES module constant and mutates it with a `badge` key on each call — safe here but if you later cache or memoize, wrap with deepcopy.",
+    "ensure_conversation is only auto-invoked by GET /chat/conversations; there's no way for a provider to initiate a chat before a booking exists. Fine for MVP.",
+    "Deprecated FastAPI @app.on_event still used (noted in iter 1 too)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_jobby_new_endpoints.py (new)",
+    "/app/test_reports/pytest/jobby_new_results.xml (new)",
+    "/app/test_reports/iteration_2.json (new)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "not tested (per request — Google OAuth cannot be automated)"},
+  "seed_data_creation": "Each test inserts a synthetic TEST_ user + user_sessions doc directly into MongoDB (test_database) to obtain a Bearer token, then cleans up users/sessions/transactions/service_requests/missions/bookings/conversations/messages after the test. Bot providers seeded by server startup are reused as-is.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "BASE_URL comes from frontend/.env EXPO_PUBLIC_BACKEND_URL. Auth = Emergent Google OAuth; for protected endpoints insert users + user_sessions directly in Mongo (see _mk_user helper in test_jobby_new_endpoints.py). Bot auto-accept: create_mission spawns asyncio.create_task with random 2-9s delay per invited bot — poll GET /missions/{id} up to 15s for accepted[]. Wallet default balance for new users = 92.29. Payment amount deducts from user.wallet_balance and inserts a negative-amount transaction (type=payment) + a service_requests doc (kind=payment, status=completed). Categories endpoint returns 9 items: 7 service + prossimita (7 subs, badge=7) + pagamenti (4 subs, badge=4). Subcategory GET returns {...sub, parent, parent_type}. All new endpoints require Bearer token (401 without).",
+  "rca_of_issue": "N/A — all iter-2 tests green. Only code-review remarks for hardening: missing amount>0 validation on /wallet/add and /payments, and missing ownership checks on /chat/{id} GET/POST and /missions/{id}/select. Not blocking MVP but should be addressed before real users."
+}

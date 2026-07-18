@@ -138,6 +138,7 @@ async def create_session(body: SessionIn):
             "rating": 0.0,
             "reviews_count": 0,
             "verified": False,
+            "wallet_balance": 92.29,
             "lat": TREVISO["lat"],
             "lng": TREVISO["lng"],
             "created_at": now_utc().isoformat(),
@@ -232,7 +233,7 @@ async def create_mission(body: MissionIn, user=Depends(get_current_user)):
     providers = await db.users.find({"role": "provider", "online": True}, {"_id": 0}).to_list(200)
     invited = []
     for p in providers:
-        if body.category not in p.get("services", []):
+        if not p.get("is_bot") and body.category not in p.get("services", []):
             continue
         dist = haversine(body.lat, body.lng, p.get("lat", TREVISO["lat"]), p.get("lng", TREVISO["lng"]))
         if dist <= p.get("radius_km", 10):
@@ -415,6 +416,246 @@ async def earnings(user=Depends(get_current_user)):
         "completed_count": len([b for b in bs if b["status"] == "completed"]),
         "pending": round(sum(b["labor_cost"] for b in bs if b["status"] != "completed"), 2),
     }
+
+
+# ---------------- Categories (managed server-side) ----------------
+def L(it, en):
+    return {"it": it, "en": en}
+
+
+CATEGORIES = [
+    {"id": "pulizie", "emoji": "🧹", "label": L("Pulizie", "Cleaning"), "type": "service", "accent": "neutral",
+     "subtitle": L("Pulizie di casa e ufficio", "Home & office cleaning"),
+     "questions": [
+        {"id": "homeType", "label": L("Tipo di abitazione", "Home type"), "type": "select",
+         "options": [{"id": "apartment", "label": L("Appartamento", "Apartment")}, {"id": "house", "label": L("Casa", "House")}]},
+        {"id": "rooms", "label": L("Numero di stanze", "Number of rooms"), "type": "number", "min": 1, "max": 12, "default": 3},
+        {"id": "duration", "label": L("Durata (ore)", "Duration (hours)"), "type": "number", "min": 1, "max": 8, "default": 2},
+     ]},
+    {"id": "babysitting", "emoji": "👶", "label": L("Babysitting", "Babysitting"), "type": "service", "accent": "neutral",
+     "subtitle": L("Cura dei bambini", "Childcare"),
+     "questions": [
+        {"id": "children", "label": L("Numero di bambini", "Number of children"), "type": "number", "min": 1, "max": 5, "default": 1},
+        {"id": "duration", "label": L("Durata (ore)", "Duration (hours)"), "type": "number", "min": 1, "max": 10, "default": 3},
+     ]},
+    {"id": "petsitting", "emoji": "🐾", "label": L("Pet Sitting", "Pet Sitting"), "type": "service", "accent": "neutral",
+     "subtitle": L("Cura degli animali", "Pet care"),
+     "questions": [
+        {"id": "petType", "label": L("Tipo di animale", "Pet type"), "type": "select",
+         "options": [{"id": "dog", "label": L("Cane", "Dog")}, {"id": "cat", "label": L("Gatto", "Cat")}, {"id": "other", "label": L("Altro", "Other")}]},
+        {"id": "duration", "label": L("Durata (ore)", "Duration (hours)"), "type": "number", "min": 1, "max": 10, "default": 2},
+     ]},
+    {"id": "tuttofare", "emoji": "🔧", "label": L("Tuttofare", "Handyman"), "type": "service", "accent": "neutral",
+     "subtitle": L("Piccoli lavori e riparazioni", "Small jobs & repairs"),
+     "questions": [
+        {"id": "task", "label": L("Cosa ti serve?", "What do you need?"), "type": "text", "placeholder": L("Descrivi il lavoro", "Describe the job")},
+        {"id": "duration", "label": L("Durata stimata (ore)", "Estimated hours"), "type": "number", "min": 1, "max": 8, "default": 2},
+     ]},
+    {"id": "hospitality", "emoji": "🍽️", "label": L("Hospitality", "Hospitality"), "type": "service", "accent": "neutral",
+     "subtitle": L("Servizio in casa ed eventi", "In-home & event service"),
+     "questions": [
+        {"id": "guests", "label": L("Numero di ospiti", "Number of guests"), "type": "number", "min": 1, "max": 50, "default": 4},
+        {"id": "duration", "label": L("Durata (ore)", "Duration (hours)"), "type": "number", "min": 1, "max": 10, "default": 3},
+     ]},
+    {"id": "assistenza", "emoji": "❤️", "label": L("Assistenza", "Care"), "type": "service", "accent": "neutral",
+     "subtitle": L("Assistenza leggera anziani", "Light elderly care"),
+     "questions": [
+        {"id": "need", "label": L("Tipo di assistenza", "Type of care"), "type": "select",
+         "options": [{"id": "company", "label": L("Compagnia", "Companionship")}, {"id": "errands", "label": L("Commissioni", "Errands")}, {"id": "mobility", "label": L("Mobilità", "Mobility")}]},
+        {"id": "duration", "label": L("Durata (ore)", "Duration (hours)"), "type": "number", "min": 1, "max": 10, "default": 3},
+     ]},
+    {"id": "tecnico", "emoji": "💻", "label": L("Tecnico", "Technical"), "type": "service", "accent": "neutral",
+     "subtitle": L("Supporto informatico", "IT support"),
+     "questions": [
+        {"id": "device", "label": L("Dispositivo", "Device"), "type": "select",
+         "options": [{"id": "pc", "label": L("Computer", "Computer")}, {"id": "phone", "label": L("Telefono", "Phone")}, {"id": "network", "label": L("Rete/Wi-Fi", "Network/Wi-Fi")}]},
+        {"id": "duration", "label": L("Durata stimata (ore)", "Estimated hours"), "type": "number", "min": 1, "max": 6, "default": 1},
+     ]},
+    {"id": "prossimita", "emoji": "🏪", "label": L("Prossimità", "Proximity"), "type": "proximity", "accent": "purple",
+     "subtitle": L("Scegli il tipo di esercizio che cerchi", "Choose the type of business"),
+     "subcategories": [
+        {"id": "lavanderia", "emoji": "👕", "label": L("Lavanderia", "Laundry")},
+        {"id": "idraulico", "emoji": "🚿", "label": L("Idraulico", "Plumber")},
+        {"id": "elettricista", "emoji": "⚡", "label": L("Elettricista", "Electrician")},
+        {"id": "alimentari", "emoji": "🛒", "label": L("Alimentari", "Groceries")},
+        {"id": "fioreria", "emoji": "💐", "label": L("Fioreria", "Florist")},
+        {"id": "sartoria", "emoji": "🧵", "label": L("Sartoria", "Tailor")},
+        {"id": "farmacia", "emoji": "💊", "label": L("Farmacia", "Pharmacy")},
+     ]},
+    {"id": "pagamenti", "emoji": "💳", "label": L("Pagamenti", "Payments"), "type": "payment", "accent": "green",
+     "subtitle": L("Select the specific service", "Select the specific service"),
+     "subcategories": [
+        {"id": "estero", "emoji": "🌍", "label": L("Manda soldi all'estero", "Send money abroad"),
+         "questions": [
+            {"id": "country", "label": L("Paese di destinazione", "Destination country"), "type": "text", "placeholder": L("Es. Marocco", "e.g. Morocco")},
+            {"id": "recipient", "label": L("Destinatario", "Recipient"), "type": "text", "placeholder": L("Nome", "Name")},
+            {"id": "amount", "label": L("Importo (€)", "Amount (€)"), "type": "number", "min": 5, "max": 2000, "default": 50},
+         ]},
+        {"id": "ricarica", "emoji": "📱", "label": L("Ricarica Telefonica", "Mobile top-up"),
+         "questions": [
+            {"id": "phone", "label": L("Numero di telefono", "Phone number"), "type": "text", "placeholder": "+39 ..."},
+            {"id": "amount", "label": L("Importo (€)", "Amount (€)"), "type": "number", "min": 5, "max": 100, "default": 10},
+         ]},
+        {"id": "bollette", "emoji": "🧾", "label": L("Paga Bollette", "Pay bills"),
+         "questions": [
+            {"id": "biller", "label": L("Ente/Bolletta", "Biller"), "type": "text", "placeholder": L("Es. Enel", "e.g. Enel")},
+            {"id": "amount", "label": L("Importo (€)", "Amount (€)"), "type": "number", "min": 5, "max": 2000, "default": 60},
+         ]},
+        {"id": "locale", "emoji": "🔄", "label": L("Manda e Richiedi Soldi localmente", "Send & request money locally"),
+         "questions": [
+            {"id": "recipient", "label": L("Destinatario", "Recipient"), "type": "text", "placeholder": L("Nome o telefono", "Name or phone")},
+            {"id": "amount", "label": L("Importo (€)", "Amount (€)"), "type": "number", "min": 1, "max": 1000, "default": 25},
+         ]},
+     ]},
+]
+
+MANIFESTO = [
+    L("Il lavoro si adatta alla vita, non la vita al lavoro.", "Work should adapt to life, not life to work."),
+    L("Ogni persona ha tempo, competenze e valore.", "Every person has time, skills and value."),
+    L("La tecnologia deve dare più libertà, non meno.", "Technology should give people more freedom, not less."),
+    L("La reputazione conta più della gerarchia.", "Reputation matters more than hierarchy."),
+    L("Il reddito non deve dipendere da un solo datore di lavoro.", "Income should not depend on a single employer."),
+    L("Il tempo disponibile può diventare opportunità.", "Available time can become opportunity."),
+]
+
+
+@api_router.get("/categories")
+async def get_categories():
+    online = await db.users.count_documents({"role": "provider", "online": True})
+    out = []
+    for c in CATEGORIES:
+        item = {k: v for k, v in c.items()}
+        if c["type"] in ("proximity", "payment"):
+            item["badge"] = len(c.get("subcategories", []))
+        out.append(item)
+    return {"categories": out, "providers_online": online, "manifesto": MANIFESTO}
+
+
+@api_router.get("/categories/{category_id}")
+async def get_category(category_id: str):
+    for c in CATEGORIES:
+        if c["id"] == category_id:
+            return c
+        for sub in c.get("subcategories", []):
+            if sub["id"] == category_id:
+                return {**sub, "parent": c["id"], "parent_type": c["type"]}
+    raise HTTPException(status_code=404, detail="Category not found")
+
+
+# ---------------- Wallet ----------------
+class WalletIn(BaseModel):
+    amount: float
+
+
+@api_router.get("/wallet")
+async def get_wallet(user=Depends(get_current_user)):
+    txs = await db.transactions.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {"balance": round(user.get("wallet_balance", 0), 2), "transactions": txs}
+
+
+@api_router.post("/wallet/add")
+async def add_funds(body: WalletIn, user=Depends(get_current_user)):
+    new_balance = round(user.get("wallet_balance", 0) + body.amount, 2)
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"wallet_balance": new_balance}})
+    await db.transactions.insert_one({
+        "tx_id": new_id("tx"), "user_id": user["user_id"], "type": "topup",
+        "label": "Wallet top-up", "amount": body.amount, "created_at": now_utc().isoformat(),
+    })
+    return {"balance": new_balance}
+
+
+# ---------------- Payments ----------------
+class PaymentIn(BaseModel):
+    service_id: str
+    label: str
+    amount: float
+    answers: Dict[str, Any] = {}
+
+
+@api_router.post("/payments")
+async def make_payment(body: PaymentIn, user=Depends(get_current_user)):
+    balance = user.get("wallet_balance", 0)
+    if body.amount > balance:
+        raise HTTPException(status_code=400, detail="insufficient_funds")
+    new_balance = round(balance - body.amount, 2)
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"wallet_balance": new_balance}})
+    tx = {
+        "tx_id": new_id("tx"), "user_id": user["user_id"], "type": "payment",
+        "service_id": body.service_id, "label": body.label, "amount": -body.amount,
+        "answers": body.answers, "created_at": now_utc().isoformat(),
+    }
+    await db.transactions.insert_one(tx)
+    await db.service_requests.insert_one({
+        "request_id": new_id("req"), "user_id": user["user_id"], "kind": "payment",
+        "category_id": body.service_id, "label": body.label, "amount": body.amount,
+        "answers": body.answers, "status": "completed", "created_at": now_utc().isoformat(),
+    })
+    return {"balance": new_balance, "tx": {k: v for k, v in tx.items() if k != "_id"}}
+
+
+# ---------------- Service Requests (Richieste) ----------------
+@api_router.get("/requests")
+async def list_requests(user=Depends(get_current_user)):
+    reqs = await db.service_requests.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    missions = await db.missions.find({"customer_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {"payments": [r for r in reqs if r.get("kind") == "payment"], "missions": missions}
+
+
+# ---------------- Chat ----------------
+class MessageIn(BaseModel):
+    text: str
+
+
+async def ensure_conversation(user_id: str, other_id: str, other_name: str, other_picture: str = ""):
+    convo = await db.conversations.find_one({"user_id": user_id, "other_id": other_id}, {"_id": 0})
+    if convo:
+        return convo["conversation_id"]
+    cid = new_id("conv")
+    await db.conversations.insert_one({
+        "conversation_id": cid, "user_id": user_id, "other_id": other_id,
+        "other_name": other_name, "other_picture": other_picture,
+        "last_message": "", "updated_at": now_utc().isoformat(),
+    })
+    return cid
+
+
+@api_router.get("/chat/conversations")
+async def conversations(user=Depends(get_current_user)):
+    # auto-create a conversation for each booking partner
+    key = "provider_id" if user["role"] == "provider" else "customer_id"
+    bookings = await db.bookings.find({key: user["user_id"]}, {"_id": 0}).to_list(100)
+    for b in bookings:
+        if user["role"] == "provider":
+            await ensure_conversation(user["user_id"], b["customer_id"], b["customer_name"], "")
+        else:
+            await ensure_conversation(user["user_id"], b["provider_id"], b["provider_name"], b.get("provider_picture", ""))
+    convos = await db.conversations.find({"user_id": user["user_id"]}, {"_id": 0}).sort("updated_at", -1).to_list(100)
+    return convos
+
+
+@api_router.get("/chat/{conversation_id}")
+async def get_messages(conversation_id: str, user=Depends(get_current_user)):
+    convo = await db.conversations.find_one({"conversation_id": conversation_id}, {"_id": 0})
+    if not convo:
+        raise HTTPException(status_code=404, detail="Not found")
+    msgs = await db.messages.find({"conversation_id": conversation_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    return {"conversation": convo, "messages": msgs}
+
+
+@api_router.post("/chat/{conversation_id}")
+async def send_message(conversation_id: str, body: MessageIn, user=Depends(get_current_user)):
+    convo = await db.conversations.find_one({"conversation_id": conversation_id}, {"_id": 0})
+    if not convo:
+        raise HTTPException(status_code=404, detail="Not found")
+    msg = {
+        "message_id": new_id("msg"), "conversation_id": conversation_id,
+        "sender_id": user["user_id"], "text": body.text, "created_at": now_utc().isoformat(),
+    }
+    await db.messages.insert_one(msg)
+    await db.conversations.update_one({"conversation_id": conversation_id},
+                                      {"$set": {"last_message": body.text, "updated_at": now_utc().isoformat()}})
+    return {k: v for k, v in msg.items() if k != "_id"}
+
 
 
 # ---------------- Seed ----------------
