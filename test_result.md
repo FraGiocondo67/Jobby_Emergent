@@ -176,3 +176,16 @@
 -message: |
   User reported "can't find admin-web folder". The folder exists & is git-tracked at /app/admin-web (index.html, netlify.toml, README.md) but the platform surfaces frontend/backend, so it's easy to miss. FIX: upgraded the backend-served admin console at GET /api/admin/ui to the FULL console (previously it lacked user-management + revenue). Now it has: Dashboard with 'Revenue monitoring' cards + Operations; Users tab with Approve/Suspend/Reject buttons + filters (All/Pending/Providers/Business/Clients); Categories toggle; Bookings. Accessible in any browser at {backend}/api/admin/ui with admin token jobby-admin-7c2f9a (no folder needed). Standalone Netlify app remains at /app/admin-web.
   TEST (frontend/web page only, no Expo needed): Open https://jobby-mvp-update.preview.emergentagent.com/api/admin/ui, enter admin token jobby-admin-7c2f9a, Connect. Verify: Dashboard shows Revenue monitoring cards; Users tab lists users with Approve/Suspend/Reject; click Suspend then Approve on Francesco (user_2f996c8a010a) and confirm status flips (LEAVE approved at end); Categories tab toggles; Bookings tab lists.
+
+## agent_communication (2026-06 fork — Real Stripe for BOOKING payments)
+-agent: "main"
+-message: |
+  Extended real Stripe to BOOKING payments (not just wallet top-up):
+  - Bookings now have payment_status (default 'unpaid'; set at creation in missions.py select).
+  - POST /api/bookings/{booking_id}/pay {origin_url} -> real checkout.stripe.com session, amount = booking.total from DB (server-side, never client). Returns url+session_id, or {already_paid:true}. 404 unknown booking, 403 non-owner.
+  - GET /api/payments/status/{session_id} -> generic settle; idempotent: on paid, booking_payment sets booking.payment_status=paid + client transaction (negative amount); wallet_topup still credits wallet. Curl-verified: real session created, 404 for unknown booking.
+  - Frontend booking/[id].tsx (CLIENT): shows 'Pay now · €total' button when unpaid; on web redirects to Stripe then returns to /booking/{id}?session_id=... and polls status; on native opens WebBrowser then polls. When paid shows Paid banner and only THEN the Complete button. Provider side unchanged (Start service).
+  TEST both:
+  - Backend: /bookings/{id}/pay creates session; /payments/status doesn't mark paid for unpaid session; 404/403 guards.
+  - Frontend (CLIENT demo-preview-token-123): open a confirmed unpaid booking -> 'Pay now' button visible, Complete hidden until paid; tapping pay initiates Stripe checkout (verify checkout.stripe.com session/redirect; DO NOT complete card).
+  Credentials: CLIENT demo-preview-token-123. A booking exists: bkg_7c6591810676 (may already be used). Provider biz-test-token-999.

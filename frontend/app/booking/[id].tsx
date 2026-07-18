@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Platform, Alert } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import * as WebBrowser from "expo-web-browser";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
@@ -12,7 +13,7 @@ import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 
 export default function BookingDetail() {
-  const { id, new: isNew } = useLocalSearchParams<{ id: string; new?: string }>();
+  const { id, new: isNew, session_id } = useLocalSearchParams<{ id: string; new?: string; session_id?: string }>();
   const { user } = useAuth();
   const { t } = useLang();
   const router = useRouter();
@@ -21,12 +22,55 @@ export default function BookingDetail() {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const load = useCallback(async () => {
     try { setB(await api.getBooking(id as string)); } catch {}
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  const pollPayment = useCallback(async (sid: string) => {
+    setPaying(true);
+    for (let i = 0; i < 6; i++) {
+      try {
+        const s = await api.paymentStatus(sid);
+        if (s.paid) {
+          await load();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          Alert.alert(t("paymentDone"), `€${(s.amount || 0).toFixed(2)}`);
+          break;
+        }
+        if (s.status === "expired") break;
+      } catch {}
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    setPaying(false);
+  }, [load, t]);
+
+  // Handle return from Stripe (web redirect adds ?session_id=...)
+  useEffect(() => { if (session_id) pollPayment(session_id as string); }, [session_id, pollPayment]);
+
+  const pay = async () => {
+    setPaying(true);
+    Haptics.selectionAsync().catch(() => {});
+    try {
+      const origin = Platform.OS === "web" && typeof window !== "undefined"
+        ? window.location.origin
+        : (process.env.EXPO_PUBLIC_BACKEND_URL || "");
+      const { url, session_id: sid, already_paid } = await api.payBooking(id as string, origin);
+      if (already_paid) { await load(); setPaying(false); return; }
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = url;
+      } else {
+        await WebBrowser.openBrowserAsync(url);
+        await pollPayment(sid);
+      }
+    } catch {
+      Alert.alert(t("error") || "Error", t("topupError"));
+      setPaying(false);
+    }
+  };
 
   const complete = async () => {
     setBusy(true);
@@ -100,8 +144,26 @@ export default function BookingDetail() {
           </View>
         </View>
 
-        {b.status === "confirmed" ? (
-          <Button testID="start-button" label={isProvider ? t("startService") : t("complete")} loading={busy} onPress={isProvider ? startSvc : complete} />
+        {/* Payment (client) */}
+        {!isProvider ? (
+          b.payment_status === "paid" ? (
+            <View style={styles.paidBanner} testID="paid-banner">
+              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+              <Text style={styles.paidText}>{t("paymentDone")} · €{b.total.toFixed(2)}</Text>
+            </View>
+          ) : (
+            <>
+              <Button testID="pay-button" label={`${t("payNow")} · €${b.total.toFixed(2)}`} icon="card" loading={paying} onPress={pay} />
+              <Text style={styles.stripeNote}>💳 {t("securedByStripe")}</Text>
+            </>
+          )
+        ) : null}
+
+        {b.status === "confirmed" && isProvider ? (
+          <Button testID="start-button" label={t("startService")} loading={busy} onPress={startSvc} />
+        ) : null}
+        {b.status === "confirmed" && !isProvider && b.payment_status === "paid" ? (
+          <Button testID="complete-button" label={t("complete")} loading={busy} onPress={complete} style={{ marginTop: spacing.md }} />
         ) : null}
         {b.status === "in_progress" ? (
           <Button testID="complete-button" label={t("complete")} loading={busy} onPress={complete} />
@@ -167,4 +229,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, minHeight: 80, fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface, textAlignVertical: "top", marginBottom: spacing.md },
   reviewedBanner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.md },
   reviewedText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.success },
+  paidBanner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, backgroundColor: "#E8F0EA", borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
+  paidText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.success },
+  stripeNote: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: spacing.sm, textAlign: "center" },
 });

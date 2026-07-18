@@ -20,6 +20,10 @@ class CheckoutIn(BaseModel):
     origin_url: str
 
 
+class OriginIn(BaseModel):
+    origin_url: str
+
+
 def _client(request: Request) -> StripeCheckout:
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
@@ -43,37 +47,83 @@ async def create_topup_checkout(body: CheckoutIn, request: Request, user=Depends
     session = await stripe.create_checkout_session(req)
     await db.payment_transactions.insert_one({
         "session_id": session.session_id, "user_id": user["user_id"], "amount": amount, "currency": "eur",
-        "package_id": body.package_id, "payment_status": "initiated", "status": "open", "credited": False,
+        "purpose": "wallet_topup", "package_id": body.package_id,
+        "payment_status": "initiated", "status": "open", "credited": False,
         "created_at": now_utc().isoformat(),
     })
     return {"url": session.url, "session_id": session.session_id}
 
 
-async def _credit_if_paid(session_id: str, status) -> dict:
+@router.post("/bookings/{booking_id}/pay")
+async def pay_booking(booking_id: str, body: OriginIn, request: Request, user=Depends(get_current_user)):
+    b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="booking_not_found")
+    if b["customer_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if b.get("payment_status") == "paid":
+        return {"already_paid": True}
+    amount = round(float(b["total"]), 2)  # server-side amount from DB
+    origin = body.origin_url.rstrip("/")
+    stripe = _client(request)
+    req = CheckoutSessionRequest(
+        amount=amount,
+        currency="eur",
+        success_url=f"{origin}/booking/{booking_id}?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{origin}/booking/{booking_id}",
+        metadata={"user_id": user["user_id"], "booking_id": booking_id, "purpose": "booking_payment"},
+    )
+    session = await stripe.create_checkout_session(req)
+    await db.payment_transactions.insert_one({
+        "session_id": session.session_id, "user_id": user["user_id"], "amount": amount, "currency": "eur",
+        "purpose": "booking_payment", "booking_id": booking_id,
+        "payment_status": "initiated", "status": "open", "credited": False,
+        "created_at": now_utc().isoformat(),
+    })
+    return {"url": session.url, "session_id": session.session_id}
+
+
+async def _settle_if_paid(session_id: str, status) -> dict:
     tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
     if not tx:
         raise HTTPException(status_code=404, detail="tx_not_found")
     await db.payment_transactions.update_one(
         {"session_id": session_id},
         {"$set": {"payment_status": status.payment_status, "status": status.status}})
-    # Idempotent credit: only once, only when paid.
-    if status.payment_status == "paid" and not tx.get("credited"):
+    paid = status.payment_status == "paid"
+    # Idempotent settlement: only once, only when paid.
+    if paid and not tx.get("credited"):
         await db.payment_transactions.update_one({"session_id": session_id}, {"$set": {"credited": True}})
-        await db.users.update_one({"user_id": tx["user_id"]}, {"$inc": {"wallet_balance": tx["amount"]}})
-        await db.transactions.insert_one({
-            "tx_id": new_id("tx"), "user_id": tx["user_id"], "type": "topup", "status": "paid",
-            "amount": tx["amount"], "label": f"Wallet top-up €{tx['amount']:.0f} (Stripe)",
-            "created_at": now_utc().isoformat(),
-        })
+        purpose = tx.get("purpose", "wallet_topup")
+        if purpose == "wallet_topup":
+            await db.users.update_one({"user_id": tx["user_id"]}, {"$inc": {"wallet_balance": tx["amount"]}})
+            await db.transactions.insert_one({
+                "tx_id": new_id("tx"), "user_id": tx["user_id"], "type": "topup", "status": "paid",
+                "amount": tx["amount"], "label": f"Wallet top-up €{tx['amount']:.0f} (Stripe)",
+                "created_at": now_utc().isoformat()})
+        elif purpose == "booking_payment":
+            await db.bookings.update_one({"booking_id": tx["booking_id"]},
+                                         {"$set": {"payment_status": "paid", "paid_at": now_utc().isoformat()}})
+            await db.transactions.insert_one({
+                "tx_id": new_id("tx"), "user_id": tx["user_id"], "type": "booking_payment", "status": "paid",
+                "amount": -tx["amount"], "label": f"Booking payment €{tx['amount']:.2f} (Stripe)",
+                "booking_id": tx["booking_id"], "created_at": now_utc().isoformat()})
     return {"payment_status": status.payment_status, "status": status.status,
-            "amount": tx["amount"], "credited": status.payment_status == "paid"}
+            "amount": tx["amount"], "purpose": tx.get("purpose"), "paid": paid}
+
+
+@router.get("/payments/status/{session_id}")
+async def payment_status(session_id: str, request: Request, user=Depends(get_current_user)):
+    stripe = _client(request)
+    status = await stripe.get_checkout_status(session_id)
+    return await _settle_if_paid(session_id, status)
 
 
 @router.get("/wallet/topup/status/{session_id}")
 async def topup_status(session_id: str, request: Request, user=Depends(get_current_user)):
     stripe = _client(request)
     status = await stripe.get_checkout_status(session_id)
-    return await _credit_if_paid(session_id, status)
+    return await _settle_if_paid(session_id, status)
 
 
 @router.post("/webhook/stripe")
@@ -88,7 +138,7 @@ async def stripe_webhook(request: Request):
     if getattr(event, "session_id", None):
         try:
             status = await stripe.get_checkout_status(event.session_id)
-            await _credit_if_paid(event.session_id, status)
+            await _settle_if_paid(event.session_id, status)
         except Exception:
             pass
     return {"received": True}

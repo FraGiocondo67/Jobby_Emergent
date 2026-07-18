@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 12 — Stripe booking payment (backend + frontend, mobile viewport 375x667). Backend: 8/8 pytest cases pass on /api/bookings/{id}/pay, /api/payments/status/{sid}, guards, idempotency & seed booking bkg_7c6591810676 branch. Frontend (Expo web preview, CLIENT token demo-preview-token-123): fresh confirmed UNPAID booking (bkg_d9509994164d, total €33.35) renders pay-button labelled 'Paga ora · €33.35' with 'Pagamenti sicuri con Stripe' note; complete-button and paid-banner are correctly HIDDEN. Tapping pay-button initiated a REAL Stripe checkout session and browser navigated to https://checkout.stripe.com/c/pay/cs_test_a15o18pGvDwzfYTcB5BKMvf4CA9vAmRALrCXZhY4rGUz3I5HQeBTHgEI0T… (no card entered, per spec). After flipping the booking's payment_status='paid' in MongoDB, the same screen now shows paid-banner ('Pagamento completato · €33.35') and the complete-button ('Segna come completata'); pay-button is removed. All acceptance criteria in the review_request are met.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "expo web console warnings", "issue": "'shadow*' style props deprecated (use 'boxShadow'). Multiple emissions on every page render. Cosmetic (RN Web only), tracked previously. Reference: theme/shadow objects across UI components."},
+      {"component": "expo web console warnings", "issue": "props.pointerEvents is deprecated (use style.pointerEvents). Cosmetic. Reference: components using pointerEvents prop."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_stripe_booking_payments.py",
+    "/app/test_reports/pytest/iter12_stripe_bookings.xml",
+    "/app/test_reports/iteration_12.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "payments_stripe._settle_if_paid correctly idempotents via 'credited' bool before crediting wallet or flipping booking.payment_status. Setting 'credited=True' happens BEFORE the branch work but that's still safe because the update is atomic per-session_id.",
+    "pay_booking uses server-side amount from db.bookings.total (labor + 15% JOBBY fee written at select_provider). Confirmed via test_pay_amount_uses_db_total.",
+    "Guards implemented cleanly: 404 unknown booking, 403 non-owner, and short-circuit {'already_paid': True} when payment_status=='paid'.",
+    "Frontend booking/[id].tsx correctly gates the complete-button behind payment_status==='paid' for clients, keeps the in-progress complete-button unconditional (providers/handoff flow after start).",
+    "On web the pay flow uses window.location.href = url (full-page redirect) — good, avoids popup blockers. On native it uses expo-web-browser + pollPayment(sid) — polls /payments/status up to 6× at 1.5s intervals, which will settle the booking as soon as Stripe reports paid."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (unpaid + paid UI states + Stripe redirect all verified)"},
+  "seed_data_creation": "Created mission msn_458860a8ae97 and booking bkg_d9509994164d (client user_demopreview01, provider bot Anna Greco, category pulizie, total €33.35). Booking left in payment_status='paid' after DB flip during the PAID-scenario UI test. Two Stripe test-mode checkout sessions were created against it (test_pay_amount_uses_db_total + the UI redirect).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Storage layer (src/utils/storage) JSON.parses values, so to inject the bearer token in localStorage use JSON.stringify: window.localStorage.setItem('jobby_session_token', JSON.stringify('demo-preview-token-123')). Otherwise you'll see repeated '[storage] retrieve(parse error)' warnings and 401s. Client-owned demo booking bkg_d9509994164d is now paid; use it for regression of the paid UI state, or run the mission→select flow again to get a fresh confirmed/unpaid booking. Real Stripe test-mode checkout URLs are returned (host checkout.stripe.com, session_id starts with cs_test_). Do NOT actually complete a card payment through automation — Stripe payment settlement is exercised only through the webhook / GET /payments/status endpoints in backend tests.",
+  "rca_of_issue": "N/A — no defects found."
+}

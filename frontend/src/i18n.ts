@@ -236,6 +236,8 @@ export const strings = {
     verifyingPayment: "Verifica pagamento in corso...",
     securedByStripe: "Pagamenti sicuri con Stripe",
     error: "Errore",
+    payNow: "Paga ora",
+    paymentDone: "Pagamento completato",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -472,6 +474,8 @@ export const strings = {
     verifyingPayment: "Verifying payment...",
     securedByStripe: "Payments secured by Stripe",
     error: "Error",
+    payNow: "Pay now",
+    paymentDone: "Payment complete",
   },
 };
 
