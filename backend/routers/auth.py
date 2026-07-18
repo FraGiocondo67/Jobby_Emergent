@@ -1,14 +1,132 @@
+import os
 from typing import Optional
 from datetime import timedelta
 import httpx
+import bcrypt
+import jwt
+from jwt import PyJWKClient
 from fastapi import APIRouter, Header, HTTPException, Depends
 
 from core import db, now_utc, new_id, TREVISO, EMERGENT_SESSION_URL
 from deps import get_current_user
-from models import SessionIn, ProfileUpdate
+from models import SessionIn, ProfileUpdate, RegisterIn, LoginIn, AppleIn
 from trust import recalc_provider_trust, recalc_client_trust
 
 router = APIRouter()
+
+APPLE_AUDIENCES = [a.strip() for a in os.environ.get("APPLE_AUDIENCES", "").split(",") if a.strip()]
+_apple_jwks = PyJWKClient("https://appleid.apple.com/auth/keys")
+DEMO_EMAIL = "demo@jobby.app"
+
+
+# ---- shared helpers ----
+def default_user_doc(user_id, email, name, picture="", onboarding_completed=False):
+    return {
+        "user_id": user_id, "email": email, "name": name, "picture": picture,
+        "role": "client", "language": "it", "bio": "", "business_name": "",
+        "hourly_rate": 13.0, "radius_km": 10.0, "services": [], "online": False, "service_mode": "both",
+        "rating": 0.0, "reviews_count": 0, "verified": False, "verification_status": "unverified",
+        "wallet_balance": 92.29, "payment_method": None, "bank_account": None,
+        "trust_score": 0.0, "trust_subscores": {}, "client_trust_score": 0.0, "client_trust_subscores": {},
+        "is_admin": False, "lat": TREVISO["lat"], "lng": TREVISO["lng"], "created_at": now_utc().isoformat(),
+        "approval_status": "approved", "provider_approved": False, "onboarding_completed": onboarding_completed,
+    }
+
+
+async def issue_session(user_id):
+    token = new_id("sess")
+    await db.user_sessions.insert_one({
+        "session_token": token, "user_id": user_id,
+        "created_at": now_utc(), "expires_at": now_utc() + timedelta(days=7)})
+    return token
+
+
+def hash_pw(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode()[:72], bcrypt.gensalt()).decode()
+
+
+def verify_pw(pw: str, h: str) -> bool:
+    try:
+        return bcrypt.checkpw(pw.encode()[:72], h.encode())
+    except Exception:
+        return False
+
+
+async def _public_user(user_id):
+    return await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
+
+
+# ---- Email / password ----
+@router.post("/auth/register")
+async def register(body: RegisterIn):
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="invalid_email")
+    if len(body.password) < 6:
+        raise HTTPException(status_code=400, detail="weak_password")
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="email_exists")
+    user_id = new_id("user")
+    doc = default_user_doc(user_id, email, body.name.strip() or email.split("@")[0], onboarding_completed=False)
+    doc["password_hash"] = hash_pw(body.password)
+    doc["auth_provider"] = "password"
+    await db.users.insert_one(doc)
+    token = await issue_session(user_id)
+    return {"user": await _public_user(user_id), "session_token": token}
+
+
+@router.post("/auth/login")
+async def login(body: LoginIn):
+    email = body.email.strip().lower()
+    u = await db.users.find_one({"email": email})
+    if not u or not u.get("password_hash") or not verify_pw(body.password, u["password_hash"]):
+        raise HTTPException(status_code=401, detail="invalid_credentials")
+    token = await issue_session(u["user_id"])
+    return {"user": await _public_user(u["user_id"]), "session_token": token}
+
+
+# ---- Sign in with Apple ----
+@router.post("/auth/apple")
+async def apple_login(body: AppleIn):
+    try:
+        signing_key = _apple_jwks.get_signing_key_from_jwt(body.identity_token)
+        data = jwt.decode(body.identity_token, signing_key.key, algorithms=["RS256"],
+                          audience=APPLE_AUDIENCES, issuer="https://appleid.apple.com")
+    except Exception:
+        raise HTTPException(status_code=401, detail="invalid_apple_token")
+    apple_sub = data["sub"]
+    u = await db.users.find_one({"apple_sub": apple_sub})
+    if u:
+        user_id = u["user_id"]
+    else:
+        user_id = new_id("user")
+        email = (body.email or data.get("email") or f"{apple_sub}@privaterelay.apple").strip().lower()
+        name = body.name or email.split("@")[0]
+        doc = default_user_doc(user_id, email, name, onboarding_completed=False)
+        doc["apple_sub"] = apple_sub
+        doc["auth_provider"] = "apple"
+        await db.users.insert_one(doc)
+    token = await issue_session(user_id)
+    return {"user": await _public_user(user_id), "session_token": token}
+
+
+# ---- Demo (read-only) ----
+@router.post("/auth/demo")
+async def demo_login():
+    u = await db.users.find_one({"email": DEMO_EMAIL})
+    if not u:
+        user_id = new_id("user")
+        doc = default_user_doc(user_id, DEMO_EMAIL, "Demo User", onboarding_completed=True)
+        doc["is_demo"] = True
+        doc["auth_provider"] = "demo"
+        doc["wallet_balance"] = 120.0
+        await db.users.insert_one(doc)
+    else:
+        user_id = u["user_id"]
+        if not u.get("is_demo"):
+            await db.users.update_one({"user_id": user_id}, {"$set": {"is_demo": True}})
+    token = await issue_session(user_id)
+    return {"user": await _public_user(user_id), "session_token": token}
 
 
 @router.post("/auth/session")
@@ -24,23 +142,16 @@ async def create_session(body: SessionIn):
         user_id = existing["user_id"]
     else:
         user_id = new_id("user")
-        await db.users.insert_one({
-            "user_id": user_id, "email": email, "name": data.get("name", email.split("@")[0]),
-            "picture": data.get("picture", ""), "role": "client", "language": "it", "bio": "",
-            "business_name": "", "hourly_rate": 13.0, "radius_km": 10.0, "services": [], "online": False,
-            "service_mode": "both",
-            "rating": 0.0, "reviews_count": 0, "verified": False, "verification_status": "unverified",
-            "wallet_balance": 92.29, "payment_method": None, "bank_account": None,
-            "trust_score": 0.0, "trust_subscores": {}, "client_trust_score": 0.0, "client_trust_subscores": {},
-            "is_admin": False, "lat": TREVISO["lat"], "lng": TREVISO["lng"], "created_at": now_utc().isoformat(),
-            "approval_status": "approved", "provider_approved": False,
-        })
+        doc = default_user_doc(user_id, email, data.get("name", email.split("@")[0]),
+                               picture=data.get("picture", ""), onboarding_completed=False)
+        doc["auth_provider"] = "google"
+        await db.users.insert_one(doc)
     session_token = data["session_token"]
     await db.user_sessions.delete_many({"user_id": user_id})
     await db.user_sessions.insert_one({
         "session_token": session_token, "user_id": user_id,
         "created_at": now_utc(), "expires_at": now_utc() + timedelta(days=7)})
-    return {"user": await db.users.find_one({"user_id": user_id}, {"_id": 0}), "session_token": session_token}
+    return {"user": await _public_user(user_id), "session_token": session_token}
 
 
 @router.get("/auth/me")

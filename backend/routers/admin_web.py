@@ -48,8 +48,21 @@ async def admin_users(_=Depends(require_admin)):
         "rating": u.get("rating", 0), "wallet_balance": u.get("wallet_balance", 0),
         "is_bot": u.get("is_bot", False), "services": u.get("services", []),
         "online": u.get("online", False), "phone": u.get("phone", ""), "address": u.get("address", ""),
-        "business_name": u.get("business_name", ""), "created_at": u.get("created_at", ""),
+        "business_name": u.get("business_name", ""), "vat_number": u.get("vat_number", ""),
+        "created_at": u.get("created_at", ""),
     } for u in users]
+
+
+@router.get("/admin/users/{user_id}/documents")
+async def admin_user_documents(user_id: str, _=Depends(require_admin)):
+    u = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not u:
+        raise HTTPException(status_code=404, detail="not_found")
+    return {
+        "business_name": u.get("business_name", ""), "vat_number": u.get("vat_number", ""),
+        "address": u.get("address", ""), "phone": u.get("phone", ""),
+        "license_document": u.get("license_document", ""), "business_photos": u.get("business_photos", []),
+    }
 
 
 class UserStatusIn(BaseModel):
@@ -154,6 +167,29 @@ ADMIN_HTML = """<!DOCTYPE html>
     <div id="bookings" class="hidden"></div>
   </div>
 </div>
+<div id="docModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:9">
+  <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:85vh;overflow:auto;padding:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <b id="docTitle" style="font-size:18px"></b>
+      <button class="ghost" onclick="document.getElementById('docModal').classList.add('hidden')">✕</button>
+    </div>
+    <div id="docBody"></div>
+  </div>
+</div>
+<script>
+async function viewDocs(id){
+  const d=await api('/admin/users/'+id+'/documents');
+  document.getElementById('docTitle').textContent=d.business_name||'Business';
+  let html='<div class="muted" style="margin:8px 0">P.IVA: <b>'+(d.vat_number||'—')+'</b><br>Tel: '+(d.phone||'—')+'<br>Indirizzo: '+(d.address||'—')+'</div>';
+  html+='<div class="sec">Visura / Licenza</div>';
+  html+= d.license_document?'<img src="'+d.license_document+'" style="width:100%;border-radius:10px;border:1px solid var(--line)"/>':'<div class="muted">Nessun documento</div>';
+  html+='<div class="sec">Foto attività</div>';
+  if((d.business_photos||[]).length){html+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+d.business_photos.map(p=>'<img src="'+p+'" style="width:110px;height:110px;object-fit:cover;border-radius:10px;border:1px solid var(--line)"/>').join('')+'</div>';}
+  else{html+='<div class="muted">Nessuna foto</div>';}
+  document.getElementById('docBody').innerHTML=html;
+  document.getElementById('docModal').classList.remove('hidden');
+}
+</script>
 <script>
 let TOKEN='';
 let USERFILTER='all';
@@ -216,6 +252,7 @@ async function loadUsers(){
     const st=x.approval_status||'approved';
     const needs=(x.role==='provider'||x.role==='business');
     const actions=needs?`<div class="act">
+      ${x.role==='business'?`<button class="ghost" onclick="viewDocs('${x.user_id}')">Docs</button>`:''}
       ${st!=='approved'?`<button class="b-approve" onclick="setStatus('${x.user_id}','approved')">Approve</button>`:''}
       ${st!=='suspended'?`<button class="b-suspend" onclick="setStatus('${x.user_id}','suspended')">Suspend</button>`:''}
       ${st!=='rejected'?`<button class="b-reject" onclick="setStatus('${x.user_id}','rejected')">Reject</button>`:''}

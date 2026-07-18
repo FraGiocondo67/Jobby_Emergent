@@ -11,6 +11,10 @@ type AuthState = {
   user: User | null;
   loading: boolean;
   login: () => Promise<void>;
+  loginEmail: (email: string, password: string) => Promise<any>;
+  register: (email: string, password: string, name: string) => Promise<any>;
+  loginApple: (identityToken: string, name?: string | null, email?: string | null) => Promise<any>;
+  loginDemo: () => Promise<any>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   setUser: (u: User) => void;
@@ -111,8 +115,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const loginEmail = useCallback(async (email: string, password: string) => {
+    const res = await api.loginEmail({ email, password });
+    await setToken(res.session_token);
+    setUser(res.user);
+    return res.user;
+  }, []);
+
+  const register = useCallback(async (email: string, password: string, name: string) => {
+    const res = await api.register({ email, password, name });
+    await setToken(res.session_token);
+    setUser(res.user);
+    return res.user;
+  }, []);
+
+  const loginApple = useCallback(async (identityToken: string, name?: string | null, email?: string | null) => {
+    const res = await api.loginApple({ identity_token: identityToken, name, email });
+    await setToken(res.session_token);
+    setUser(res.user);
+    return res.user;
+  }, []);
+
+  const loginDemo = useCallback(async () => {
+    const res = await api.loginDemo();
+    await setToken(res.session_token);
+    setUser(res.user);
+    return res.user;
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refresh, setUser }}>
+    <AuthContext.Provider value={{ user, loading, login, loginEmail, register, loginApple, loginDemo, logout, refresh, setUser }}>
       {children}
     </AuthContext.Provider>
   );

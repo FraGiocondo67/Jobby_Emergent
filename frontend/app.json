@@ -11,8 +11,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.frafra1067.jobbyclean",
+      "usesAppleSignIn": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Find trusted providers near you"
+        "NSLocationWhenInUseUsageDescription": "Find trusted providers near you",
+        "NSPhotoLibraryUsageDescription": "Upload photos of your business",
+        "NSCameraUsageDescription": "Take photos of your business or documents"
       }
     },
     "android": {

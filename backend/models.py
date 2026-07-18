@@ -6,6 +6,41 @@ class SessionIn(BaseModel):
     session_token: str
 
 
+class RegisterIn(BaseModel):
+    email: str
+    password: str
+    name: str = ""
+
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class AppleIn(BaseModel):
+    identity_token: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+
+class OnboardingIn(BaseModel):
+    role: str
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    services: Optional[List[str]] = None
+    radius_km: Optional[float] = None
+    service_mode: Optional[str] = None
+    business_name: Optional[str] = None
+    vat_number: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class ImageIn(BaseModel):
+    image: str
+
+
 class PriceItem(BaseModel):
     name: str
     price: float = Field(default=0.0, ge=0)

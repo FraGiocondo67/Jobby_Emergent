@@ -10,8 +10,9 @@ export default function Index() {
 
   useEffect(() => {
     if (loading) return;
-    if (user) router.replace("/(tabs)");
-    else router.replace("/onboarding");
+    if (!user) router.replace("/onboarding");
+    else if (!user.onboarding_completed) router.replace("/onboarding-flow");
+    else router.replace("/(tabs)");
   }, [user, loading, router]);
 
   return (

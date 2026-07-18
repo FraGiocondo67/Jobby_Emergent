@@ -84,6 +84,13 @@ function CustomerHome() {
           <Image source={require("@/assets/images/jobby-logo.png")} style={styles.logo} contentFit="cover" />
         </View>
 
+        {user?.is_demo ? (
+          <View style={styles.demoBanner} testID="demo-banner">
+            <Ionicons name="eye-outline" size={16} color={colors.warning} />
+            <Text style={styles.demoBannerText}>{t("demoBanner")}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.body}>
           <View style={styles.search}>
             <Ionicons name="search" size={18} color={colors.muted} />
@@ -364,6 +371,8 @@ const styles = StyleSheet.create({
   subhi: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted, marginTop: 2 },
   walletPill: { backgroundColor: colors.greenBg, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill },
   walletText: { color: colors.green, fontFamily: font.bold, fontSize: fsize.base },
+  demoBanner: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#FEF3E2", marginHorizontal: spacing.lg, marginBottom: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md },
+  demoBannerText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.warning },
   logo: { width: 44, height: 44, borderRadius: 12 },
   logoJ: { fontSize: 24, fontFamily: font.bold, color: colors.blue },
   body: { paddingHorizontal: spacing.lg },

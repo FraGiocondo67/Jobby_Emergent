@@ -1,0 +1,42 @@
+{
+  "summary": "Phase B1 (Multi-method Auth + Onboarding) validated end-to-end. Backend: 17/17 pytest cases pass — register (success + duplicate=400 email_exists + weak_password + invalid_email), login (mario@test.it/secret123 ok, wrong password=401 invalid_credentials, unknown email=401), demo login returns is_demo+onboarding_completed=true, demo read-only middleware blocks POST /api/missions, PUT /api/profile, POST /api/wallet/add with 403 {detail:'demo_readonly'} while GET /api/categories still returns 200 and a non-demo bearer can POST normally, apple invalid token=401 invalid_apple_token, onboarding/complete for client -> approved, business (VAT stored) -> pending, provider -> pending, business document + up to 4 photos (5th=400 max_photos, DELETE decrements), admin GET /api/admin/users/{id}/documents with X-Admin-Token returns vat/license/photos (no token = 403). Frontend (mobile viewport 390x844): /onboarding shows seg-signin/seg-signup, auth-email/auth-password/auth-submit, google-login-button, demo-button, Apple button correctly absent on web. Registering a fresh email via UI navigates to /onboarding-flow with role-client/role-provider/role-business cards. Selecting role-client -> role-next -> onb-address -> onb-submit lands on tabs home (Ciao UI, wallet 92.29, tabs Home/Richieste/Chat/Profilo). Tapping demo-button lands on tabs home with demo-banner ('Modalità demo · sola lettura') and stored session token. Only console warnings observed: legacy shadow* / pointerEvents deprecations (already tracked in iteration 13).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' (recurrent from iteration 13, non-blocking). Reference: /app/frontend/src/theme.ts (shadow.card used in onboarding-flow role cards)"},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents.' Non-blocking, from earlier iterations."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_b1_auth_onboarding.py",
+    "/app/test_reports/pytest/phase_b1_results.xml"
+  ],
+  "action_items": [
+    "Optional cleanup (carry-over): migrate 'shadow*' style props to 'boxShadow' and 'props.pointerEvents' to 'style.pointerEvents' for RN 0.76+ compatibility.",
+    "Optional enhancement: current business onboarding UI (onboarding-flow.tsx) uses expo-image-picker which cannot be exercised on the web preview — verify manually via Expo Go or native build. Backend upload endpoints are fully validated via pytest.",
+    "No blocking fix needed. Phase B1 is production-ready from a backend + web-flow standpoint."
+  ],
+  "critical_code_review_comments": [
+    "auth.py: register/login/demo/apple correctly separated; password_hash is stripped from every /_public_user response; session issuance uses timezone-aware expiry (deps.py handles both naive and aware).",
+    "server.py demo_readonly_guard middleware correctly whitelists /api/auth/* and SAFE_METHODS, and looks up is_demo per-request — no leakage between demo and non-demo bearers.",
+    "onboarding.py.complete_onboarding sets approval_status='approved' only when role='client' OR user.provider_approved is truthy — matches spec (business/provider stay pending on first onboarding).",
+    "Admin documents endpoint excludes _id (uses find_one with {_id:0}) — no MongoDB serialization issue.",
+    "Frontend AuthContext exposes register/loginEmail/loginApple/loginDemo and the onboarding.tsx UI wires all of them with testIDs. AppleAuthentication.isAvailableAsync gate correctly hides the Apple button on web."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_b1_auth_onboarding.py (new)",
+    "/app/test_reports/pytest/phase_b1_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all 4 flows verified: onboarding UI, register->flow, client onboarding->tabs, demo->tabs+banner)"},
+  "seed_data_creation": "Multiple TEST_* accounts created during pytest run: test_reg_*, test_dup_*, test_weak_*, test_client_*, test_biz_*, test_prov_*, test_up_*, test_adm_*, test_unknown_*, plus one UI account test_ui_*@jobby.test. All prefixed for easy cleanup. Demo account (demo@jobby.app) exercised (idempotent).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase B1 tests live in /app/backend/tests/test_phase_b1_auth_onboarding.py — re-usable. Existing seeded accounts to reuse for regression: mario@test.it/secret123 (business, pending), demo@jobby.app (via POST /api/auth/demo), user_demopreview01 with bearer 'demo-preview-token-123' (client, non-demo — use for write-comparison). Frontend token storage key remains 'jobby_session_token' with JSON.stringify wrapping. Onboarding upload UI cannot be tested on web because it uses expo-image-picker; backend endpoints are verified.",
+  "rca_of_issue": "No open bugs. One transient test-authoring issue: initial fixture used uppercase 'TEST_' prefix in emails but backend correctly lowercases via body.email.strip().lower() — assertion updated to lowercase. This is CORRECT backend behavior."
+}

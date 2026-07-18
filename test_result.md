@@ -204,3 +204,19 @@
   - Backend: POST /api/admin/categories/{id}/commission (valid+invalid+404); create mission with budget; business detail endpoint (404 unknown); confirm booking uses category commission_pct (create mission -> provider accept -> client select -> booking.jobby_fee == labor*pct/100 and booking.commission_pct present).
   - Frontend (CLIENT demo-preview-token-123): richieste filter chips + sort toggle work; request/[id] shows budget field; business-request shows price list + budget. (BUSINESS biz-test-token-999).
   Credentials: CLIENT demo-preview-token-123; BUSINESS biz-test-token-999; Admin token jobby-admin-7c2f9a. Storage key jobby_session_token.
+
+## agent_communication (2026-06 fork — Phase B1: Auth methods + Onboarding + Demo)
+-agent: "main"
+-message: |
+  Implemented multi-method auth + onboarding + read-only demo:
+  1) NEW auth endpoints (coexist with existing Emergent Google + session_token model): POST /api/auth/register {email,password,name}, POST /api/auth/login {email,password} (bcrypt), POST /api/auth/apple {identity_token,name?,email?} (verifies vs Apple JWKS RS256, aud=APPLE_AUDIENCES; iOS build only), POST /api/auth/demo (read-only user). All return {user, session_token}; password_hash never returned.
+  2) Demo read-only: server.py middleware blocks POST/PUT/DELETE/PATCH on /api/* (except /api/auth/*) for is_demo users -> 403 {"detail":"demo_readonly"}. Frontend api.ts surfaces an Alert on demo_readonly. Demo banner shown on client Home (testID demo-banner).
+  3) Onboarding: new users get onboarding_completed=false. app/index.tsx gate routes user->/onboarding-flow when not completed, else /(tabs). app/onboarding-flow.tsx: step0 role (testID role-client/provider/business, role-next), step1 details. Client: name+phone+address. Provider: activities chips + radius slider + phone. Business: business name + Partita IVA (onb-vat) + license upload (onb-license, POST /api/onboarding/business/document) + up to 4 photos (onb-add-photo/onb-photo-del-i, POST/DELETE /api/onboarding/business/photo) + stays approval_status=pending. Submit -> POST /api/onboarding/complete (onb-submit).
+  4) Login screen app/onboarding.tsx rebuilt: segmented Accedi/Registrati (seg-signin/seg-signup) with auth-email/auth-password/auth-name + auth-submit; Google (google-login-button); Apple button (iOS only); demo (demo-button).
+  5) Admin (/api/admin/ui): Users tab now has a 'Docs' button for business users -> modal showing VAT + license image + business photos (GET /api/admin/users/{id}/documents). admin_users returns vat_number.
+  6) Existing users migrated onboarding_completed=true (startup) so they aren't disrupted.
+  Curl-verified: register/login (dup=400 email_exists, wrong pw=401), demo read-only guard (GET 200, POST/PUT/DELETE 403), onboarding/complete (business->pending, vat stored), apple invalid token=401, admin docs endpoint.
+  TEST both (focus on NEW auth + onboarding + demo; do NOT re-test Phase A which passed iteration 13):
+  - Backend: register/login/demo endpoints + validation; demo write guard on a few endpoints; onboarding/complete for each role; onboarding photo add/delete + document set (use a fresh registered account, NOT demo); admin documents endpoint.
+  - Frontend (web): login screen shows Accedi/Registrati/Google/Prova la demo (Apple hidden on web = correct). Register a new email -> lands on /onboarding-flow role step. Pick 'client', fill address, finish -> lands on tabs. Demo button -> tabs with demo-banner; attempting a write (e.g., add funds / create request) shows the demo Alert and is blocked.
+  Credentials: existing mario@test.it/secret123 (business, pending). Register fresh emails for onboarding tests. Admin token jobby-admin-7c2f9a. Storage key jobby_session_token (JSON.stringify the value on web).

@@ -27,6 +27,13 @@ async function request(path: string, options: RequestInit = {}) {
   }
   if (!res.ok) {
     const txt = await res.text();
+    if (res.status === 403 && txt.includes("demo_readonly")) {
+      try {
+        const { Alert } = require("react-native");
+        Alert.alert("Demo", "Questa è una demo di sola lettura. Registrati per usare tutte le funzioni.");
+      } catch {}
+      throw new Error("demo_readonly");
+    }
     throw new Error(txt || `Request failed: ${res.status}`);
   }
   const ct = res.headers.get("content-type") || "";
@@ -48,9 +55,22 @@ async function adminRequest(path: string, adminToken: string, options: RequestIn
 export const api = {
   createSession: (session_token: string) =>
     request("/auth/session", { method: "POST", body: JSON.stringify({ session_token }) }),
+  register: (data: { email: string; password: string; name?: string }) =>
+    request("/auth/register", { method: "POST", body: JSON.stringify(data) }),
+  loginEmail: (data: { email: string; password: string }) =>
+    request("/auth/login", { method: "POST", body: JSON.stringify(data) }),
+  loginApple: (data: { identity_token: string; name?: string | null; email?: string | null }) =>
+    request("/auth/apple", { method: "POST", body: JSON.stringify(data) }),
+  loginDemo: () => request("/auth/demo", { method: "POST" }),
   me: () => request("/auth/me"),
   logout: () => request("/auth/logout", { method: "POST" }),
   updateProfile: (data: any) => request("/profile", { method: "PUT", body: JSON.stringify(data) }),
+  // onboarding
+  completeOnboarding: (data: any) => request("/onboarding/complete", { method: "POST", body: JSON.stringify(data) }),
+  onboardingStatus: () => request("/onboarding/status"),
+  addBusinessPhoto: (image: string) => request("/onboarding/business/photo", { method: "POST", body: JSON.stringify({ image }) }),
+  deleteBusinessPhoto: (index: number) => request(`/onboarding/business/photo/${index}`, { method: "DELETE" }),
+  setBusinessDocument: (image: string) => request("/onboarding/business/document", { method: "POST", body: JSON.stringify({ image }) }),
   providersNearby: (lat: number, lng: number, category?: string) =>
     request(`/providers/nearby?lat=${lat}&lng=${lng}${category ? `&category=${category}` : ""}`),
   createMission: (data: any) => request("/missions", { method: "POST", body: JSON.stringify(data) }),
