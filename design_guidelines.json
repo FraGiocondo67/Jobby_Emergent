@@ -1,0 +1,188 @@
+{
+  "app_name": "JOBBY",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A trustworthy, highly structured, and flexible marketplace where time and reliability are paramount.",
+  "color": {
+    "surface": "#F8F7F4",
+    "onSurface": "#1C1B1A",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1C1B1A",
+    "surfaceTertiary": "#EAE8E3",
+    "onSurfaceTertiary": "#4A4846",
+    "surfaceInverse": "#2C2C2C",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#4A7B59",
+    "brandPrimary": "#4A7B59",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#C57B57",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#E8F0EA",
+    "onBrandTertiary": "#2E5039",
+    "success": "#3A7D44",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D48B3E",
+    "onWarning": "#FFFFFF",
+    "error": "#B94A48",
+    "onError": "#FFFFFF",
+    "info": "#4A4846",
+    "onInfo": "#FFFFFF",
+    "border": "#E2DFD8",
+    "borderStrong": "#C8C4BA",
+    "divider": "#EBE8E0"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical rhythm and native iOS margins. Cards never sit flush to the screen edge. Ensure bottom spacing accounts for the safe area and sticky CTAs.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Bottom tab bar background",
+      "Sticky headers when scrolling content",
+      "Bottom sheet drag handles and headers"
+    ],
+    "dont's": [
+      "Form inputs",
+      "List rows",
+      "Dense provider listing cards"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Onboarding & Auth",
+      "purpose": "Introduce the value of time and trust, toggle language, and login via Google.",
+      "states": {
+        "loading": "Spinner over glass overlay",
+        "empty": "N/A",
+        "error": "Standard alert or inline toast for failed auth"
+      },
+      "layout": "Full-bleed background image with a top-to-bottom dark gradient scrim (0% to 80% surfaceInverse). Bilingual toggle (IT/EN) at top right. Brand wordmark and tagline in the bottom 40%, above a sticky Google Login button (surfaceSecondary bg, onSurface text)."
+    },
+    {
+      "name": "Customer Home",
+      "purpose": "Dashboard to start a new mission or view active/upcoming bookings.",
+      "states": {
+        "loading": "Skeleton grids for categories",
+        "empty": "N/A",
+        "error": "Error boundary with a retry button"
+      },
+      "layout": "Top section: Glass header with greeting. Section 1: Active/Upcoming mission card (surfaceSecondary, shadow 1) showing status. Section 2: 'What do you need?' - 2-column grid of image-backed category cards (Cleaning, Ironing) using gradient scrims and bottom-aligned text."
+    },
+    {
+      "name": "Mission Creation Wizard",
+      "purpose": "Structured flow to define service, location, and time.",
+      "states": {
+        "loading": "Inline spinner during submission",
+        "empty": "N/A",
+        "error": "Validation styling on missed fields"
+      },
+      "layout": "Progress bar at top. Single column form layout with generous spacing. Each step (Config, Location, Date/Time) is a separate view to avoid cognitive overload. Persistent sticky bottom CTA ('Next'/'Broadcast') over a glass background, leaving bottom padding for scroll clearance."
+    },
+    {
+      "name": "Matching Radar",
+      "purpose": "Waiting screen (Modello D) while nearby providers accept the mission.",
+      "states": {
+        "loading": "Pulse animation expanding from center map pin",
+        "empty": "Message: 'Searching for trusted providers...'",
+        "error": "Timeout message with 'Expand search radius' CTA"
+      },
+      "layout": "Map view occupying the upper 60% with subtle radar pulse animations. Bottom 40% is a bottom-sheet (surfaceSecondary) showing real-time counters ('Invited 12, Accepted 2...') and a 'Cancel Request' secondary action."
+    },
+    {
+      "name": "Provider Selection",
+      "purpose": "Compare and choose from providers who accepted the mission.",
+      "states": {
+        "loading": "Skeleton list items",
+        "empty": "Empty state illustration: 'No providers available right now.'",
+        "error": "Retry fetching providers"
+      },
+      "layout": "List view of cards. Each card displays provider avatar (or initials if missing logo/photo), rating, distance, price breakdown (Labor INPS + Jobby Fee). Primary 'Select Provider' button per card. Sticky bottom summary of the requested service."
+    },
+    {
+      "name": "Provider Home",
+      "purpose": "Provider dashboard to manage incoming requests and availability.",
+      "states": {
+        "loading": "Skeleton map and list",
+        "empty": "Illustration: 'No missions nearby. Take a break!'",
+        "error": "Retry connection to Jobby servers"
+      },
+      "layout": "Distinct UI structure from Customer: Top header features an 'Online/Offline' toggle. Split view: Top half is a map of incoming mission pings, bottom half is a scrollable list of 'Mission Requests'. Each card has clear 'Accept' / 'Decline' actions."
+    },
+    {
+      "name": "Profile & Settings",
+      "purpose": "Manage identity, reviews, INPS wallet, and switch roles.",
+      "states": {
+        "loading": "Skeleton text lines",
+        "empty": "N/A",
+        "error": "Failed to load profile data"
+      },
+      "layout": "Profile header with avatar and rating badge. Prominent 'Switch to Provider/Customer' card at the top (brandTertiary bg for emphasis). Settings list (Language, Wallet/INPS setup, Support) using standard iOS list items with right chevrons."
+    }
+  ],
+  "images": {
+    "onboarding_trust": {
+      "url": "https://images.pexels.com/photos/8112186/pexels-photo-8112186.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Two people shaking hands symbolizing trust and agreement"
+    },
+    "category_cleaning": {
+      "url": "https://images.pexels.com/photos/3935315/pexels-photo-3935315.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Clean, bright, sunny living room"
+    },
+    "category_ironing": {
+      "url": "https://images.pexels.com/photos/28576633/pexels-photo-28576633.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Neatly folded clothes on an ironing board"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the No Blues/Purples rule for the brand. Use the Sage Green (#4A7B59) and Terracotta (#C57B57) palette to convey trust and warmth.",
+    "Implement the 'Modello D' workflow accurately: Mission Creation -> Radar Waiting Screen -> Provider Selection. These are separate steps.",
+    "The Role Switch functionality should be a prominent toggle or distinct card in the Profile tab, dynamically changing the Home layout between the 'Customer' booking view and the 'Provider' map/earnings view.",
+    "Apply gradient scrims (transparent to 80% surfaceInverse) to all category image cards and the onboarding background to ensure text readability.",
+    "Use 'Plus Jakarta Sans' weight 400 and 500 exclusively. Avoid 600+ or bold weights; use size changes (e.g., xl or 2xl) to create hierarchy.",
+    "For sticky CTAs, use a fixed container at the screen root, styled with glass (expo-glass-effect or expo-blur) and leave corresponding bottom padding on the ScrollView so content isn't obscured."
+  ],
+  "haptics": {
+    "role_switch": "impactHeavy",
+    "primary_button_press": "impactMedium",
+    "accept_mission": "notificationSuccess",
+    "tab_change": "selection"
+  }
+}
