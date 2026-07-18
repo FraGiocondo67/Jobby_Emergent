@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 7 - Proximity directed-request + two-way chat + provider broadcast regression. Backend: 14/14 pytests green in /app/backend/tests/test_iter7_proximity_flow.py. GET /api/businesses?category=lavanderia returns only Francesco Franzin (no bots), sorted by distance, requires auth (403 without). POST /api/business-requests creates status=pending with populated business_name and category_label. Client sees own via /business-requests, business sees only its own via /business-requests/incoming (client role returns []). GET /{id} works for both parties; a 3rd-party token gets 403. Client trying to /respond gets 403. Business POST /respond {accept:true, eta, mode:delivery, delivery_cost, price, note} => status=confirmed with response persisted; a shared thread (thread_id equal on both sides of conversations table) is opened and the first message is the business summary (Richiesta confermata). Client and business exchange messages via /chat/{cid} POST and both see them on their respective conversation ids => two-way chat verified. Re-responding a handled request => 400 already_handled. {accept:false} => status=declined. business_not_found => 404. Provider broadcast regression: POST /api/missions category=pulizie matched by bots within ~4s. Frontend (mobile viewport 390x844, Bearer tokens injected as JSON-encoded values into localStorage['jobby_session_token']): CLIENT flow verified end-to-end - Home shows category-prossimita tile, /list/prossimita shows list-item-lavanderia, /businesses/lavanderia shows business-user_2f996c8a010a card, /business-request/... form (breq-note, breq-address, breq-submit) submits successfully, done-button navigates to Richieste which shows req-biz-<id> cards. BUSINESS flow verified - after role switch to business, home shows incoming breq-<id> cards; breq-accept-<id> opens the respond modal (resp-mode-pickup/delivery, resp-eta, resp-price, resp-delivery-cost, resp-confirm); confirming persists response. Back on the client, biz-chat-<id> button appears on the confirmed card and navigates to /chat/<conv_id> where the confirmation summary + prior two-way messages are visible. Deprecated RN Web warnings persist (pre-existing carry-over from iter 5/6).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/businesses", "issue": "No filter for `online:true` fallback if a business goes offline - the current query requires online:true which is fine, but there is no way for a client to see 'business exists but currently offline'. Consider returning offline businesses with an offline flag for a better UX (optional)."},
+      {"endpoint": "POST /api/business-requests", "issue": "Does not validate that the target business actually offers `category` (only checks that the user exists as role=business). A client could target a business with a category it does not offer. Consider adding `\"services\": body.category` to the find_one filter."},
+      {"endpoint": "POST /api/business-requests", "issue": "No idempotency / rate-limit: a client can spam the same business with duplicate requests. Non-blocking for MVP."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "app/(tabs)/index.tsx BusinessHome respond modal", "issues": ["`resp-delivery-cost` field stays enabled=false while mode=pickup (correct), but the field still shows '0' as default which is visually ambiguous. Consider hiding the entire delivery-cost input when mode=pickup."]},
+      {"screen": "app/(tabs)/richieste.tsx CustomerRequests", "issues": ["biz-chat button uses a soft purple pill styling that blends into the background of a confirmed card - increase contrast or add an outline for stronger call-to-action affordance."]}
+    ],
+    "react_native_issues": [
+      {"component": "styles.floatWrap in app/(tabs)/index.tsx (line 133)", "issue": "Uses `pointerEvents=\"box-none\"` as a prop - RN Web warns: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Carry-over from iter 5/6. Reference: /app/frontend/app/(tabs)/index.tsx:133"},
+      {"component": "shadow.card / shadow.float in src/theme (used across many screens)", "issue": "RN Web warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Carry-over from iter 5/6. Reference: /app/frontend/src/theme.ts"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_proximity_flow.py",
+    "/app/test_reports/pytest/iter7_proximity.xml"
+  ],
+  "action_items": [
+    "(minor) In /app/backend/routers/business.py create_business_request, also filter by `services: body.category` when finding the business, so a client cannot create a request for a category the business doesn't offer.",
+    "(minor) Hide the delivery-cost TextInput in the respond modal (app/(tabs)/index.tsx BusinessHome) when mode==='pickup' instead of only setting editable=false with a lingering '0'.",
+    "Carry-over: migrate `pointerEvents` prop to style.pointerEvents and `shadow.*` StyleSheet entries to `boxShadow` for RN Web parity."
+  ],
+  "critical_code_review_comments": [
+    "routers/business.py:29 - `list_businesses` doesn't currently filter by service_mode; both `in_shop` and `outdoor` businesses appear in the proximity list. That's fine for MVP but consider adding `?mode=` filter later so 'delivery only' searches can exclude in_shop-only businesses.",
+    "routers/business.py:87-88 - `round(body.price, 2)` silently accepts negative numbers. Add `Field(ge=0)` on BusinessResponseIn.price / delivery_cost to reject bad input at Pydantic level.",
+    "routers/chat.py:14-27 ensure_conversation uniqueness relies on the (user_id, other_id) pair but there is no unique index on it. A race on rapid double-open_thread calls could create duplicates. Add unique compound index on (user_id, other_id) in server.py startup.",
+    "routers/business.py:96 open_thread first-message text is Italian-hardcoded ('Richiesta confermata ✅\\nConsegna a domicilio ...'). If the user_language is 'en' the summary is still Italian. Consider using the language of the client for the summary.",
+    "app/(tabs)/index.tsx BusinessHome.confirm() has try/catch but no user-visible error if the API call fails - the modal stays open with busy=false but no error surface. Add a small error banner or toast."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter7_proximity_flow.py (new)",
+    "/app/test_reports/pytest/iter7_proximity.xml (new)",
+    "/app/test_reports/iteration_7.json (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% for the requested proximity + chat flows (client submission, business accept+respond, client sees confirmed + chat opens with two-way messages verified)"},
+  "seed_data_creation": "None. Used pre-existing Francesco Franzin (user_2f996c8a010a) and demo client (user_demopreview01). Tests created several `TEST_iter7` and `TEST_UI7` business_requests documents against Francesco - these were confirmed/declined during tests and left in DB (safe demo data, prefixed TEST_ for identification). Business role was toggled to 'business' via PUT /profile and restored at end of frontend run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Only Francesco Franzin (user_2f996c8a010a, session_token 'biz-test-token-999') offers lavanderia/pulizie/tecnico and is the only real business in the DB. Frontend storage stores strings as JSON-encoded values, so when injecting a token via localStorage use: localStorage.setItem('jobby_session_token', JSON.stringify('demo-preview-token-123')). Otherwise the storage helper throws a parse warning and the app treats the user as logged-out. Client Richieste renders biz-request cards under testID req-biz-<request_id>. Business Home renders incoming cards under breq-<request_id> with breq-accept-<id> / breq-decline-<id> buttons; the respond modal has testIDs resp-mode-pickup, resp-mode-delivery, resp-eta, resp-price, resp-delivery-cost, resp-confirm, resp-cancel. Confirmed client card exposes biz-chat-<request_id> which router.push('/chat/<conv_id>'). Chat conversations are per-viewer docs sharing a single thread_id so two-way messaging works via the shared thread. To route the client to Richieste tab, use path '/richieste' (Expo Router auto-resolves the (tabs) group). Note: role of Francesco was 'provider' after iter6 - iter7 flipped it to 'business' for BusinessHome to render.",
+  "rca_of_issue": "N/A - this iteration is feature-verification for the new proximity directed-request + two-way chat contract. All requested feature paths pass end-to-end."
+}

@@ -113,4 +113,15 @@ export const api = {
   messages: (id: string) => request(`/chat/${id}`),
   sendMessage: (id: string, text: string) =>
     request(`/chat/${id}`, { method: "POST", body: JSON.stringify({ text }) }),
+
+  // proximity businesses (directed requests)
+  businesses: (category: string, lat: number, lng: number) =>
+    request(`/businesses?category=${category}&lat=${lat}&lng=${lng}`),
+  createBusinessRequest: (data: { business_id: string; category: string; note: string; address: string; lat: number; lng: number }) =>
+    request("/business-requests", { method: "POST", body: JSON.stringify(data) }),
+  businessRequests: () => request("/business-requests"),
+  incomingBusinessRequests: () => request("/business-requests/incoming"),
+  getBusinessRequest: (id: string) => request(`/business-requests/${id}`),
+  respondBusinessRequest: (id: string, data: { accept: boolean; eta?: string; mode?: string; delivery_cost?: number; price?: number; note?: string }) =>
+    request(`/business-requests/${id}/respond`, { method: "POST", body: JSON.stringify(data) }),
 };

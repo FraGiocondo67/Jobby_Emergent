@@ -21,25 +21,38 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function CustomerRequests() {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [missions, setMissions] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
+  const [bizReqs, setBizReqs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [r, b] = await Promise.all([api.requests(), api.bookings()]);
+      const [r, b, br] = await Promise.all([api.requests(), api.bookings(), api.businessRequests()]);
       setMissions(r.missions.filter((m: any) => m.status !== "booked"));
       setPayments(r.payments);
       setBookings(b);
+      setBizReqs(br);
     } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const empty = missions.length === 0 && payments.length === 0 && bookings.length === 0;
+  const empty = missions.length === 0 && payments.length === 0 && bookings.length === 0 && bizReqs.length === 0;
+
+  const openChat = async (otherId: string) => {
+    try {
+      const convos = await api.conversations();
+      const c = convos.find((x: any) => x.other_id === otherId);
+      if (c) router.push(`/chat/${c.conversation_id}`);
+      else router.push("/(tabs)/chat");
+    } catch {
+      router.push("/(tabs)/chat");
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -58,6 +71,30 @@ function CustomerRequests() {
               <View style={{ marginTop: 6 }}><StatusPill status={m.status} /></View>
             </View>
           </Pressable>
+        ))}
+
+        {bizReqs.map((r) => (
+          <View key={r.request_id} testID={`req-biz-${r.request_id}`} style={[styles.card, { flexDirection: "column", alignItems: "stretch" }, shadow.card]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+              <Text style={{ fontSize: 26 }}>🏪</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{r.business_name}</Text>
+                <Text style={styles.cardSub}>{r.category_label?.[lang] || r.category} · {r.note}</Text>
+                <View style={{ marginTop: 6 }}><StatusPill status={r.status} /></View>
+              </View>
+            </View>
+            {r.status === "confirmed" && r.response ? (
+              <>
+                <Text style={styles.bizInfo}>
+                  {r.response.mode === "delivery" ? t("mode_delivery") : t("mode_pickup")} · {r.response.eta || "—"} · €{(r.response.price || 0).toFixed(2)}
+                  {r.response.delivery_cost ? ` + €${r.response.delivery_cost.toFixed(2)}` : ""}
+                </Text>
+                <Pressable testID={`biz-chat-${r.request_id}`} style={styles.chatBtn} onPress={() => openChat(r.business_id)}>
+                  <Text style={styles.chatBtnText}>💬 {t("chat")}</Text>
+                </Pressable>
+              </>
+            ) : null}
+          </View>
         ))}
 
         {bookings.map((b) => (
@@ -139,6 +176,9 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface, textTransform: "capitalize" },
   cardSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 1 },
   cardPrice: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface },
+  bizInfo: { fontSize: fsize.base, fontFamily: font.medium, color: colors.success, marginTop: spacing.md },
+  chatBtn: { marginTop: spacing.md, alignSelf: "flex-start", backgroundColor: colors.purpleBg, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill },
+  chatBtnText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.purple },
   pill: { alignSelf: "flex-start", paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.pill },
   pillText: { fontSize: fsize.sm, fontFamily: font.medium },
   earnHero: { backgroundColor: colors.brand, borderRadius: radius.lg, padding: spacing.xl, marginBottom: spacing.lg },

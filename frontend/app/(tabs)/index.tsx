@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, TextInput, RefreshControl, Switch,
+  View, Text, StyleSheet, ScrollView, Pressable, TextInput, RefreshControl, Switch, Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -16,7 +16,9 @@ import RealMap from "@/src/components/RealMap";
 
 export default function HomeTab() {
   const { user } = useAuth();
-  return user?.role === "provider" ? <ProviderHome /> : <CustomerHome />;
+  if (user?.role === "provider") return <ProviderHome />;
+  if (user?.role === "business") return <BusinessHome />;
+  return <CustomerHome />;
 }
 
 function CustomerHome() {
@@ -209,6 +211,148 @@ function ProviderHome() {
   );
 }
 
+function BusinessHome() {
+  const { user, setUser } = useAuth();
+  const { lang, t } = useLang();
+  const insets = useSafeAreaInsets();
+  const [requests, setRequests] = useState<any[]>([]);
+  const [online, setOnline] = useState(!!user?.online);
+  const [active, setActive] = useState<any>(null); // request being responded to
+  const [eta, setEta] = useState("");
+  const [mode, setMode] = useState("pickup");
+  const [deliveryCost, setDeliveryCost] = useState("0");
+  const [price, setPrice] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try { setRequests(await api.incomingBusinessRequests()); } catch {}
+  }, []);
+  useFocusEffect(useCallback(() => { load(); const iv = setInterval(load, 5000); return () => clearInterval(iv); }, [load]));
+
+  const toggleOnline = async (v: boolean) => {
+    setOnline(v);
+    Haptics.selectionAsync().catch(() => {});
+    setUser(await api.updateProfile({ online: v }));
+  };
+
+  const openRespond = (r: any) => {
+    setActive(r); setEta(""); setMode("pickup"); setDeliveryCost("0"); setPrice(""); setNote("");
+  };
+
+  const decline = async (r: any) => {
+    Haptics.selectionAsync().catch(() => {});
+    await api.respondBusinessRequest(r.request_id, { accept: false });
+    load();
+  };
+
+  const confirm = async () => {
+    setBusy(true);
+    try {
+      await api.respondBusinessRequest(active.request_id, {
+        accept: true, eta, mode,
+        delivery_cost: Number(deliveryCost) || 0,
+        price: Number(price) || 0,
+        note,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setActive(null);
+      load();
+    } catch {} finally { setBusy(false); }
+  };
+
+  const statusColor: Record<string, string> = { pending: colors.warning, confirmed: colors.success, declined: colors.error };
+
+  return (
+    <View style={styles.container}>
+      <View style={[styles.pHeader, { paddingTop: insets.top + spacing.md }]}>
+        <View>
+          <Text style={styles.brandSmall}>JOBBY</Text>
+          <Text style={styles.hi}>{user?.business_name || t("roleBusiness")}</Text>
+        </View>
+        <View style={styles.onlineToggle}>
+          <Text style={[styles.onlineText, { color: online ? colors.success : colors.muted }]}>{online ? t("online") : t("offline")}</Text>
+          <Switch testID="online-toggle" value={online} onValueChange={toggleOnline} trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" />
+        </View>
+      </View>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 100 }} showsVerticalScrollIndicator={false}>
+        <Text style={styles.sectionTitle}>{t("incomingRequests")}</Text>
+        {requests.length === 0 ? (
+          <View style={styles.empty}><Text style={{ fontSize: 40 }}>🏪</Text><Text style={styles.emptyText}>{t("noIncomingRequests")}</Text></View>
+        ) : (
+          requests.map((r) => (
+            <View key={r.request_id} style={[styles.missionCard, shadow.card]} testID={`breq-${r.request_id}`}>
+              <View style={styles.missionRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.missionTitle}>{r.category_label?.[lang] || r.category}</Text>
+                  <Text style={styles.missionSub}>{r.client_name}</Text>
+                  <Text style={styles.missionSub}>{r.note}</Text>
+                  {r.address ? <Text style={styles.missionSub}>📍 {r.address}</Text> : null}
+                </View>
+                <View style={[styles.pill, { backgroundColor: (statusColor[r.status] || colors.muted) + "22" }]}>
+                  <Text style={[styles.pillText, { color: statusColor[r.status] || colors.muted }]}>{t(`status_${r.status}` as any) || r.status}</Text>
+                </View>
+              </View>
+              {r.status === "pending" ? (
+                <View style={styles.actionRow}>
+                  <Button testID={`breq-decline-${r.request_id}`} label={t("decline")} variant="secondary" onPress={() => decline(r)} style={{ flex: 1, height: 46 }} />
+                  <Button testID={`breq-accept-${r.request_id}`} label={t("acceptConfirm")} onPress={() => openRespond(r)} style={{ flex: 1, height: 46 }} />
+                </View>
+              ) : r.status === "confirmed" && r.response ? (
+                <Text style={styles.confirmedInfo}>
+                  {r.response.mode === "delivery" ? t("mode_delivery") : t("mode_pickup")} · {r.response.eta || "—"} · €{(r.response.price || 0).toFixed(2)} + €{(r.response.delivery_cost || 0).toFixed(2)}
+                </Text>
+              ) : null}
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      {/* Respond modal */}
+      <Modal visible={!!active} transparent animationType="slide" onRequestClose={() => setActive(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.lg }]}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>{t("confirmRequest")}</Text>
+
+            <Text style={styles.modalLabel}>{t("deliveryMode")}</Text>
+            <View style={styles.modeRow}>
+              {(["pickup", "delivery"] as const).map((m) => (
+                <Pressable key={m} testID={`resp-mode-${m}`} style={[styles.modeChip, mode === m && styles.modeChipOn]} onPress={() => setMode(m)}>
+                  <Text style={{ fontSize: 20 }}>{m === "pickup" ? "🏪" : "🚚"}</Text>
+                  <Text style={[styles.modeText, mode === m && { color: "#fff" }]}>{m === "pickup" ? t("mode_pickup") : t("mode_delivery")}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.modalLabel}>{t("estimatedTime")}</Text>
+            <TextInput testID="resp-eta" style={styles.modalInput} value={eta} onChangeText={setEta} placeholder={t("etaPlaceholder")} placeholderTextColor={colors.muted} />
+
+            <View style={styles.row2}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalLabel}>{t("priceLabel")}</Text>
+                <TextInput testID="resp-price" style={styles.modalInput} value={price} onChangeText={setPrice} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalLabel}>{t("deliveryCost")}</Text>
+                <TextInput testID="resp-delivery-cost" style={styles.modalInput} value={deliveryCost} onChangeText={setDeliveryCost} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} editable={mode === "delivery"} />
+              </View>
+            </View>
+
+            <Text style={styles.modalLabel}>{t("noteOptional")}</Text>
+            <TextInput testID="resp-note" style={styles.modalInput} value={note} onChangeText={setNote} placeholder="" placeholderTextColor={colors.muted} />
+
+            <View style={styles.actionRow}>
+              <Button testID="resp-cancel" label={t("cancel")} variant="secondary" onPress={() => setActive(null)} style={{ flex: 1 }} />
+              <Button testID="resp-confirm" label={t("confirm")} loading={busy} onPress={confirm} style={{ flex: 1 }} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   top: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
@@ -250,4 +394,18 @@ const styles = StyleSheet.create({
   missionPrice: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.brand },
   actionRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
   acceptedTag: { marginTop: spacing.md, fontSize: fsize.sm, fontFamily: font.medium, color: colors.warning },
+  pill: { alignSelf: "flex-start", paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.pill },
+  pillText: { fontSize: fsize.sm, fontFamily: font.medium, textTransform: "capitalize" },
+  confirmedInfo: { marginTop: spacing.md, fontSize: fsize.base, fontFamily: font.medium, color: colors.success },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  modalCard: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg },
+  modalHandle: { width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderStrong, alignSelf: "center", marginBottom: spacing.md },
+  modalTitle: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.onSurface, marginBottom: spacing.sm },
+  modalLabel: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurfaceTertiary, marginTop: spacing.md, marginBottom: spacing.sm },
+  modalInput: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: fsize.lg, fontFamily: font.regular, color: colors.onSurface },
+  modeRow: { flexDirection: "row", gap: spacing.sm },
+  modeChip: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, paddingVertical: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  modeChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurfaceTertiary },
+  row2: { flexDirection: "row", gap: spacing.md },
 });

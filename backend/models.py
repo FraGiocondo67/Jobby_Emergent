@@ -81,3 +81,21 @@ class DisputeIn(BaseModel):
 
 class MessageIn(BaseModel):
     text: str
+
+
+class BusinessRequestIn(BaseModel):
+    business_id: str
+    category: str
+    note: str = ""
+    address: str = ""
+    lat: float = 0.0
+    lng: float = 0.0
+
+
+class BusinessResponseIn(BaseModel):
+    accept: bool
+    eta: str = ""             # estimated time (free text, e.g. "oggi 18:00")
+    mode: str = "pickup"      # pickup (in-shop) | delivery
+    delivery_cost: float = 0.0
+    price: float = 0.0
+    note: str = ""

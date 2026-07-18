@@ -129,3 +129,17 @@
   Frontend (inject demo token, storage key jobby_session_token):
   - Explore Map screen shows a real map (iframe/leaflet) + provider list; empty state text if none
   - Profile -> switch to Provider -> Activities shows radius slider; switch to Business -> Activities shows service_mode selector + radius
+
+## agent_communication (2026-06 fork — Proximity directed-request flow)
+-agent: "main"
+-message: |
+  New proximity/business logic implemented (per user):
+  - Proximity businesses now use a DIRECTED request (not broadcast): Client browses businesses in a category -> picks ONE -> sends a product/service request -> business Accepts/Declines and confirms eta + mode (pickup/delivery) + delivery_cost + price + note.
+  - Providers (standard services) unchanged (broadcast -> candidacies -> select).
+  - Chat is now genuinely TWO-WAY (shared thread_id) and opens automatically when a business confirms (or a provider is selected).
+  New backend router routers/business.py: GET /api/businesses?category&lat&lng (real businesses only, no bots), POST /api/business-requests, GET /api/business-requests, GET /api/business-requests/incoming, POST /api/business-requests/{id}/respond. chat.py refactored for two-way threads.
+  New frontend: app/businesses/[category].tsx, app/business-request/[businessId].tsx, BusinessHome in (tabs)/index.tsx with respond modal, business requests + chat button in Richieste.
+  Curl-verified end-to-end (client demo + business Francesco): list->request->incoming->confirm->chat two-way all pass.
+  CREDENTIALS FOR TESTING:
+  - Client Bearer: demo-preview-token-123 (user_demopreview01, role client)
+  - Business Bearer: biz-test-token-999 (user_2f996c8a010a 'Francesco Franzin', role business, online, offers lavanderia/pulizie/tecnico, service_mode both)
