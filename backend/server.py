@@ -7,7 +7,7 @@ from starlette.middleware.cors import CORSMiddleware
 from core import db, client, now_utc, new_id
 from catalog import seed_categories, BOT_PROVIDERS
 from trust import recalc_provider_trust
-from routers import auth, catalog_routes, missions, bookings, wallet, chat
+from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ api.include_router(missions.router)
 api.include_router(bookings.router)
 api.include_router(wallet.router)
 api.include_router(chat.router)
+api.include_router(admin_web.router)
 app.include_router(api)
 
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
