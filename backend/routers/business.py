@@ -31,7 +31,7 @@ async def list_businesses(category: str, lat: float = TREVISO["lat"], lng: float
 
 @router.post("/business-requests")
 async def create_business_request(body: BusinessRequestIn, user=Depends(get_current_user)):
-    biz = await db.users.find_one({"user_id": body.business_id, "role": "business"}, {"_id": 0})
+    biz = await db.users.find_one({"user_id": body.business_id, "role": "business", "services": body.category}, {"_id": 0})
     if not biz:
         raise HTTPException(status_code=404, detail="business_not_found")
     cat = await db.categories.find_one({"cat_id": body.category}, {"_id": 0})

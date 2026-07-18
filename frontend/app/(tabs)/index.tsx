@@ -333,10 +333,12 @@ function BusinessHome() {
                 <Text style={styles.modalLabel}>{t("priceLabel")}</Text>
                 <TextInput testID="resp-price" style={styles.modalInput} value={price} onChangeText={setPrice} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalLabel}>{t("deliveryCost")}</Text>
-                <TextInput testID="resp-delivery-cost" style={styles.modalInput} value={deliveryCost} onChangeText={setDeliveryCost} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} editable={mode === "delivery"} />
-              </View>
+              {mode === "delivery" ? (
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalLabel}>{t("deliveryCost")}</Text>
+                  <TextInput testID="resp-delivery-cost" style={styles.modalInput} value={deliveryCost} onChangeText={setDeliveryCost} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} />
+                </View>
+              ) : null}
             </View>
 
             <Text style={styles.modalLabel}>{t("noteOptional")}</Text>

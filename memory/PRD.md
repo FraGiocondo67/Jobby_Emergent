@@ -57,14 +57,16 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - **In-app Admin screen** (`/admin`): token-gated (X-Admin-Token), lists all categories grouped by kind with activate/deactivate switches + "Recalculate Trust Scores". Linked from Profile.
 - Regression verified via curl: mission pending→matched→confirmed→in_progress→completed→review→trust; admin toggle round-trip; payment guard.
 
-## Implemented (2026-06 fork — Real Map + Service Radius + Business Mode)
+## Backlog
 - **Real interactive map** (Leaflet + OpenStreetMap, no API key) via `src/components/RealMap.tsx` — iframe on web, `react-native-webview` on native. Used in Explore Map (`app/map.tsx`) and Provider Home. Shows the user + real provider pins with a coverage circle.
 - **Map shows only REAL registered providers** (demo bots excluded from `GET /api/providers/nearby`); friendly empty state when none online. Bots retained ONLY for mission auto-accept demo.
 - **Service radius slider (1–50 km)** in `app/activities.tsx` for Providers & Businesses → persists `radius_km` (used in matching + map filtering).
 - **Business service mode** selector (`outdoor` / `in_shop` / `both`, default `both`) → persists `service_mode`. In-shop-only providers/businesses are excluded from come-to-me mission invites.
-- Verified via testing agent (iteration 6): backend 10/10, frontend flows for map + radius + service_mode all pass.
+- **Proximity = directed request** (iteration 7): Client browses real businesses in a category → picks one → sends product/service request → business Accepts/Declines and confirms eta + mode (pickup/delivery) + delivery cost + price/note. New `routers/business.py` + `/businesses`, `/business-requests*` endpoints; screens `businesses/[category].tsx`, `business-request/[businessId].tsx`, `BusinessHome`.
+- **Two-way chat** (shared `thread_id`) opens automatically on business confirm / provider selection.
+- Verified via testing agent (iter 6 & 7): all backend + frontend flows pass.
 
-## Backlog
+## Backlog (open)
 ### P1
 - Provider ownership/authorization checks on mission/booking mutation endpoints.
 - Provider profile detail screen with full review list.

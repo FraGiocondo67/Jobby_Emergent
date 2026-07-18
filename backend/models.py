@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 
@@ -96,6 +96,6 @@ class BusinessResponseIn(BaseModel):
     accept: bool
     eta: str = ""             # estimated time (free text, e.g. "oggi 18:00")
     mode: str = "pickup"      # pickup (in-shop) | delivery
-    delivery_cost: float = 0.0
-    price: float = 0.0
+    delivery_cost: float = Field(default=0.0, ge=0)
+    price: float = Field(default=0.0, ge=0)
     note: str = ""
