@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 4 — targeted regression for the user-reported 'empty categories / disconnected profile after login' bug. Created /app/backend/tests/test_auth_session_fix.py with 15 pytests, all passing (15/15) against the public preview URL. (1) POST /api/auth/session with an invalid session_id returns 401 as expected (backend correctly performs the single Emergent exchange with X-Session-ID); missing body returns 422; GET /api/categories without Bearer returns 401 (auth-gated). (2) With a synthetic user + user_sessions doc in Mongo (Bearer flow), every screen-critical endpoint returns 200 with non-empty data: /auth/me returns the user object (no MongoDB _id leak), /categories returns grouped standard=9, proximity=16, payment=4, providers_online>0 (seeded bots online), manifesto has >=6 items, /wallet returns balance+transactions[], /trust returns provider+client scores/subscores/weights/events, /bookings, /requests ({payments,missions}), /chat/conversations all OK. (3) Full mission lifecycle regression passes: create -> pending, bot auto-accepts within ~15s -> matched, /select -> confirmed booking (jobby_fee = 15% of labor), /start -> in_progress + check_in_on_time=true, /complete -> completed, /review -> provider rating updated + reviews_count incremented in DB. (4) Admin gating verified: /admin/categories & /admin/trust/recalc return 403 without / with wrong X-Admin-Token, 200 with 'jobby-admin-7c2f9a' (>=29 categories, recalculated>=1). The refactor into routers/ is intact; ownership guards flagged in iter 3 (missions/{id}/select 403, bookings /start /complete /review /rate-client /dispute 403) are now in place and enforced. The reported bug is resolved at the backend contract level.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/requests", "issue": "Returns an object {payments:[], missions:[]} — not a list. Not a bug, but worth documenting in an OpenAPI/README so frontend consumers don't accidentally .map() on the top-level."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_session_fix.py",
+    "/app/test_reports/pytest/iter4_auth_session_fix.xml"
+  ],
+  "action_items": [
+    "None blocking for the reported bug — 15/15 iter-4 tests green. Prior iter-3 hardening items are now closed in code (ownership checks on booking lifecycle & missions/select). Optional: consider a startup migration to $set non-active fields on categories (label/emoji/questions edits currently only apply to new inserts due to $setOnInsert)."
+  ],
+  "critical_code_review_comments": [
+    "routers/auth.py::create_session param is named `session_token` but semantically receives the Emergent `session_id` from the redirect (single-use). Consider renaming the Pydantic field to `session_id` for clarity to prevent the exact frontend confusion that caused the reported bug.",
+    "routers/auth.py deletes ALL prior user_sessions for the user on every login (delete_many). Fine for single-device MVP but will silently sign the user out on other devices — flag if multi-device is later required.",
+    "routers/wallet.py::/requests returns {payments, missions} object shape while every other list endpoint returns arrays — inconsistent API shape."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_session_fix.py (new)",
+    "/app/test_reports/pytest/iter4_auth_session_fix.xml (new)",
+    "/app/test_reports/iteration_4.json (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "not tested (per request — Emergent Google OAuth cannot be automated end-to-end)"},
+  "seed_data_creation": "Each test class inserts TEST_ users + user_sessions directly in MongoDB (mongodb://localhost:27017, DB=test_database) to obtain a Bearer token, then cleans up users/sessions/missions/bookings/transactions/service_requests/trust_events/client_trust_events/reviews/disputes on teardown. Seeded bot providers (8 around Treviso) are reused for the mission-lifecycle test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "BASE_URL = frontend/.env EXPO_PUBLIC_BACKEND_URL. Auth = Emergent Google OAuth; simulate a logged-in user by inserting users+user_sessions in Mongo (see _mk_user in test_auth_session_fix.py). Admin token: X-Admin-Token=jobby-admin-7c2f9a. Reused patterns: iter-3 sprint3 suite still valid. Note on shapes: /api/requests returns an OBJECT ({payments:[], missions:[]}) — not a list. POST /api/auth/session body field is `session_token` but must receive the Emergent single-use session_id from the redirect (not a pre-derived token) — the recent frontend fix aligns with this.",
+  "rca_of_issue": "RCA (of user bug): frontend AuthContext previously called Emergent's GET auth/v1/env/oauth/session-data itself, got back a session_token, then sent that TOKEN to backend POST /api/auth/session. Backend calls session-data a SECOND time with the received value as X-Session-ID; since session-data is single-use and the value was no longer a session_id, backend received !=200 -> raised 401 -> no user_sessions row inserted -> every subsequent Bearer request 401 -> UI shows empty categories/profile. Fix (frontend): send raw session_id straight to backend so backend performs the single exchange. Backend contract unchanged. Verified: invalid id still 401 (test_invalid_session_id_returns_401); once a valid session exists (simulated via direct Mongo insert), ALL screen endpoints return 200 with the expected non-empty data (categories 9/16/4, providers_online>0, wallet, trust, bookings, requests, chat)."
+}

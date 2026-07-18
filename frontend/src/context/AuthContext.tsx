@@ -20,13 +20,9 @@ const AuthContext = createContext<AuthState>({} as AuthState);
 export const useAuth = () => useContext(AuthContext);
 
 async function processSessionId(sessionId: string) {
-  const res = await fetch(
-    "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-    { headers: { "X-Session-ID": sessionId } }
-  );
-  if (!res.ok) throw new Error("session-data failed");
-  const data = await res.json();
-  const backend = await api.createSession(data.session_token);
+  // Send the one-time session_id straight to our backend, which exchanges it
+  // with Emergent's session-data endpoint and returns a persistent token.
+  const backend = await api.createSession(sessionId);
   await setToken(backend.session_token);
   return backend.user;
 }
