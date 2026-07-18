@@ -170,3 +170,9 @@
   - Frontend: wallet 'add-25' initiates Stripe checkout (verify a checkout.stripe.com URL/redirect is produced; DO NOT need to complete card payment). Verify status endpoint does not credit an unpaid session.
   - Admin Web App: serve /app/admin-web with a static server and Playwright-test connecting to backend https://jobby-mvp-update.preview.emergentagent.com with X-Admin-Token jobby-admin-7c2f9a; verify Users tab shows list and Approve/Suspend/Reject calls succeed (use Francesco user_2f996c8a010a; leave him 'approved' at the end).
   Credentials: CLIENT demo-preview-token-123; BUSINESS biz-test-token-999; Admin token jobby-admin-7c2f9a.
+
+## agent_communication (2026-06 fork — Fix: backend console findability)
+-agent: "main"
+-message: |
+  User reported "can't find admin-web folder". The folder exists & is git-tracked at /app/admin-web (index.html, netlify.toml, README.md) but the platform surfaces frontend/backend, so it's easy to miss. FIX: upgraded the backend-served admin console at GET /api/admin/ui to the FULL console (previously it lacked user-management + revenue). Now it has: Dashboard with 'Revenue monitoring' cards + Operations; Users tab with Approve/Suspend/Reject buttons + filters (All/Pending/Providers/Business/Clients); Categories toggle; Bookings. Accessible in any browser at {backend}/api/admin/ui with admin token jobby-admin-7c2f9a (no folder needed). Standalone Netlify app remains at /app/admin-web.
+  TEST (frontend/web page only, no Expo needed): Open https://jobby-mvp-update.preview.emergentagent.com/api/admin/ui, enter admin token jobby-admin-7c2f9a, Connect. Verify: Dashboard shows Revenue monitoring cards; Users tab lists users with Approve/Suspend/Reject; click Suspend then Approve on Francesco (user_2f996c8a010a) and confirm status flips (LEAVE approved at end); Categories tab toggles; Bookings tab lists.

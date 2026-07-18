@@ -108,7 +108,14 @@ ADMIN_HTML = """<!DOCTYPE html>
   table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
   th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px}
   th{background:#faf9f6;color:var(--muted);font-size:12px;text-transform:uppercase}
-  .pill{padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill{padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block}
+  .p-approved{background:#E4F6EC;color:var(--green)} .p-pending{background:#FDF0DD;color:#E8912A}
+  .p-suspended{background:#FDE7E4;color:var(--orange)} .p-rejected{background:#FBE0DD;color:#DE4B3F}
+  .act{display:flex;gap:6px}
+  .act button{padding:6px 10px;font-size:12px}
+  .b-approve{background:var(--green);color:#fff}.b-suspend{background:#E8912A;color:#fff}.b-reject{background:#DE4B3F;color:#fff}
+  .stat.rev{background:linear-gradient(135deg,#0E1F3D,#20325a);color:#fff}.stat.rev .l{color:#c9d3e8}
+  .filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}.filters .tab{padding:6px 12px;font-size:13px}
   .row{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px}
   .row .em{font-size:22px}
   .row .t{flex:1}
@@ -147,6 +154,7 @@ ADMIN_HTML = """<!DOCTYPE html>
 </div>
 <script>
 let TOKEN='';
+let USERFILTER='all';
 const H=()=>({'X-Admin-Token':TOKEN,'Content-Type':'application/json'});
 async function api(path,opts={}){const r=await fetch('/api'+path,{...opts,headers:H()});if(!r.ok)throw new Error(r.status);return r.json();}
 
@@ -166,13 +174,14 @@ function go(t){
 }
 async function loadDash(){
   const s=await api('/admin/stats');
-  const items=[['Users',s.users],['Clients',s.clients],['Providers',s.providers],['Online now',s.providers_online],
-   ['Missions',s.missions],['Bookings',s.bookings],['Completed',s.completed],['GMV (€)',s.gmv],
-   ['JOBBY fees (€)',s.jobby_fees],['Payments',s.payments_count],['Payments vol (€)',s.payments_volume],
-   ['Categories active',s.categories_active+'/'+s.categories_total]];
-  document.getElementById('dashboard').innerHTML='<div class="grid">'+items.map(i=>
-   `<div class="stat"><div class="n">${i[1]}</div><div class="l">${i[0]}</div></div>`).join('')+
-   '</div><div style="margin-top:16px"><button class="ghost" onclick="recalc()">↻ Recalculate Trust Scores</button></div>';
+  const rev=[['Revenue (JOBBY fees €)',s.revenue],['GMV (€)',s.gmv],['Top-ups (€)',s.topups_volume],['Payments vol (€)',s.payments_volume]];
+  const ops=[['Users',s.users],['Clients',s.clients],['Providers',s.providers],['Online now',s.providers_online],
+   ['Pending approvals',s.pending_approvals],['Missions',s.missions],['Bookings',s.bookings],['Completed',s.completed],
+   ['Payments',s.payments_count],['Categories active',s.categories_active+'/'+s.categories_total]];
+  document.getElementById('dashboard').innerHTML=
+   '<div class="sec">Revenue monitoring</div><div class="grid">'+rev.map(i=>`<div class="stat rev"><div class="n">${i[1]}</div><div class="l">${i[0]}</div></div>`).join('')+'</div>'+
+   '<div class="sec">Operations</div><div class="grid">'+ops.map(i=>`<div class="stat"><div class="n">${i[1]}</div><div class="l">${i[0]}</div></div>`).join('')+'</div>'+
+   '<div style="margin-top:16px"><button class="ghost" onclick="recalc()">↻ Recalculate Trust Scores</button></div>';
 }
 async function recalc(){const r=await api('/admin/trust/recalc',{method:'POST'});alert('Recalculated '+r.recalculated+' users');}
 async function loadCats(){
@@ -191,11 +200,31 @@ async function loadCats(){
 async function toggleCat(id,el){const desired=!el.classList.contains('on');const r=await api('/admin/categories/'+id+'/set',{method:'POST',body:JSON.stringify({active:desired})});el.classList.toggle('on',r.active);}
 async function loadUsers(){
   const u=await api('/admin/users');
-  let rows=u.map(x=>`<tr><td>${x.name||''}${x.is_bot?' 🤖':''}<div class="muted">${x.email||''}</div></td>
-    <td><span class="pill" style="background:#eee">${x.role}</span></td>
-    <td>${x.verification_status}</td><td>${x.trust_score||0}</td><td>${x.client_trust_score||0}</td>
-    <td>€${(x.wallet_balance||0).toFixed(2)}</td></tr>`).join('');
-  document.getElementById('users').innerHTML='<table><tr><th>User</th><th>Role</th><th>KYC</th><th>Provider Trust</th><th>Client Trust</th><th>Wallet</th></tr>'+rows+'</table>';
+  const filtered=u.filter(x=>USERFILTER==='all'?true:USERFILTER==='pending'?(x.approval_status==='pending'&&x.role!=='client'):x.role===USERFILTER);
+  const chips=[['all','All'],['pending','Pending'],['provider','Providers'],['business','Business'],['client','Clients']];
+  let bar='<div class="filters">'+chips.map(c=>`<div class="tab ${USERFILTER===c[0]?'active':''}" onclick="setUF('${c[0]}')">${c[1]}</div>`).join('')+'</div>';
+  let rows=filtered.map(x=>{
+    const st=x.approval_status||'approved';
+    const needs=(x.role==='provider'||x.role==='business');
+    const actions=needs?`<div class="act">
+      ${st!=='approved'?`<button class="b-approve" onclick="setStatus('${x.user_id}','approved')">Approve</button>`:''}
+      ${st!=='suspended'?`<button class="b-suspend" onclick="setStatus('${x.user_id}','suspended')">Suspend</button>`:''}
+      ${st!=='rejected'?`<button class="b-reject" onclick="setStatus('${x.user_id}','rejected')">Reject</button>`:''}
+    </div>`:'<span class="muted">auto</span>';
+    return `<tr>
+      <td>${x.business_name||x.name||''}${x.is_bot?' 🤖':''}<div class="muted">${x.email||''}${x.phone?' · '+x.phone:''}</div></td>
+      <td><span class="pill" style="background:#eee">${x.role}</span></td>
+      <td><span class="pill p-${st}">${st}</span></td>
+      <td>${x.role==='client'?(x.client_trust_score||0):(x.trust_score||0)}</td>
+      <td>€${(x.wallet_balance||0).toFixed(2)}</td>
+      <td>${actions}</td></tr>`;}).join('');
+  document.getElementById('users').innerHTML=bar+'<table><tr><th>User</th><th>Role</th><th>Status</th><th>Trust</th><th>Wallet</th><th>Actions</th></tr>'+rows+'</table>';
+}
+function setUF(f){USERFILTER=f;loadUsers();}
+async function setStatus(id,status){
+  if(status!=='approved'&&!confirm('Set user to '+status+'?'))return;
+  await api('/admin/users/'+id+'/status',{method:'POST',body:JSON.stringify({status})});
+  loadUsers();
 }
 async function loadBookings(){
   const b=await api('/admin/bookings');
