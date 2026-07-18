@@ -68,7 +68,8 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 
 ## Backlog (open)
 - **Phase 3 — DONE:** Admin user management (Approve/Suspend/Reject; clients auto-approved, providers/business need approval) + revenue monitoring; **real Stripe** wallet top-up (test key in backend/.env; live key to be swapped at the end); **separate Netlify web app** at `/app/admin-web` (Dashboard/Users/Categories/Bookings) — verified iter 10.
-- **Remaining:** swap in user's LIVE Stripe key at go-live; charge clients for bookings/service fees via Stripe (currently only wallet top-up is real); crypto settlement (addresses stored only); optional shadow→boxShadow RN Web cleanup.
+- **Real Stripe booking payments (DONE, iter 12):** bookings have `payment_status`; client pays `booking.total` via real Stripe Checkout (`POST /api/bookings/{id}/pay`, `GET /api/payments/status/{id}` — idempotent, server-side amounts). Complete action gated behind payment.
+- **Remaining:** swap in user's LIVE Stripe key; real Sumsub KYC (mocked); crypto settlement (addresses stored only); provider payout of collected booking funds (earnings tracked, no real transfer yet).
 - **Phase 3 (next):** (a) Backend admin APIs — user management list + Approve/Suspend/Reject (clients auto-approved; providers/business need approval), and revenue monitoring; (b) **separate Web App project** for backend management (deployable to Netlify, connects to backend APIs with admin token); (c) **real Stripe** payments (test key `STRIPE_API_KEY` present; user's live key at the end).
 - Crypto payout currently stores wallet addresses (BTC, USDT_TRC20, USDC_ERC20, USDT_ERC20, XRP); actual crypto settlement not wired.
 ### P1
