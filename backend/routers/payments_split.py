@@ -82,6 +82,8 @@ async def _load_payable_richiesta(rid: str, user: dict) -> dict:
         raise HTTPException(status_code=403, detail="forbidden")
     if not r.get("provider_scelto"):
         raise HTTPException(status_code=400, detail="not_confirmed")
+    if r.get("stato") not in ("confermata", "in_corso", "completata"):
+        raise HTTPException(status_code=400, detail="not_confirmed")
     if r.get("binario") == "persona_lf":
         raise HTTPException(status_code=400, detail="lf_uses_voucher_not_psp")
     pl = r.get("pagamento_lavoro", {}) or {}

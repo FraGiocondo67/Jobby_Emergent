@@ -123,6 +123,16 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Add authorization checks + provider profile detail screen.
 - Consider Stripe/YOB Pay for the JOBBY service fee.
 
+## Implemented (2026-06 — Spec 3.1 Pagamenti REALI split marketplace)
+- **Modulo generico** `routers/payments_split.py` sul collection condiviso `db.richieste` (endpoint `/api/pay/*`), valido per TUTTE le categorie sul binario `impresa`/`piva` (il `persona_lf` resta su voucher INPS/borsellino, NON PSP).
+- **Stripe Connect destination charge** (Checkout hosted, raw `STRIPE_CONNECT_SECRET_KEY`): il cliente paga l'intero importo, `application_fee_amount` = fee JOBBY intera, `transfer_data.destination` = connected account del provider → il provider riceve il netto. Richiede provider onboardato (else 400 `provider_not_onboarded_stripe`).
+- **PayPal Orders v2 multiparty**: `payee` + `payment_instruction.platform_fees` = fee JOBBY (else 400 `provider_not_onboarded_paypal`).
+- **Fallback wallet SIMULATO** (escrow) per demo testabili: addebito wallet cliente → `held` → `/release` accredita il netto al provider (JOBBY trattiene la fee intera). Verificato: cliente −41.92, provider +36.07, JOBBY +5.85.
+- **Rimborsi** `/api/pay/richiesta/{rid}/refund` (admin): Stripe `reverse_transfer`+`refund_application_fee` / PayPal `platform_fees` / simulato riaccredito cliente.
+- **Ricorrenti**: `SetupIntent off_session` via Checkout `mode=setup` (`/api/pay/setup-card`) + addebito automatico destination-charge su carta salvata (`/api/pay/richiesta/{rid}/charge-recurring`).
+- **Frontend**: componente riusabile `src/components/PaymentSection.tsx` (3 pulsanti Carta/PayPal/Portafoglio, redirect web + WebBrowser nativo + polling) cablato in pulizie/babysitting/driver/artigiani `[id].tsx`. i18n `pay*` (IT/EN).
+- Testato 6/6 backend (iter31) + UI E2E (held→release). NOTE: lo split reale Stripe/PayPal completa E2E solo con Connect abilitato sul platform account + provider onboardato (azione utente); ora è testabile E2E solo il percorso wallet(simulato).
+
 ## Implemented (2026-07-19 — Spec 7 ARTIGIANI, replaces Tuttofare)
 - **Artigiani category** fully wired & E2E-tested (25/25 backend green): two-stage flow — Stage 1 "paniere" (fixed-price interventions) and Stage 2 "chiamata-diagnosi" (paid diagnosis → in-app quote valid 7d, call-fee scomputo, extras approval, mandatory close with outcome, 30-day guarantee). 6 mestieri (idraulico/elettricista/caldaista/climatizzazione/giardiniere/tuttofare-su-Libretto), abilitazione DM 37/2008 + F-Gas verify.
 - Backend: `routers/artigiani.py`, `artigiani_config.py` (endpoints `/api/artigiani/*`, `/api/admin/artigiani/*`).
