@@ -9,7 +9,7 @@ import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 
 export default function RichiesteTab() {
   const { user } = useAuth();
-  return user?.role === "provider" ? <ProviderJobs /> : <CustomerRequests />;
+  return (user?.role === "provider" || user?.role === "business") ? <ProviderJobs /> : <CustomerRequests />;
 }
 
 function StatusPill({ status }: { status: string }) {

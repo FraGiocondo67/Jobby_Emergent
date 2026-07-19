@@ -329,7 +329,7 @@ async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
         "stato": "confermata", "provider_scelto": body.provider_id,
         "pagamento_fee": {"stato": "charged", "importo": prop["breakdown"]["jobby_fee"], "at": now_utc().isoformat()},
         "pagamento_lavoro": ({"stato": "psp_pending", "importo": prop["price"]} if r["binario"] == "impresa"
-                             else {"stato": "lf", **lf}),
+                             else {**lf, "stato": "lf"}),
         "prezzo_finale": prop["price"], "updated_at": now_utc().isoformat(),
     }
     await db.richieste.update_one({"richiesta_id": rid}, {"$set": upd})
