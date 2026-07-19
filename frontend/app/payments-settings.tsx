@@ -87,19 +87,30 @@ export default function PaymentsSettings() {
   };
 
   const saveCard = async () => {
-    const r = await api.setPaymentMethod({ ...card, card_brand: "visa", card_last4: card.card_last4.slice(-4) });
-    setPm(r.payment_method); setCardOpen(false); setCard({ card_holder: "", card_last4: "", expiry: "", cvv: "" });
-    Haptics.selectionAsync().catch(() => {});
+    try {
+      const r = await api.setPaymentMethod({ ...card, card_brand: "visa", card_last4: card.card_last4.slice(-4) });
+      setPm(r.payment_method); setCardOpen(false); setCard({ card_holder: "", card_last4: "", expiry: "", cvv: "" });
+      Haptics.selectionAsync().catch(() => {});
+    } catch (e: any) {
+      if (String(e?.message) !== "unauthorized") Alert.alert(t("error"));
+    }
   };
-  const saveBank = async () => { const r = await api.setBankAccount(iban); setBank(r.bank_account); setBankOpen(false); Haptics.selectionAsync().catch(() => {}); };
+  const saveBank = async () => {
+    try { const r = await api.setBankAccount(iban); setBank(r.bank_account); setBankOpen(false); Haptics.selectionAsync().catch(() => {}); }
+    catch (e: any) { if (String(e?.message) !== "unauthorized") Alert.alert(t("error")); }
+  };
 
   const pickToken = (tk: string) => { setCwToken(tk); setCwNetwork(DEFAULT_NETWORK[tk] || null); };
   const saveCrypto = async () => {
     if (!cwToken || !cwAddr.trim()) return;
-    const r = await api.setCryptoWallet({ token: cwToken, name: cwName.trim(), address: cwAddr.trim(), network: cwNetwork || "" });
-    setWallets(r.crypto_wallets);
-    setCwOpen(false); setCwToken(null); setCwName(""); setCwAddr(""); setCwNetwork(null);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    try {
+      const r = await api.setCryptoWallet({ token: cwToken, name: cwName.trim(), address: cwAddr.trim(), network: cwNetwork || "" });
+      setWallets(r.crypto_wallets);
+      setCwOpen(false); setCwToken(null); setCwName(""); setCwAddr(""); setCwNetwork(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } catch (e: any) {
+      if (String(e?.message) !== "unauthorized") Alert.alert(t("error"));
+    }
   };
   const deleteCrypto = async (id: string) => {
     const r = await api.deleteCryptoWallet(id); setWallets(r.crypto_wallets);

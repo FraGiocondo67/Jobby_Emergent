@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend-only iteration 32 (Expo web preview). Verified BOTH reported bug fixes for provtest@jobby.app: (1) Provider activity subcategory 'Configura' rows visible and functional; (2) 401 no-crash + login-redirect. Zero page errors, zero LogBox red screen, no uncaught 'unauthorized' text. Token is cleared and app routes to /onboarding as designed. Only pre-existing deprecation console warnings observed (shadow* and props.pointerEvents in RN-web); not regressions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles.shadow*", "issue": "React-Native-Web deprecation warning: 'shadow*' style props are deprecated, use 'boxShadow' (repeated in console). Not blocking, but should migrate for future RN-web releases. Reference: /app/frontend/src/theme.ts (shadow tokens)."},
+      {"component": "props.pointerEvents", "issue": "React-Native-Web deprecation: props.pointerEvents is deprecated; use style.pointerEvents. Non-blocking. Reference: any component using pointerEvents prop directly."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_32.json"],
+  "action_items": [
+    "(Optional cleanup) Migrate shadow* style props to boxShadow across theme.ts to silence RN-Web deprecation warnings.",
+    "(Optional cleanup) Replace pointerEvents prop with style.pointerEvents to silence RN-Web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "api.ts: 401 handler correctly clears token, invokes unauthorizedHandler and throws 'unauthorized'. Verified via corrupt-token test.",
+    "AuthContext.tsx: Registers/unregisters unauthorizedHandler and does router.replace('/onboarding') on 401. Confirmed working.",
+    "payments-settings.tsx: saveCard/saveBank/saveCrypto correctly swallow 'unauthorized' error (only Alert on other errors). No uncaught propagation. useFocusEffect(load) also benefits from global handler.",
+    "activities.tsx: SUBCONFIG map correctly renders configure-artigiani and configure-driver rows only when the corresponding cat_id is selected in `selected` state. Routes to /artigiani/listino and /driver/listino verified live."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not tested)", "frontend": "100%"},
+  "seed_data_creation": "None. Used existing provtest@jobby.app / test1234 (services: artigiani, driver, pulizie).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both bug fixes are working live on Expo web at https://jobby-mvp-update.preview.emergentagent.com. E2E flow tested: login → Profilo → Le mie attività → configure-artigiani → /artigiani/listino (mestieri chips + al-mest-* testIDs visible); back to activities → configure-driver → /driver/listino (dl-tipo-ncc + dl-tipo-taxi visible). Separately: after corrupting jobby_session_token in localStorage to '\"bad-token-xyz\"' then Aggiungi carta → Salva, app redirected to /onboarding without any Uncaught red-screen; localStorage token cleared. Login screen renders Accedi/Registrati.",
+  "rca_of_issue": "n/a — both fixes verified. Prior red-screen was caused by uncaught throw 'unauthorized' from api.request; now (a) global handler in AuthContext clears session & routes to onboarding, and (b) save* handlers swallow the 'unauthorized' error string in payments-settings.tsx so nothing bubbles up to LogBox."
+}

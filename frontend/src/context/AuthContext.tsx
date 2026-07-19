@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { Platform } from "react-native";
-import { api, setToken, clearToken, getToken } from "@/src/api";
+import { router } from "expo-router";
+import { api, setToken, clearToken, getToken, setUnauthorizedHandler } from "@/src/api";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -51,6 +52,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setUser(null);
     }
+  }, []);
+
+  // Session expiry / invalid token → clear user and route to login (prevents crashes).
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      try { router.replace("/onboarding"); } catch {}
+    });
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   useEffect(() => {

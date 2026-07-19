@@ -17,6 +17,12 @@ const MODES = [
   { id: "both", emoji: "🔁", labelKey: "mode_both" },
 ] as const;
 
+// Categorie che hanno sottocategorie da configurare (mestieri / tipi corsa).
+const SUBCONFIG: Record<string, { route: string; titleKey: string }> = {
+  artigiani: { route: "/artigiani/listino", titleKey: "artConfigMestieri" },
+  driver: { route: "/driver/listino", titleKey: "drvConfigTipi" },
+};
+
 export default function Activities() {
   const { user, setUser } = useAuth();
   const { lang, t } = useLang();
@@ -86,6 +92,18 @@ export default function Activities() {
           })}
         </View>
 
+        {/* Categorie con sottocategorie → pulsante Configura (mestieri / tipo NCC-TAXI) */}
+        {Object.entries(SUBCONFIG).filter(([cat]) => selected.includes(cat)).map(([cat, cfg]) => (
+          <Pressable key={cat} testID={`configure-${cat}`} style={[styles.configRow, shadow.card]} onPress={() => router.push(cfg.route as any)}>
+            <Ionicons name="options-outline" size={20} color={colors.brand} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.configTitle}>{t(cfg.titleKey as any)}</Text>
+              <Text style={styles.configSub}>{t("configureSubcatsDesc")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        ))}
+
         {/* Business: service mode */}
         {business ? (
           <View style={styles.block}>
@@ -149,6 +167,9 @@ const styles = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, ...shadow.card },
   chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  configRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.md },
+  configTitle: { fontSize: fsize.base, fontFamily: font.bold, color: colors.onSurface },
+  configSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 2 },
   chipText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface },
   block: { marginTop: spacing.xl, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, ...shadow.card },
   blockTitle: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface },

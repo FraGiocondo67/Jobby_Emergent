@@ -13,6 +13,13 @@ export async function clearToken() {
   await storage.removeItem(TOKEN_KEY);
 }
 
+// Global 401 handler — set by AuthProvider so an expired/invalid session
+// cleanly logs the user out and routes to login instead of crashing the app.
+let unauthorizedHandler: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  unauthorizedHandler = fn;
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const token = await getToken();
   const headers: Record<string, string> = {
@@ -23,6 +30,7 @@ async function request(path: string, options: RequestInit = {}) {
   const res = await fetch(`${BASE}/api${path}`, { ...options, headers });
   if (res.status === 401) {
     await clearToken();
+    if (unauthorizedHandler) { try { unauthorizedHandler(); } catch {} }
     throw new Error("unauthorized");
   }
   if (!res.ok) {
