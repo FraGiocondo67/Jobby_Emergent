@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from core import db, now_utc, new_id
 from deps import get_current_user, require_admin
 from dispute_ai import ai_analyze, REASON_CODES
+from routers.notifications import push_notification
 
 router = APIRouter()
 
@@ -118,6 +119,11 @@ async def create_dispute(body: DisputeCreate, user=Depends(get_current_user)):
     rec = await ai_analyze(dispute, b)
     await db.disputes.update_one({"dispute_id": dispute["dispute_id"]}, {"$set": {"ai_recommendation": rec}})
     dispute["ai_recommendation"] = rec
+    await push_notification(
+        b["provider_id"], "dispute_opened", "Nuova contestazione",
+        f"Un cliente ha aperto una contestazione ({REASON_CODES.get(body.reason_code, 'Altro')}). Hai 48h per rispondere.",
+        "dispute", dispute["dispute_id"],
+    )
     return {k: v for k, v in dispute.items() if k != "_id"}
 
 
@@ -149,6 +155,9 @@ async def add_message(dispute_id: str, body: MessageIn, user=Depends(get_current
     sender = "client" if d["customer_id"] == user["user_id"] else "provider"
     msg = {"from": sender, "text": body.text, "at": now_utc().isoformat()}
     await db.disputes.update_one({"dispute_id": dispute_id}, {"$push": {"messages": msg}})
+    recipient = d["provider_id"] if sender == "client" else d["customer_id"]
+    await push_notification(recipient, "dispute_message", "Nuovo messaggio contestazione",
+                            body.text[:120], "dispute", dispute_id)
     return msg
 
 
@@ -171,6 +180,12 @@ async def provider_respond(dispute_id: str, body: ProviderRespondIn, user=Depend
     else:
         upd["status"] = "provider_responded"
     await db.disputes.update_one({"dispute_id": dispute_id}, {"$set": upd})
+    if body.accept:
+        await push_notification(d["customer_id"], "dispute_resolved", "Contestazione risolta",
+                                f"Il fornitore ha accettato un rimborso del {max(0, min(100, body.refund_pct))}%.", "dispute", dispute_id)
+    else:
+        await push_notification(d["customer_id"], "dispute_update", "Risposta del fornitore",
+                                "Il fornitore ha risposto alla tua contestazione.", "dispute", dispute_id)
     return await db.disputes.find_one({"dispute_id": dispute_id}, {"_id": 0})
 
 
@@ -211,6 +226,9 @@ async def admin_resolve(dispute_id: str, body: AdminResolveIn, _=Depends(require
                                  {"$set": {"status": "resolved_jobby",
                                            "resolution": {"by": "jobby_admin", "decision": body.decision, "refund_pct": pct, "note": body.note, **res},
                                            "resolved_at": now_utc().isoformat()}})
+    for uid in (d["customer_id"], d["provider_id"]):
+        await push_notification(uid, "dispute_resolved", "Contestazione risolta da JOBBY",
+                                f"Decisione: {body.decision.replace('_', ' ')} ({pct}%).", "dispute", dispute_id)
     return await db.disputes.find_one({"dispute_id": dispute_id}, {"_id": 0})
 
 

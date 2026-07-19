@@ -1,9 +1,10 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Platform, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import * as WebBrowser from "expo-web-browser";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
@@ -47,13 +48,39 @@ export default function PaymentsSettings() {
   const [cwName, setCwName] = useState("");
   const [cwAddr, setCwAddr] = useState("");
   const [cwNetwork, setCwNetwork] = useState<string | null>(null);
+  const [connect, setConnect] = useState<any>(null);
+  const [connBusy, setConnBusy] = useState(false);
 
   const isProvider = user?.role === "provider" || user?.role === "business";
 
   const load = useCallback(async () => {
     try { const w = await api.wallet(); setPm(w.payment_method); setBank(w.bank_account); setWallets(w.crypto_wallets || []); setPaypalEmail(w.paypal_email || ""); } catch {}
-  }, []);
+    if (user?.role === "provider" || user?.role === "business") {
+      try { setConnect(await api.connectStatus()); } catch {}
+    }
+  }, [user?.role]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const startStripeOnboarding = async () => {
+    setConnBusy(true);
+    Haptics.selectionAsync().catch(() => {});
+    try {
+      const origin = Platform.OS === "web" && typeof window !== "undefined"
+        ? window.location.origin
+        : (process.env.EXPO_PUBLIC_BACKEND_URL || "");
+      const { url } = await api.connectOnboarding(origin);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = url;
+      } else {
+        await WebBrowser.openBrowserAsync(url);
+        await load();
+      }
+    } catch (e: any) {
+      const m = String(e?.message || "");
+      if (m.includes("signed up for Connect") || m.includes("Connect")) Alert.alert(t("stripePayout"), t("stripeConnectNotEnabled"));
+      else Alert.alert(t("error"));
+    } finally { setConnBusy(false); }
+  };
 
   const savePaypal = async () => {
     try { const r = await api.setPaypalEmail(paypalEmail.trim()); setPaypalEmail(r.paypal_email); setPaypalOpen(false); Haptics.selectionAsync().catch(() => {}); } catch {}
@@ -188,6 +215,24 @@ export default function PaymentsSettings() {
                 </Pressable>
               </View>
             ) : null}
+          </>
+        ) : null}
+
+        {/* Stripe Connect real payout (providers/business) */}
+        {isProvider ? (
+          <>
+            <Text style={styles.section}>{t("stripePayout")}</Text>
+            <View style={[styles.setupRow, shadow.card]}>
+              <Ionicons name="card-outline" size={22} color="#635BFF" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.setupText}>
+                  {connect?.payouts_enabled ? t("stripePayoutReady") : connect?.connected ? t("stripePayoutPending") : t("stripeConnectDesc")}
+                </Text>
+              </View>
+            </View>
+            <Pressable testID="stripe-connect-btn" style={[styles.saveBtn, { backgroundColor: "#635BFF", marginTop: spacing.sm, opacity: connBusy ? 0.6 : 1 }]} disabled={connBusy} onPress={startStripeOnboarding}>
+              <Text style={styles.saveText}>{connect?.payouts_enabled ? t("save") : t("configureStripe")}</Text>
+            </Pressable>
           </>
         ) : null}
 

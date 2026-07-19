@@ -388,6 +388,21 @@ export const strings = {
     pickDate: "Seleziona data",
     pickTime: "Seleziona ora",
     clientPayoutDesc: "Imposta come prelevare o usare i tuoi fondi disponibili",
+    // Notifications
+    notifications: "Notifiche",
+    unreadLabel: "non lette",
+    allReadLabel: "Tutte lette",
+    noNotifications: "Nessuna notifica",
+    // Stripe Connect payouts
+    methodStripe: "Stripe",
+    stripePayout: "Payout Stripe",
+    stripeConnectDesc: "Ricevi i tuoi incassi direttamente sul conto tramite Stripe",
+    configureStripe: "Configura payout Stripe",
+    stripePayoutReady: "Payout Stripe attivo ✓",
+    stripePayoutPending: "Completa la verifica Stripe",
+    stripeConnectNotEnabled: "Stripe Connect non ancora abilitato sull'account della piattaforma.",
+    payoutsNotEnabledMsg: "Completa prima la configurazione del payout Stripe.",
+    noConnectAccountMsg: "Configura prima il payout Stripe dalle impostazioni pagamenti.",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -776,6 +791,21 @@ export const strings = {
     pickDate: "Select date",
     pickTime: "Select time",
     clientPayoutDesc: "Set how to withdraw or use your available funds",
+    // Notifications
+    notifications: "Notifications",
+    unreadLabel: "unread",
+    allReadLabel: "All read",
+    noNotifications: "No notifications",
+    // Stripe Connect payouts
+    methodStripe: "Stripe",
+    stripePayout: "Stripe payout",
+    stripeConnectDesc: "Receive your earnings straight to your account via Stripe",
+    configureStripe: "Set up Stripe payout",
+    stripePayoutReady: "Stripe payout active ✓",
+    stripePayoutPending: "Complete Stripe verification",
+    stripeConnectNotEnabled: "Stripe Connect is not yet enabled on the platform account.",
+    payoutsNotEnabledMsg: "Complete your Stripe payout setup first.",
+    noConnectAccountMsg: "Set up Stripe payout from payment settings first.",
   },
 };
 

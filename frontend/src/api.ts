@@ -112,6 +112,17 @@ export const api = {
   disputeRespond: (id: string, data: { accept: boolean; refund_pct?: number; message?: string }) =>
     request(`/disputes/${id}/respond`, { method: "POST", body: JSON.stringify(data) }),
   disputeEscalate: (id: string) => request(`/disputes/${id}/escalate`, { method: "POST" }),
+  // notifications
+  notifications: () => request("/notifications"),
+  notifUnread: () => request("/notifications/unread-count"),
+  markNotifRead: (id: string) => request(`/notifications/${id}/read`, { method: "POST" }),
+  markAllNotifRead: () => request("/notifications/read-all", { method: "POST" }),
+  // stripe connect (real provider payouts)
+  connectStatus: () => request("/connect/status"),
+  connectOnboarding: (originUrl: string) =>
+    request("/connect/onboarding-link", { method: "POST", body: JSON.stringify({ origin_url: originUrl }) }),
+  withdrawStripe: (amount: number) =>
+    request("/wallet/withdraw/stripe", { method: "POST", body: JSON.stringify({ amount }) }),
   topupCheckout: (packageId: string, originUrl: string) =>
     request("/wallet/topup/checkout", { method: "POST", body: JSON.stringify({ package_id: packageId, origin_url: originUrl }) }),
   topupStatus: (sessionId: string) => request(`/wallet/topup/status/${sessionId}`),

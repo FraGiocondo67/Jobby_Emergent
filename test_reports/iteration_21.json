@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 21: NOTIFICATIONS + STRIPE CONNECT — 14/14 backend pytest cases PASS and frontend UI verified end-to-end. Notifications system fully functional: dispute_opened / dispute_message / dispute_resolved auto-notifications land on the correct users, unread-count / mark-one-read / read-all all work, and demo user is still readonly (403 demo_readonly). Stripe Connect returns clean handled errors as expected: GET /connect/status = 200 {connected:false,...}; POST /connect/onboarding-link with client bearer = 403 providers_only; with provider bearer = 502 with clean JSON detail 'You can only create new accounts if you\\'ve signed up for Connect' (verified via localhost — the public URL is fronted by Cloudflare which replaces 502s with its own HTML page, so end-user-facing frontend sees Cloudflare's 'Bad gateway' HTML instead of the backend JSON — see minor issue below); POST /wallet/withdraw/stripe with amount>balance returns clean 400 insufficient_available (never 500). Frontend: /notifications route renders with notif-back, notif-mark-all + 5 notif-<id> rows (all created by our backend test flow). Profile → profile-notifications row present. /payments-settings shows the 'Payout Stripe' section with stripe-connect-btn (label 'Configura payout Stripe') for provider. /wallet shows wm-stripe chip for provider. Tapping stripe-connect-btn does NOT crash the app. Deprecated 'shadow*' style warnings noted (see react_native_issues).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/connect/onboarding-link (public URL)", "issue": "Backend correctly returns HTTP 502 + JSON body {detail: 'You can only create new accounts if you\\'ve signed up for Connect, which you can do at https://dashboard.stripe.com/connect.'}. However the Kubernetes/Cloudflare ingress interprets that upstream 502 and replaces the body with its own 'Bad gateway' HTML page. So the mobile client receives HTML instead of JSON. The client-side error branch in payments-settings.tsx (lines 79-82) still works because the HTML happens to contain the word 'Connect', but this is fragile. Consider surfacing this as HTTP 400 with a business-friendly code (e.g. detail='stripe_connect_not_enabled_on_platform') instead of 502, so ingress passes it through and the frontend can localize the message cleanly."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow.card style prop", "issue": "Console warning: 'shadow*' style props are deprecated. Use 'boxShadow'. Emitted repeatedly on /notifications, /payments-settings, /wallet. Reference: /app/frontend/src/theme.ts (shadow.card definition uses shadowColor/shadowOffset/shadowOpacity/shadowRadius). Migrate to `boxShadow: '0 2px 8px rgba(0,0,0,0.08)'` (react-native-web now supports it) or split platform-specific styles."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_notifications_stripe_iter21.py",
+    "/app/test_reports/pytest/iter21_notifs_stripe.xml"
+  ],
+  "action_items": [
+    "(minor) Change POST /api/connect/onboarding-link to raise 400 with a stable machine-readable detail (e.g. 'stripe_connect_not_enabled') when Stripe returns 'signed up for Connect' — currently the 502 is rewritten by Cloudflare to an HTML page, breaking JSON parsing on the client.",
+    "(minor) Migrate `shadow*` props to `boxShadow` (or wrap in Platform.select) to remove the deprecation warnings across the app — recurs every render on many screens.",
+    "(informational) Stripe Connect end-to-end (real onboarding + real Transfer) still cannot be validated until the platform Stripe account enables Connect in Dashboard — expected, tracked as a user action."
+  ],
+  "critical_code_review_comments": [
+    "routers/notifications.py is compact and correct: notif_id + user_id scoping + best-effort push_notification (never raises). ✓",
+    "routers/payments_connect.py correctly gates providers_only, uses _require_key(), and returns clean HTTPException wrapping stripe.error.StripeError — no bare Exception → 500. ✓",
+    "routers/disputes.py wires push_notification for open (provider), message (recipient), respond (customer), and admin resolve (both). ✓",
+    "frontend notifications.tsx correctly marks-read on tap, routes to /dispute/<id> for dispute types, and gracefully handles empty state (`Nessuna notifica`). ✓",
+    "profile.tsx uses profile-notifications testID and conditionally shows the red badge when unread>0. ✓",
+    "payments-settings.tsx only shows the Stripe Connect section for provider/business (isProvider gate). ✓",
+    "api.ts request() rewrites the raw backend detail into `throw new Error(txt)`. If backend detail is JSON like {detail:'...'} the whole JSON string is thrown — the payments-settings error handler does substring includes('Connect') which works, but a cleaner contract would be to parse and throw the detail string only."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_notifications_stripe_iter21.py (new, 14 tests)",
+    "/app/test_reports/pytest/iter21_notifs_stripe.xml (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Reused existing seed: user_disptest01 (disp-test-token-777) + prov_cfbd9805ce97 (prov-test-token-888) + bkg_disptest01. The test module (a) creates a dispute if not already open, (b) posts a message, (c) admin-resolves with decision=reject/refund_pct=0 so wallet balances are not mutated. Notifications for the provider are cleared via read-all inside the tests but remain visible on the /notifications screen.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests: `pytest /app/backend/tests/test_notifications_stripe_iter21.py -v`. Idempotent — safely rerunnable. For the frontend, inject the provider token via `localStorage.setItem('jobby_session_token', JSON.stringify('prov-test-token-888'))` before navigating to /notifications, /payments-settings, /wallet. Stripe Connect onboarding CANNOT be end-to-end tested until the user enables Connect on their Stripe dashboard — this is a known pending user action, NOT a bug.",
+  "rca_of_issue": "One minor RCA: the public URL is fronted by Cloudflare which converts backend HTTP 502 responses into its own HTML 'Bad gateway' page, replacing the backend JSON body. Mitigation: return the Stripe-Connect-not-enabled error as HTTP 400 (or 409) with a stable detail code instead of 502, so ingress lets the JSON through unmodified — this keeps the client-side Alert i18n reliable."
+}

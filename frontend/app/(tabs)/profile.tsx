@@ -23,12 +23,14 @@ export default function ProfileTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [trust, setTrust] = useState<any>(null);
+  const [unread, setUnread] = useState(0);
 
   const isProvider = user?.role === "provider" || user?.role === "business";
   const vStatus = user?.verification_status || "unverified";
 
   const loadTrust = useCallback(async () => {
     try { setTrust(await api.trust()); } catch {}
+    try { const r = await api.notifUnread(); setUnread(r.unread || 0); } catch {}
   }, []);
   useFocusEffect(useCallback(() => { loadTrust(); }, [loadTrust]));
 
@@ -144,6 +146,17 @@ export default function ProfileTab() {
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Pressable>
 
+        {/* Notifications */}
+        <Pressable testID="profile-notifications" style={[styles.listRow, shadow.card]} onPress={() => router.push("/notifications")}>
+          <View style={[styles.rowIcon, { backgroundColor: "#FEF3E0" }]}><Ionicons name="notifications" size={22} color={colors.warning} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>{t("notifications")}</Text>
+            <Text style={styles.rowSub}>{unread > 0 ? `${unread} ${t("unreadLabel")}` : t("allReadLabel")}</Text>
+          </View>
+          {unread > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{unread > 9 ? "9+" : unread}</Text></View> : null}
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </Pressable>
+
         {/* Payments & payout settings */}
         <Pressable testID="profile-payments" style={[styles.listRow, shadow.card]} onPress={() => router.push("/payments-settings")}>
           <View style={[styles.rowIcon, { backgroundColor: colors.blueBg }]}><Ionicons name="card" size={22} color={colors.blue} /></View>
@@ -203,6 +216,8 @@ const styles = StyleSheet.create({
   roleText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurfaceTertiary },
   listRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
   rowIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  badge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: colors.error, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  badgeText: { color: "#fff", fontSize: fsize.sm, fontFamily: font.bold },
   rowTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface },
   rowSub: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted, marginTop: 1 },
   trustCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md },

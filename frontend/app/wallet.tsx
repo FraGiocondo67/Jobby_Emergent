@@ -5,6 +5,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
+import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
@@ -17,6 +18,7 @@ const PACKAGES = [
 
 export default function Wallet() {
   const { t } = useLang();
+  const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ session_id?: string }>();
@@ -26,7 +28,7 @@ export default function Wallet() {
   const [holds, setHolds] = useState<any[]>([]);
   const [hasBank, setHasBank] = useState(false);
   const [hasCrypto, setHasCrypto] = useState(false);
-  const [wMethod, setWMethod] = useState<"bank" | "crypto" | "yobpay">("bank");
+  const [wMethod, setWMethod] = useState<"bank" | "crypto" | "yobpay" | "stripe">("bank");
   const [wAmount, setWAmount] = useState("");
   const [txs, setTxs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -52,7 +54,11 @@ export default function Wallet() {
     if (!amt || amt <= 0) { Alert.alert(t("amountLabel")); return; }
     setBusy(true);
     try {
-      await api.withdraw({ method: wMethod, amount: amt });
+      if (wMethod === "stripe") {
+        await api.withdrawStripe(amt);
+      } else {
+        await api.withdraw({ method: wMethod, amount: amt });
+      }
       setWAmount("");
       await load();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -62,6 +68,9 @@ export default function Wallet() {
       if (m.includes("insufficient_available")) Alert.alert(t("insufficientFundsMsg"));
       else if (m.includes("no_bank_account")) Alert.alert(t("methodBank"), t("notSet"));
       else if (m.includes("no_crypto_wallet")) Alert.alert(t("methodCrypto"), t("notSet"));
+      else if (m.includes("no_connect_account")) Alert.alert(t("methodStripe"), t("noConnectAccountMsg"));
+      else if (m.includes("payouts_not_enabled")) Alert.alert(t("methodStripe"), t("payoutsNotEnabledMsg"));
+      else if (m.includes("signed up for Connect") || m.includes("Connect")) Alert.alert(t("methodStripe"), t("stripeConnectNotEnabled"));
       else Alert.alert(t("error"));
     } finally { setBusy(false); }
   };
@@ -163,10 +172,12 @@ export default function Wallet() {
 
         <Text style={styles.section}>{t("withdraw")}</Text>
         <View style={styles.methodRow}>
-          {([["bank", "methodBank", "business-outline"], ["crypto", "methodCrypto", "logo-bitcoin"], ["yobpay", "methodYobpay", "card-outline"]] as const).map(([m, key, icon]) => (
-            <Pressable key={m} testID={`wm-${m}`} style={[styles.methodBtn, wMethod === m && styles.methodOn]} onPress={() => setWMethod(m)}>
-              <Ionicons name={icon} size={18} color={wMethod === m ? "#fff" : colors.onSurface} />
-              <Text style={[styles.methodText, wMethod === m && { color: "#fff" }]}>{t(key)}</Text>
+          {(([["bank", "methodBank", "business-outline"], ["crypto", "methodCrypto", "logo-bitcoin"], ["yobpay", "methodYobpay", "card-outline"],
+            ...((user?.role === "provider" || user?.role === "business") ? [["stripe", "methodStripe", "card"]] : []),
+          ]) as [string, string, string][]).map(([m, key, icon]) => (
+            <Pressable key={m} testID={`wm-${m}`} style={[styles.methodBtn, wMethod === m && styles.methodOn]} onPress={() => setWMethod(m as any)}>
+              <Ionicons name={icon as any} size={18} color={wMethod === m ? "#fff" : colors.onSurface} />
+              <Text style={[styles.methodText, wMethod === m && { color: "#fff" }]}>{t(key as any)}</Text>
             </Pressable>
           ))}
         </View>
