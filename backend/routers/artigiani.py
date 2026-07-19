@@ -41,6 +41,22 @@ def _mestiere(mid: str) -> Optional[dict]:
     return next((m for m in A.MESTIERI if m["id"] == mid), None)
 
 
+def compute_chiamata_fee(lst: dict, distance_km: float, urgente: bool) -> float:
+    """Diritto di chiamata (Ispezione): base + €/km oltre i km inclusi, +% urgenza, minimo garantito.
+    Fallback al vecchio campo flat 'chiamata_fee' se i nuovi parametri non sono impostati."""
+    d = A.DEFAULT_CHIAMATA
+    base = float(lst.get("chiamata_base", lst.get("chiamata_fee", d["chiamata_base"])) or 0)
+    per_km = float(lst.get("chiamata_per_km", d["chiamata_per_km"]) or 0)
+    incl = float(lst.get("chiamata_km_inclusi", d["chiamata_km_inclusi"]) or 0)
+    minimo = float(lst.get("chiamata_minimo", 0) or 0)
+    urg_pct = float(lst.get("chiamata_urgenza_pct", 0) or 0)
+    extra_km = max(0.0, float(distance_km or 0) - incl)
+    fee = base + per_km * extra_km
+    if urgente and urg_pct:
+        fee = fee * (1 + urg_pct / 100.0)
+    return round(max(fee, minimo), 2)
+
+
 def route_tuttofare(descrizione: str) -> Optional[str]:
     """If a handyman request touches impianti, suggest the abilitato mestiere."""
     d = (descrizione or "").lower()
@@ -74,6 +90,7 @@ async def compatible_providers(mestiere: str, binario: str, lat: float, lng: flo
 @router.get("/artigiani/config")
 async def get_config(user=Depends(get_current_user)):
     return {"mestieri": A.MESTIERI, "paniere": A.PANIERE, "esiti": A.ESITI, "binari": A.BINARI,
+            "parametri": A.PARAMETRI, "fasce_orarie": A.FASCE_ORARIE, "chiamata_default": A.DEFAULT_CHIAMATA,
             "fasce_urgenza": A.FASCE_URGENZA, "garanzia_giorni": A.GARANZIA_DAYS,
             "preventivo_giorni": A.PREVENTIVO_VALIDITY_DAYS, "fee_pct": await fee_pct()}
 
@@ -109,12 +126,12 @@ async def estimate(body: EstimateIn, user=Depends(get_current_user)):
             if pr is None:
                 default = next((x for x in A.PANIERE.get(body.mestiere, []) if x["id"] == body.intervento_id), None)
                 pr = default["prezzo"] if default else None
+            if pr is None:
+                continue
+            if body.urgente:
+                pr = pr * (1 + float(lst.get("urgenze_pct", 0)) / 100.0)
         else:
-            pr = lst.get("chiamata_fee")
-        if pr is None:
-            continue
-        if body.urgente:
-            pr = pr * (1 + float(lst.get("urgenze_pct", 0)) / 100.0)
+            pr = compute_chiamata_fee(lst, pp["distance"], body.urgente)
         prices.append(round(pr, 2))
     return {"providers": len(provs), "modalita": body.modalita,
             "min": round(min(prices), 2) if prices else None, "max": round(max(prices), 2) if prices else None}
@@ -123,7 +140,12 @@ async def estimate(body: EstimateIn, user=Depends(get_current_user)):
 # ---------------- provider listino (per mestiere) ----------------
 class MestiereListino(BaseModel):
     binario: str = "impresa"
-    chiamata_fee: float = 50.0
+    chiamata_fee: float = 50.0        # legacy flat fee (fallback)
+    chiamata_base: float = 40.0       # diritto di chiamata: base fissa
+    chiamata_per_km: float = 1.5      # €/km oltre i km inclusi
+    chiamata_km_inclusi: float = 5.0  # km inclusi nella base
+    chiamata_urgenza_pct: float = 20.0
+    chiamata_minimo: float = 40.0
     tariffa_oraria: float = 35.0
     paniere: List[dict] = []          # [{id,prezzo}]
     urgenze: bool = False
@@ -178,13 +200,15 @@ async def upload_abilitazione(body: AbilitazioneIn, user=Depends(get_current_use
 # ---------------- richiesta CRUD ----------------
 class RichiestaIn(BaseModel):
     mestiere: str
-    modalita: str = "diagnosi"        # paniere | diagnosi
+    modalita: str = "diagnosi"        # paniere | diagnosi (Ispezione)
     intervento_id: str = ""
+    parametri: dict = {}              # risposte ai parametri per mestiere
     descrizione: str = ""
     foto: List[str] = []
     binario: str = "impresa"
     urgente: bool = False
     fascia_urgenza: str = ""
+    fascia_oraria: str = ""           # mattina | pomeriggio | sera (intervento programmato)
     indirizzo: str = ""
     accesso: str = ""
     lat: float
@@ -206,8 +230,9 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
     if body.modalita == "paniere":
         intervento = next((x for x in A.PANIERE.get(body.mestiere, []) if x["id"] == body.intervento_id), None)
     config = {"mestiere": body.mestiere, "modalita": body.modalita, "intervento_id": body.intervento_id,
-              "intervento": intervento, "descrizione": body.descrizione, "foto": body.foto,
-              "urgente": body.urgente, "fascia_urgenza": body.fascia_urgenza}
+              "intervento": intervento, "parametri": body.parametri, "descrizione": body.descrizione,
+              "foto": body.foto, "urgente": body.urgente, "fascia_urgenza": body.fascia_urgenza,
+              "fascia_oraria": body.fascia_oraria}
     doc = {
         "richiesta_id": rid, "cliente_id": user["user_id"], "cliente_nome": user.get("name", ""),
         **CAT, "binario": body.binario, "config": config,
@@ -269,10 +294,11 @@ async def incoming(user=Depends(get_current_user)):
         if cfg["modalita"] == "paniere":
             pr = next((x["prezzo"] for x in (lst.get("paniere") or []) if x["id"] == cfg["intervento_id"]),
                       (cfg.get("intervento") or {}).get("prezzo"))
+            if pr is not None and r.get("urgente"):
+                pr = round(pr * (1 + float(lst.get("urgenze_pct", 0)) / 100.0), 2)
         else:
-            pr = lst.get("chiamata_fee")
-        if pr is not None and r.get("urgente"):
-            pr = round(pr * (1 + float(lst.get("urgenze_pct", 0)) / 100.0), 2)
+            dist = haversine(r.get("lat", 0), r.get("lng", 0), user.get("lat", 0), user.get("lng", 0))
+            pr = compute_chiamata_fee(lst, dist, r.get("urgente", False))
         r["my_price"] = pr
         r["my_proposal"] = next((p for p in r.get("proposte", []) if p.get("provider_id") == user["user_id"]), None)
         r.pop("indirizzo", None); r.pop("accesso", None)
@@ -301,10 +327,11 @@ async def propose(rid: str, body: ProposeIn, user=Depends(get_current_user)):
     if cfg["modalita"] == "paniere":
         prezzo = next((x["prezzo"] for x in (lst.get("paniere") or []) if x["id"] == cfg["intervento_id"]),
                       (cfg.get("intervento") or {}).get("prezzo", 0))
+        if r.get("urgente"):
+            prezzo = round(prezzo * (1 + float(lst.get("urgenze_pct", 0)) / 100.0), 2)
     else:
-        prezzo = lst.get("chiamata_fee", 50)
-    if r.get("urgente"):
-        prezzo = round(prezzo * (1 + float(lst.get("urgenze_pct", 0)) / 100.0), 2)
+        dist = haversine(r.get("lat", 0), r.get("lng", 0), user.get("lat", 0), user.get("lng", 0))
+        prezzo = compute_chiamata_fee(lst, dist, r.get("urgente", False))
     proposal = {
         "provider_id": user["user_id"], "provider_nome": user.get("business_name") or user.get("name", ""),
         "provider_rating": user.get("rating", 0), "provider_trust": user.get("trust_score", 0),
@@ -365,6 +392,7 @@ class PreventivoIn(BaseModel):
     descrizione_lavoro: str = ""
     tempi: str = ""
     secondo_appuntamento: str = ""
+    scomputo_chiamata: bool = True   # l'artigiano decide se scomputare il diritto di chiamata
 
 
 @router.post("/artigiani/richieste/{rid}/preventivo")
@@ -388,10 +416,11 @@ async def compose_preventivo(rid: str, body: PreventivoIn, user=Depends(get_curr
                                 f"Esito: {next(e['it'] for e in A.ESITI if e['id']==body.esito)}", "artigiani", rid)
         return {"stato": "completata", "esito": body.esito}
     totale = round(sum(v.qta * v.prezzo_unit for v in body.voci), 2)
-    scomputo = float(r.get("chiamata_fee", 0))
+    scomputo = float(r.get("chiamata_fee", 0)) if body.scomputo_chiamata else 0.0
     da_pagare = round(max(0.0, totale - scomputo), 2)
     prev = {"voci": [v.dict() for v in body.voci], "descrizione_lavoro": body.descrizione_lavoro,
             "tempi": body.tempi, "totale": totale, "scomputo": scomputo, "da_pagare": da_pagare,
+            "scomputo_chiamata": body.scomputo_chiamata,
             "secondo_appuntamento": body.secondo_appuntamento, "stato": "in_attesa",
             "big_job": totale >= A.BIG_JOB_THRESHOLD_EUR,
             "scade_at": (now_utc() + timedelta(days=A.PREVENTIVO_VALIDITY_DAYS)).isoformat(),

@@ -77,3 +77,93 @@ FASCE_URGENZA = [
     {"id": "serale", "it": "Serale", "en": "Evening"},
     {"id": "festivo", "it": "Festivo", "en": "Holiday"},
 ]
+
+# Fasce orarie per intervento programmato
+FASCE_ORARIE = [
+    {"id": "mattina", "it": "Mattina (8–13)", "en": "Morning (8am–1pm)"},
+    {"id": "pomeriggio", "it": "Pomeriggio (13–18)", "en": "Afternoon (1–6pm)"},
+    {"id": "sera", "it": "Sera (18–21)", "en": "Evening (6–9pm)"},
+]
+
+# Parametri strutturati per identificare la richiesta del cliente per ogni mestiere.
+# type: "cascade" (categoria -> elemento), "select", "number", "text".
+# option con "needs_text": True mostra un campo testo aggiuntivo quando selezionata.
+PARAMETRI = {
+    "idraulico": [
+        {"id": "ambiente", "type": "cascade", "required": True,
+         "label": {"it": "Tipo di impianto", "en": "System type"},
+         "options": [
+             {"id": "bagno", "label": {"it": "Bagno", "en": "Bathroom"}, "sub": [
+                 {"id": "vasca", "label": {"it": "Vasca", "en": "Bathtub"}},
+                 {"id": "doccia", "label": {"it": "Doccia", "en": "Shower"}},
+                 {"id": "lavandino", "label": {"it": "Lavandino", "en": "Sink"}},
+                 {"id": "tubazioni", "label": {"it": "Tubazioni", "en": "Piping"}}]},
+             {"id": "cucina", "label": {"it": "Cucina", "en": "Kitchen"}, "sub": [
+                 {"id": "lavandino", "label": {"it": "Lavandino", "en": "Sink"}},
+                 {"id": "tubazioni", "label": {"it": "Tubazioni", "en": "Piping"}},
+                 {"id": "lavatrice", "label": {"it": "Lavatrice", "en": "Washing machine"}}]},
+             {"id": "generico", "label": {"it": "Generico", "en": "General"}, "sub": [
+                 {"id": "tubazioni_int_est", "label": {"it": "Tubazioni interne o esterne", "en": "Internal/external piping"}},
+                 {"id": "scarichi", "label": {"it": "Scarichi intasati", "en": "Clogged drains"}}]},
+             {"id": "installazione", "label": {"it": "Installazione", "en": "Installation"}, "sub": [
+                 {"id": "sanitari", "label": {"it": "Sanitari", "en": "Sanitary ware"}},
+                 {"id": "elettrodomestici", "label": {"it": "Elettrodomestici", "en": "Appliances"}},
+                 {"id": "nuovi_impianti", "label": {"it": "Nuovi impianti", "en": "New systems"}}]},
+         ]},
+    ],
+    "elettricista": [
+        {"id": "tipo", "type": "select", "required": True,
+         "label": {"it": "Tipo di intervento", "en": "Job type"},
+         "options": [
+             {"id": "nuovo_impianto", "label": {"it": "Installazione nuovo impianto", "en": "New system install"}},
+             {"id": "verifica", "label": {"it": "Verifica impianto esistente", "en": "Existing system check"}},
+             {"id": "riparazione_elettro", "label": {"it": "Riparazione elettrodomestico", "en": "Appliance repair"}},
+             {"id": "illuminazione", "label": {"it": "Installazione o riparazione illuminazione", "en": "Lighting install/repair"}},
+             {"id": "altro", "label": {"it": "Altre installazioni o illuminazioni", "en": "Other installs/lighting"}, "needs_text": True},
+         ]},
+    ],
+    "caldaista": [
+        {"id": "tipo", "type": "select", "required": True,
+         "label": {"it": "Tipo di intervento", "en": "Job type"},
+         "options": [
+             {"id": "installazione", "label": {"it": "Installazione nuova", "en": "New install"}},
+             {"id": "riparazione", "label": {"it": "Riparazione esistente", "en": "Repair existing"}},
+             {"id": "verifica", "label": {"it": "Verifica periodica", "en": "Periodic check"}},
+             {"id": "manutenzione", "label": {"it": "Manutenzione e pulizia", "en": "Maintenance & cleaning"}},
+         ]},
+        {"id": "marca_modello", "type": "text", "required": True,
+         "label": {"it": "Marca e modello", "en": "Brand & model"}},
+    ],
+    "climatizzazione": [
+        {"id": "tipo", "type": "select", "required": True,
+         "label": {"it": "Tipo di intervento", "en": "Job type"},
+         "options": [
+             {"id": "installazione", "label": {"it": "Installazione nuovo impianto", "en": "New system install"}},
+             {"id": "manutenzione", "label": {"it": "Manutenzione e pulizia", "en": "Maintenance & cleaning"}},
+             {"id": "riparazione", "label": {"it": "Riparazione", "en": "Repair"}},
+         ]},
+        {"id": "marca_modello", "type": "text", "required": True,
+         "label": {"it": "Marca e modello", "en": "Brand & model"}},
+    ],
+    "giardiniere": [
+        {"id": "dimensione_mq", "type": "number", "required": True,
+         "label": {"it": "Dimensione del giardino (m²)", "en": "Garden size (m²)"}},
+        {"id": "attivita", "type": "text", "required": True,
+         "label": {"it": "Descrizione delle attività", "en": "Activities description"}},
+        {"id": "dettagli", "type": "text", "required": False,
+         "label": {"it": "Dettagli particolari", "en": "Special details"}},
+    ],
+    "tuttofare": [
+        {"id": "descrizione", "type": "text", "required": True,
+         "label": {"it": "Descrivi la richiesta", "en": "Describe your request"}},
+    ],
+}
+
+# Default diritto di chiamata (Ispezione): base + €/km oltre i km inclusi, +% urgenza, minimo garantito
+DEFAULT_CHIAMATA = {
+    "chiamata_base": 40.0,
+    "chiamata_per_km": 1.5,
+    "chiamata_km_inclusi": 5.0,
+    "chiamata_urgenza_pct": 20.0,
+    "chiamata_minimo": 40.0,
+}

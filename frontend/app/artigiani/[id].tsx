@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, ActivityIndicator, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,6 +12,10 @@ const STATE_LABEL: Record<string, string> = {
   pubblicata: "In pubblicazione", in_matching: "Ricerca artigiano", con_proposte: "Proposte disponibili",
   confermata: "Confermata", preventivo: "Preventivo inviato", in_corso: "In corso",
   completata: "Completata", recensita: "Recensita", annullata: "Annullata",
+};
+const FASCIA_LABEL: Record<string, string> = {
+  mattina: "Mattina (8–13)", pomeriggio: "Pomeriggio (13–18)", sera: "Sera (18–21)",
+  immediato: "Immediato (oggi)", serale: "Serale", festivo: "Festivo",
 };
 
 export default function ArtigianiDetail() {
@@ -27,6 +31,7 @@ export default function ArtigianiDetail() {
   const [esito, setEsito] = useState("preventivo");
   const [voci, setVoci] = useState<any[]>([{ descrizione: "Manodopera", tipo: "manodopera", qta: "1", prezzo_unit: "" }]);
   const [workDesc, setWorkDesc] = useState("");
+  const [scomputoChiamata, setScomputoChiamata] = useState(true);
   const [extraDesc, setExtraDesc] = useState("");
   const [extraAmt, setExtraAmt] = useState("");
 
@@ -44,7 +49,7 @@ export default function ArtigianiDetail() {
     if (esito === "preventivo") {
       const parsed = voci.filter((v) => v.descrizione && Number(v.prezzo_unit) > 0).map((v) => ({ descrizione: v.descrizione, tipo: v.tipo, qta: Number(v.qta) || 1, prezzo_unit: Number(v.prezzo_unit) }));
       if (!parsed.length) { Alert.alert(t("artQuoteLine")); return; }
-      act(() => api.artPreventivo(id, { esito, voci: parsed, descrizione_lavoro: workDesc, tempi: "" }));
+      act(() => api.artPreventivo(id, { esito, voci: parsed, descrizione_lavoro: workDesc, tempi: "", scomputo_chiamata: scomputoChiamata }));
     } else act(() => api.artPreventivo(id, { esito, voci: [] }));
   };
 
@@ -72,6 +77,7 @@ export default function ArtigianiDetail() {
           <Text style={styles.cardH}>{cfg.mestiere}{cfg.urgente ? " · ⚡" : ""}</Text>
           <Text style={styles.cardSub}>{cfg.modalita === "paniere" ? (cfg.intervento?.it || "Intervento") : t("artDiagnosi")}</Text>
           {cfg.descrizione ? <Text style={styles.cardSub}>{cfg.descrizione}</Text> : null}
+          {(r.data_ora || cfg.fascia_oraria || cfg.fascia_urgenza) ? <Text style={styles.cardSub}>📅 {cfg.urgente ? (FASCIA_LABEL[cfg.fascia_urgenza] || t("artUrgente")) : `${r.data_ora || ""} · ${FASCIA_LABEL[cfg.fascia_oraria] || ""}`}</Text> : null}
           {r.indirizzo ? <Text style={styles.cardSub}>📍 {r.indirizzo}</Text> : null}
         </View>
 
@@ -108,7 +114,11 @@ export default function ArtigianiDetail() {
                 </View>))}
               <Pressable testID="art-add-voce" onPress={() => setVoci([...voci, { descrizione: "", tipo: "materiale", qta: "1", prezzo_unit: "" }])}><Text style={styles.addLine}>{t("artAddLine")}</Text></Pressable>
               <TextInput testID="art-work-desc" style={[styles.input, { minHeight: 50, textAlignVertical: "top", marginTop: spacing.sm }]} value={workDesc} onChangeText={setWorkDesc} multiline placeholder={t("artWorkDesc")} placeholderTextColor={colors.muted} />
-              <Text style={styles.quoteTot}>{t("artQuoteTotal")}: €{quoteTotal.toFixed(2)} · {t("artScomputo")}: €{(r.chiamata_fee || 0).toFixed(2)}</Text>
+              <View style={styles.scomputoRow}>
+                <Text style={styles.scomputoLabel}>{t("artScomputoToggle")} (€{(r.chiamata_fee || 0).toFixed(2)})</Text>
+                <Switch testID="art-scomputo-toggle" value={scomputoChiamata} onValueChange={setScomputoChiamata} trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" />
+              </View>
+              <Text style={styles.quoteTot}>{t("artQuoteTotal")}: €{quoteTotal.toFixed(2)}{scomputoChiamata ? ` · ${t("artScomputo")}: −€${(r.chiamata_fee || 0).toFixed(2)}` : ""}</Text>
             </>) : null}
             <Button testID="art-submit-preventivo" label={esito === "preventivo" ? t("artComposeQuote") : t("artComplete")} loading={busy} onPress={submitPreventivo} style={{ marginTop: spacing.md }} />
           </View>) : null}
@@ -208,6 +218,8 @@ const styles = StyleSheet.create({
   input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface },
   addLine: { fontSize: fsize.base, fontFamily: font.medium, color: colors.brand, marginTop: 4 },
   quoteTot: { fontSize: fsize.base, fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.sm },
+  scomputoRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm, gap: spacing.sm },
+  scomputoLabel: { flex: 1, fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurface },
   warnMini: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.warning, marginTop: 4 },
   garanzia: { fontSize: fsize.base, fontFamily: font.medium, color: colors.success, marginTop: spacing.sm },
   stars: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },

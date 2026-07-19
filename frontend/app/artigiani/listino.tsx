@@ -9,13 +9,15 @@ import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 
+const DEFAULT_LISTINO = { binario: "impresa", chiamata_fee: 50, chiamata_base: 40, chiamata_per_km: 1.5, chiamata_km_inclusi: 5, chiamata_urgenza_pct: 20, chiamata_minimo: 40, tariffa_oraria: 35, paniere: [], urgenze: false, urgenze_pct: 0, raggio_km: 20, tempi_tipici: "", abilitazione_numero: "" };
+
 export default function ArtigianiListino() {
   const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [meta, setMeta] = useState<any>(null);
   const [mestiere, setMestiere] = useState("");
-  const [f, setF] = useState<any>({ binario: "impresa", chiamata_fee: 50, tariffa_oraria: 35, paniere: [], urgenze: false, urgenze_pct: 0, raggio_km: 20, tempi_tipici: "", abilitazione_numero: "" });
+  const [f, setF] = useState<any>({ ...DEFAULT_LISTINO });
   const [abil, setAbil] = useState<any>({ verified: false, uploaded: false, fgas: false });
   const [busy, setBusy] = useState(false);
 
@@ -45,7 +47,7 @@ export default function ArtigianiListino() {
     try {
       const r = await api.artGetListino();
       if (r.art_listini?.[mid]) applyListino(r.art_listini[mid], mid, meta);
-      else { setF({ binario: "impresa", chiamata_fee: 50, tariffa_oraria: 35, paniere: [], urgenze: false, urgenze_pct: 0, raggio_km: 20, tempi_tipici: "", abilitazione_numero: "" }); initPaniere(mid, meta); }
+      else { setF({ ...DEFAULT_LISTINO }); initPaniere(mid, meta); }
     } catch {}
   };
 
@@ -92,8 +94,13 @@ export default function ArtigianiListino() {
             {mObj?.fgas ? <Button testID="al-upload-fgas" label={t("artUploadFgas")} variant="secondary" icon="snow" onPress={() => uploadAbil("fgas")} style={{ marginTop: spacing.sm, height: 44 }} /> : null}
           </>) : null}
 
-          <Text style={styles.section}>{t("artCallFee")} + {t("artHourly")}</Text>
-          <NumRow label={t("artCallFee")} value={f.chiamata_fee} onChange={(v) => setF({ ...f, chiamata_fee: v })} testID="al-chiamata" />
+          <Text style={styles.section}>{t("artCallFeeSection")}</Text>
+          <Text style={styles.hint}>{t("artScomputoNote")}</Text>
+          <NumRow label={t("artCallBase")} value={f.chiamata_base} onChange={(v) => setF({ ...f, chiamata_base: v })} testID="al-chiamata-base" />
+          <NumRow label={t("artCallPerKm")} value={f.chiamata_per_km} onChange={(v) => setF({ ...f, chiamata_per_km: v })} testID="al-chiamata-perkm" />
+          <NumRow label={t("artCallKmIncl")} value={f.chiamata_km_inclusi} onChange={(v) => setF({ ...f, chiamata_km_inclusi: v })} testID="al-chiamata-kmincl" />
+          <NumRow label={t("artCallUrgPct")} value={f.chiamata_urgenza_pct} onChange={(v) => setF({ ...f, chiamata_urgenza_pct: v })} testID="al-chiamata-urgpct" />
+          <NumRow label={t("artCallMin")} value={f.chiamata_minimo} onChange={(v) => setF({ ...f, chiamata_minimo: v })} testID="al-chiamata-min" />
           <NumRow label={t("artHourly")} value={f.tariffa_oraria} onChange={(v) => setF({ ...f, tariffa_oraria: v })} testID="al-oraria" />
 
           <Text style={styles.section}>{t("artPaniere")}</Text>
@@ -138,6 +145,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface },
   section: { fontSize: fsize.sm, fontFamily: font.bold, color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: spacing.lg, marginBottom: spacing.sm },
   label: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurfaceTertiary, marginTop: spacing.md, marginBottom: spacing.sm },
+  hint: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginBottom: spacing.sm },
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   chipOn: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
