@@ -1,8 +1,9 @@
 import React from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { Tabs } from "expo-router";
 import { useLang } from "@/src/context/LanguageContext";
 import { colors, font, fsize } from "@/src/theme";
+import WhatsAppFab from "@/src/components/WhatsAppFab";
 
 function TabEmoji({ emoji, focused }: { emoji: string; focused: boolean }) {
   return <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.55 }}>{emoji}</Text>;
@@ -11,6 +12,7 @@ function TabEmoji({ emoji, focused }: { emoji: string; focused: boolean }) {
 export default function TabsLayout() {
   const { t } = useLang();
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -32,16 +34,22 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="richieste"
-        options={{ title: t("richieste"), tabBarIcon: ({ focused }) => <TabEmoji emoji="📋" focused={focused} /> }}
+        options={{ title: t("activitiesTab"), tabBarIcon: ({ focused }) => <TabEmoji emoji="📋" focused={focused} /> }}
+      />
+      <Tabs.Screen
+        name="portafoglio"
+        options={{ title: t("portafoglioTab"), tabBarIcon: ({ focused }) => <TabEmoji emoji="👛" focused={focused} /> }}
       />
       <Tabs.Screen
         name="chat"
-        options={{ title: t("chat"), tabBarIcon: ({ focused }) => <TabEmoji emoji="💬" focused={focused} /> }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="profile"
         options={{ title: t("profile"), tabBarIcon: ({ focused }) => <TabEmoji emoji="👤" focused={focused} /> }}
       />
     </Tabs>
+    <WhatsAppFab />
+    </View>
   );
 }

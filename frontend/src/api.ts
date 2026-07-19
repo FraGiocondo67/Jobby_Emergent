@@ -337,4 +337,11 @@ export const api = {
     adminRequest(`/admin/artigiani/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
   adminArtAbilitazione: (userId: string, verified: boolean, token: string) =>
     adminRequest(`/admin/artigiani/${userId}/abilitazione`, token, { method: "POST", body: JSON.stringify({ verified }) }),
+  // Spec 5 — navigation / home / dashboards
+  support: () => request("/settings/support"),
+  homeState: () => request("/home/state"),
+  walletDashboard: () => request("/wallet/dashboard"),
+  addExternalUsage: (amount: number, provider_name: string) => request("/wallet/external-usage", { method: "POST", body: JSON.stringify({ amount, provider_name }) }),
+  providerDashboard: () => request("/provider/dashboard"),
+  setDnd: (dnd: boolean) => request("/provider/dnd", { method: "POST", body: JSON.stringify({ dnd }) }),
 };

@@ -29,12 +29,13 @@ function CustomerHome() {
   const [tiles, setTiles] = useState<any[]>([]);
   const [online, setOnline] = useState(0);
   const [balance, setBalance] = useState(user?.wallet_balance || 0);
-  const [query, setQuery] = useState("");
+  const query = "";
   const [refreshing, setRefreshing] = useState(false);
+  const [home, setHome] = useState<any>({ state: "new", relationships: [] });
 
   const load = useCallback(async () => {
     try {
-      const [c, w] = await Promise.all([api.categories(), api.wallet()]);
+      const [c, w, h] = await Promise.all([api.categories(), api.wallet(), api.homeState()]);
       const std = (c.standard || []).map((s: any) => ({ ...s, kind: "service" }));
       const built = [
         ...std,
@@ -44,6 +45,7 @@ function CustomerHome() {
       setTiles(built);
       setOnline(c.providers_online);
       setBalance(w.balance);
+      setHome(h);
     } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -96,30 +98,58 @@ function CustomerHome() {
         ) : null}
 
         <View style={styles.body}>
-          <View style={styles.search}>
-            <Ionicons name="search" size={18} color={colors.muted} />
-            <TextInput
-              testID="search-input"
-              style={styles.searchInput}
-              placeholder={t("searchCategory")}
-              placeholderTextColor={colors.muted}
-              value={query}
-              onChangeText={setQuery}
-            />
-          </View>
+          {home.state === "recurring" && (home.relationships || []).length ? (
+            <>
+              {(home.relationships || []).map((rel: any) => {
+                const initials = (rel.nome || "?").trim().charAt(0).toUpperCase();
+                const goDetail = () => rel.problem_richiesta_id || rel.next_richiesta_id || rel.last_richiesta_id
+                  ? router.push(`/pulizie/${rel.problem_richiesta_id || rel.next_richiesta_id || rel.last_richiesta_id}` as any) : null;
+                return (
+                  <View key={rel.provider_id} style={[styles.relCard, shadow.card]}>
+                    {rel.problem ? (
+                      <Pressable testID={`rel-problem-${rel.provider_id}`} style={styles.problemBanner} onPress={goDetail}>
+                        <Ionicons name="alert-circle" size={16} color={colors.warning} />
+                        <Text style={styles.problemTxt}>{rel.problem_kind === "scelta_proposta" ? t("relProblemChoose") : t("relProblemPay")}</Text>
+                        <Text style={styles.problemResolve}>{t("relResolve")} →</Text>
+                      </Pressable>
+                    ) : null}
+                    <View style={styles.relTop}>
+                      <View style={styles.relAvatar}><Text style={styles.relAvatarTxt}>{initials}</Text></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.relName} numberOfLines={1}>{rel.nome}</Text>
+                        <Text style={styles.relNext}>{rel.next_visit ? `${t("relNext")}: ${rel.next_visit}` : t("relNoNext")}</Text>
+                        {rel.visits_count ? <Text style={styles.relMeta}>{rel.visits_count} {t("relVisits")}</Text> : null}
+                      </View>
+                    </View>
+                    <View style={styles.relActions}>
+                      <Pressable testID={`rel-rebook-${rel.provider_id}`} style={styles.relBtn} onPress={() => router.push("/pulizie/configura")}><Ionicons name="repeat" size={16} color={colors.brand} /><Text style={styles.relBtnTxt}>{t("relRebook")}</Text></Pressable>
+                      <Pressable testID={`rel-move-${rel.provider_id}`} style={styles.relBtn} onPress={goDetail}><Ionicons name="calendar" size={16} color={colors.brand} /><Text style={styles.relBtnTxt}>{t("relReschedule")}</Text></Pressable>
+                      <Pressable testID={`rel-msg-${rel.provider_id}`} style={styles.relBtn} onPress={() => router.push(`/chat?peer=${rel.provider_id}` as any)}><Ionicons name="chatbubble-ellipses" size={16} color={colors.brand} /><Text style={styles.relBtnTxt}>{t("relMessage")}</Text></Pressable>
+                    </View>
+                  </View>
+                );
+              })}
+              <Text style={styles.sectionTitle}>{t("otherServices")}</Text>
+            </>
+          ) : (
+            <>
+              <View style={styles.heroCard}>
+                <Text style={styles.heroPromise}>{t("homePromise")}</Text>
+              </View>
+              <Pressable testID="pulizie-entry" style={[styles.entryCard, shadow.card]} onPress={() => router.push("/pulizie/configura")}>
+                <Text style={{ fontSize: 34 }}>🧽</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.entryTitle}>{t("homePulizieEntry")}</Text>
+                  <Text style={styles.entrySub}>{t("homePulizieSub")}</Text>
+                </View>
+                <Ionicons name="arrow-forward-circle" size={30} color={colors.brand} />
+              </Pressable>
+              <Text style={styles.sectionTitle}>{t("otherServices")}</Text>
+            </>
+          )}
 
-          <Pressable testID="explore-map-card" style={styles.mapCard} onPress={() => router.push("/map")}>
-            <Text style={{ fontSize: 26 }}>🗺️</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.mapTitle}>{t("exploreMap")}</Text>
-              <Text style={styles.mapSub}>{t("allProvidersNear")} · Treviso</Text>
-            </View>
-            <Ionicons name="arrow-forward" size={20} color={colors.blue} />
-          </Pressable>
-
-          <Text style={styles.sectionTitle}>{t("whatDoYouNeed")}</Text>
           <View style={styles.grid}>
-            {filtered.map((c) => (
+            {filtered.filter((c) => !(home.state !== "recurring" && c.cat_id === "pulizie")).map((c) => (
               <Pressable
                 key={c.cat_id}
                 testID={`category-${c.cat_id}`}
@@ -138,6 +168,14 @@ function CustomerHome() {
               </Pressable>
             ))}
           </View>
+
+          {home.state !== "recurring" ? (
+            <View style={styles.trustCard}>
+              {[["shield-checkmark", t("trustVerified")], ["umbrella", t("trustInsured")], ["star", t("trustReviews")], ["ribbon", t("trustGuarantee")]].map(([ic, tx]) => (
+                <View key={tx} style={styles.trustRow}><Ionicons name={ic as any} size={18} color={colors.brand} /><Text style={styles.trustTxt}>{tx}</Text></View>
+              ))}
+            </View>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -386,6 +424,27 @@ const styles = StyleSheet.create({
   mapTitle: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.blue },
   mapSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.blue, opacity: 0.8, marginTop: 1 },
   sectionTitle: { fontSize: fsize["2xl"], fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.xl, marginBottom: spacing.md },
+  heroCard: { backgroundColor: colors.brand, borderRadius: radius.lg, padding: spacing.xl, marginTop: spacing.md },
+  heroPromise: { fontSize: fsize["2xl"], fontFamily: font.bold, color: "#fff", lineHeight: 30 },
+  entryCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.brand, padding: spacing.lg, marginTop: spacing.md },
+  entryTitle: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.onSurface },
+  entrySub: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted, marginTop: 2 },
+  relCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginTop: spacing.md },
+  relTop: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  relAvatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
+  relAvatarTxt: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.brand },
+  relName: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.onSurface },
+  relNext: { fontSize: fsize.base, fontFamily: font.medium, color: colors.brand, marginTop: 2 },
+  relMeta: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 2 },
+  relActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  relBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, paddingVertical: 10 },
+  relBtnTxt: { fontSize: fsize.base, fontFamily: font.medium, color: colors.brand },
+  problemBanner: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.surfaceTertiary, borderRadius: radius.sm, padding: spacing.sm, marginBottom: spacing.md },
+  problemTxt: { flex: 1, fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurface },
+  problemResolve: { fontSize: fsize.sm, fontFamily: font.bold, color: colors.warning },
+  trustCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.xl, gap: spacing.sm },
+  trustRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  trustTxt: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
   tile: {
     width: "31%", aspectRatio: 0.95, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,

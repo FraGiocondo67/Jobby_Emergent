@@ -71,6 +71,14 @@ LF_VOUCHER_NET_RATE = 0.8       # net to worker per nominal euro (INPS)
 LF_YEAR_CEILING_EUR = 2500.0    # per couple
 LF_YEAR_CEILING_HOURS = 280.0
 
+# --- Spec 5: limiti di legge (Libretto Famiglia) ---
+LF_FAMILY_ANNUAL_EUR = 10000.0   # tetto annuo complessivo della famiglia
+LF_COUPLE_CEILING_EUR = 2500.0   # tetto per collaboratrice (coppia)
+LF_PROVIDER_ANNUAL_EUR = 5000.0  # tetto annuo del lavoratore
+LF_PROVIDER_HOURS = 280.0        # tetto ore annue del lavoratore
+LF_AGEVOLATE_WEIGHT = 0.75       # peso compensi categorie agevolate (studente<25/pensionato/disoccupato)
+LF_WARN_THRESHOLD = 0.8          # soglia avvisi preventivi (80%)
+
 
 def recommended_hours(mq_band: str, tipo: str) -> int:
     return ORE_TABLE.get(mq_band, ORE_TABLE["80_120"]).get(tipo, 3)

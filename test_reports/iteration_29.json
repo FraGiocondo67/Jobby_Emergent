@@ -1,0 +1,36 @@
+{
+  "summary": "Spec 5 (Navigation / Home / Dashboards / WhatsApp support) fully verified. Backend: 9/9 pytest cases pass (support GET/POST admin override+restore, home/state for recurring client, wallet/dashboard shape with spendibile=caricato-impegnato + annual_ceiling=10000 + warn_threshold=0.8, external-usage increments external_total & annual_used by 100, provider/dashboard with annual_ceiling=5000 + hours_ceiling=280 + family_ceiling=2500 + INPS dates on the 15th of the following month, dnd toggle roundtrip). Frontend (390x844): bottom tab bar shows EXACTLY 4 tabs (Home, Attività, Portafoglio, Profilo) with NO 'Chat' tab; green WhatsApp FAB 'Serve una mano?' present on tab screens; Portafoglio (client) shows all 4 blocks (Borsellino €500 Caricato/€0 Impegnato/€500 Spendibile, Limiti di legge annual €0/€10000 bar + external-add button, Attività e documenti, Recupero fiscale). Home two-state switching implemented — bstest@jobby.app rendered the 'new' state (hero promise 'Aiuto in casa, in regola, in pochi tocchi', pulizie-entry card, 'Altri servizi' grid with babysitting/driver/artigiani/hospitality/assistenza/tecnico/prossimità/pagamenti — NO Pulizie tile as expected).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home/Portafoglio", "issues": [
+        "Non-blocking RN Web deprecation warnings in console: 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents deprecated. Use style.pointerEvents'. Cosmetic only, does not affect functionality."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_spec5_navigation.py",
+    "/app/test_reports/pytest/iter29_spec5.xml"
+  ],
+  "action_items": [
+    "DATA-SEED NOTE (not a bug): bstest@jobby.app currently returns home.state='new' from /api/home/state because that user has no completed richieste seeded. If the review expects the UI to demonstrate the recurring-state Relationship Cards for bstest, seed at least one completed richiesta under that user's user_id (or point the QA login at the recurring user user_disptest01 which returned 4+ relationships including Giulia/Francesco/etc.). Backend logic is correct — verified via disp-test-token-777.",
+    "OPTIONAL (low prio): migrate deprecated RN Web props: shadow* -> boxShadow, props.pointerEvents -> style.pointerEvents (multiple call sites in Home/Portafoglio styles + floatWrap pointerEvents='box-none')."
+  ],
+  "critical_code_review_comments": [
+    "dashboard.py _amount_of() has a suspicious sub-expression: `float(pl.get('nominale') or (r.get('proposte') and 0) or 0)` — the `(r.get('proposte') and 0)` will always be 0 or falsy, so it is effectively dead code / no-op. Consider simplifying to `float(pl.get('nominale') or 0) or float((r.get('config') or {}).get('lf_nominale', 0) or 0)`. Not a functional bug.",
+    "wallet_dashboard year filter in per-collaboratrice loop uses `str(r.get('data_ora'))[:4] != str(year)` gated on truthiness of `[:4]` — could accidentally skip valid current-year rows if data_ora is malformed. Consider explicit date parsing.",
+    "TabsLayout imports Chat tab with href:null, which is fine, but the file name still exists at app/(tabs)/chat.tsx (route reachable via router.push('/chat?peer=...') from relationship-card 'Messaggia'). Confirmed intentional per problem statement."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_spec5_navigation.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None. Used existing seeded accounts (bstest, disp-test-token-777, prov-test-token-888). External-usage test appends a €100 entry to lf_external_usages for user_disptest01 (not cleaned; harmless — kept for retest).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_spec5_navigation.py covers all Spec 5 backend endpoints. Frontend tab layout confirmed 4-tab (chat hidden via href:null) — assert exactly ['Home','Attività','Portafoglio','Profilo']. WhatsApp FAB testID='whatsapp-fab'. Pulizie entry testID='pulizie-entry' only visible in 'new' Home state. Relationship cards use testID='rel-rebook-<pid>' / 'rel-move-<pid>' / 'rel-msg-<pid>'. To force recurring-state UI for bstest, seed one completed richiesta for that user's user_id — or use user_disptest01 which already returns 4 relationships.",
+  "rca_of_issue": "No functional issue detected in code. Only data-seeding asymmetry: the two client tokens (bstest UI login vs disp-test-token-777 API) resolve to different user_ids and only the latter has completed bookings, so bstest UI login renders the (correct) 'new' Home state."
+}
