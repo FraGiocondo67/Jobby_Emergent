@@ -1,0 +1,30 @@
+{
+  "summary": "Iter16 re-verified the two frontend blockers from iter15 plus the photo gallery. All three cases PASS on web preview. (1) /api/admin/ui: on fresh load fieldsModal and docModal have computed display:none (fix `.hidden{display:none!important}` at admin_web.py:142) — login screen visible, Connect with jobby-admin-7c2f9a works, Categories tab shows Driver row (2 fields), 'Fields' opens the editor, adding iter16_note + IT/EN labels + Save persists; reopening shows the new field and Driver row updates to '3 fields'; ✕ closes the modal. (2) Client cancel on web: with session token jobby_session_token=JSON.stringify('demo-preview-token-123') in localStorage (RN AsyncStorage v2.2 web uses window.localStorage directly), Richieste tab renders cancel-mission-* and cancel-biz-* buttons. New Platform.OS==='web' branch in richieste.tsx:77-86 fires window.confirm — clicking cancel-biz-breq_f9a7b7ca6fad flipped status pending→cancelled, cancel-mission-msn_7627bb7003af flipped matched→cancelled (verified via GET /api/business-requests and /api/requests). (3) Photo gallery: /business-request/user_2f996c8a010a renders biz-photo-0 and biz-photo-1 (seeded 1x1 PNG data URLs) plus the price_list (Camicia €2.50, Pantalone €1.80). No React Native red screens; only benign warnings about deprecated shadow* / pointerEvents style props.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styling", "issue": "Console warns 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents' across the app. Non-blocking on RN 0.7x but should be migrated. Ref: multiple screens using shadow.* from /app/frontend/src/theme.ts."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_form_builder_cancel_photos.py"
+  ],
+  "action_items": [
+    "(Optional cleanup) Old seeded/cancelled TEST_iter15 items still show under Requests -> Completed; safe to leave.",
+    "(Nit) Migrate `shadow.card` etc. to `boxShadow` style, and `pointerEvents` prop to `style.pointerEvents`, to silence RN 0.75+ web warnings."
+  ],
+  "critical_code_review_comments": [
+    "admin_web.py:142 fix is minimal & correct (`.hidden{display:none!important}`). Consider replacing inline `display:flex` on the two modals with a `.modal-open` class toggled by JS to avoid future collisions.",
+    "richieste.tsx cancel handlers now correctly branch on Platform.OS==='web' with window.confirm — clean, idiomatic fix. Same pattern should be reused for any other destructive Alert.alert flows in the app."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend re-test only)", "frontend": "100% (3/3 blockers cleared: admin modal, cancel on web, photo gallery)"},
+  "seed_data_creation": "None (used existing pending mission msn_7627bb7003af and biz request breq_f9a7b7ca6fad; both now cancelled).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Both iter15 frontend blockers are fixed and verified end-to-end on the live preview URL. RN AsyncStorage v2.2 on web uses window.localStorage — to inject test session set `localStorage.setItem('jobby_session_token', JSON.stringify('demo-preview-token-123'))` and reload. To bypass the new window.confirm dialog in Playwright, pre-set `window.confirm = () => true` before clicking cancel buttons (Playwright's dialog auto-accept handler can race with the click). Photos for user_2f996c8a010a are seeded as 1x1 base64 PNGs — good enough to exercise the gallery UI but visually pixel-sized; if a demo screenshot is needed, seed real photo URLs.",
+  "rca_of_issue": "N/A — both iter15 root-cause fixes verified: (a) `.hidden{display:none!important}` in admin_web.py overrides the inline `display:flex` on the two overlay divs so the modals stay hidden on load, and (b) the new `confirmCancel` helper in richieste.tsx uses `window.confirm` on web (which RN Web supports) and falls back to Alert.alert(buttons) on native — replacing the previous flow whose destructive-button onPress was dropped by react-native-web."
+}

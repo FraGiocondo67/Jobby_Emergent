@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Alert, Platform } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
@@ -75,6 +75,10 @@ function CustomerRequests() {
   };
 
   const confirmCancel = (fn: () => Promise<void>) => {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(t("cancelRequest") + "?")) fn().catch(() => {});
+      return;
+    }
     Alert.alert(t("cancelRequest"), "", [
       { text: t("cancel"), style: "cancel" },
       { text: t("cancelRequest"), style: "destructive", onPress: () => { fn().catch(() => {}); } },

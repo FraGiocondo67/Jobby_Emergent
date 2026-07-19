@@ -139,7 +139,7 @@ ADMIN_HTML = """<!DOCTYPE html>
   .muted{color:var(--muted)}
   .comm{margin-top:6px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
   .comm input{width:70px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px}
-  .hidden{display:none}
+  .hidden{display:none!important}
   .sec{font-size:13px;text-transform:uppercase;color:var(--muted);margin:18px 0 8px;font-weight:700}
   .err{color:#DE4B3F;font-size:14px;margin:8px 0}
 </style>
