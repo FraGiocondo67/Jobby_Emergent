@@ -309,4 +309,32 @@ export const api = {
     adminRequest(`/admin/driver/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
   adminDrvAuth: (userId: string, verified: boolean, token: string) =>
     adminRequest(`/admin/driver/${userId}/authorization`, token, { method: "POST", body: JSON.stringify({ verified }) }),
+
+  // artigiani (Spec 7)
+  artConfig: () => request("/artigiani/config"),
+  artRouteCheck: (descrizione: string) => request("/artigiani/route-check", { method: "POST", body: JSON.stringify({ descrizione }) }),
+  artEstimate: (data: any) => request("/artigiani/estimate", { method: "POST", body: JSON.stringify(data) }),
+  artCreateRichiesta: (data: any) => request("/artigiani/richieste", { method: "POST", body: JSON.stringify(data) }),
+  artMyRichieste: () => request("/artigiani/richieste"),
+  artGetRichiesta: (id: string) => request(`/artigiani/richieste/${id}`),
+  artCancelRichiesta: (id: string) => request(`/artigiani/richieste/${id}/cancel`, { method: "POST" }),
+  artIncoming: () => request("/artigiani/incoming"),
+  artPropose: (id: string, data: any) => request(`/artigiani/richieste/${id}/propose`, { method: "POST", body: JSON.stringify(data) }),
+  artConfirm: (id: string, provider_id: string) => request(`/artigiani/richieste/${id}/confirm`, { method: "POST", body: JSON.stringify({ provider_id }) }),
+  artPreventivo: (id: string, data: any) => request(`/artigiani/richieste/${id}/preventivo`, { method: "POST", body: JSON.stringify(data) }),
+  artAcceptPreventivo: (id: string) => request(`/artigiani/richieste/${id}/preventivo/accept`, { method: "POST" }),
+  artRejectPreventivo: (id: string) => request(`/artigiani/richieste/${id}/preventivo/reject`, { method: "POST" }),
+  artExtra: (id: string, data: any) => request(`/artigiani/richieste/${id}/extra`, { method: "POST", body: JSON.stringify(data) }),
+  artExtraApprove: (id: string, extra_id: string, approve: boolean) => request(`/artigiani/richieste/${id}/extra/approve`, { method: "POST", body: JSON.stringify({ extra_id, approve }) }),
+  artComplete: (id: string) => request(`/artigiani/richieste/${id}/complete`, { method: "POST", body: JSON.stringify({}) }),
+  artGaranzia: (id: string) => request(`/artigiani/richieste/${id}/garanzia`, { method: "POST" }),
+  artReview: (id: string, rating: number, comment: string) => request(`/artigiani/richieste/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
+  artGetListino: () => request("/artigiani/listino"),
+  artSetListino: (mestiere: string, listino: any) => request("/artigiani/listino", { method: "PUT", body: JSON.stringify({ mestiere, listino }) }),
+  artUploadAbilitazione: (kind: string, image: string) => request("/artigiani/abilitazione", { method: "POST", body: JSON.stringify({ kind, image }) }),
+  adminArtRichieste: (token: string) => adminRequest("/admin/artigiani/richieste", token),
+  adminArtInvite: (rid: string, provider_ids: string[], token: string) =>
+    adminRequest(`/admin/artigiani/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
+  adminArtAbilitazione: (userId: string, verified: boolean, token: string) =>
+    adminRequest(`/admin/artigiani/${userId}/abilitazione`, token, { method: "POST", body: JSON.stringify({ verified }) }),
 };
