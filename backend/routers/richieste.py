@@ -135,10 +135,13 @@ def price_breakdown(listino: dict, config: dict, binario: str, fee: float) -> di
 
 async def compatible_providers(binario: str, config: dict, lat: float, lng: float) -> list:
     q = {"role": {"$in": ["provider", "business"]}, "services": "pulizie",
-         "approval_status": {"$nin": ["rejected", "suspended"]},
+         "approval_status": {"$nin": ["rejected", "suspended", "waitlist", "pending"]},
          "pulizie_binario": binario, "pulizie_listino": {"$exists": True}}
     out = []
     for p in await db.users.find(q, {"_id": 0, "password_hash": 0}).to_list(200):
+        # Persona LF providers cannot receive requests until INPS registration is confirmed.
+        if binario == "persona_lf" and p.get("lf_inps_registered") is False:
+            continue
         lst = p.get("pulizie_listino") or {}
         dist = haversine(lat, lng, p.get("lat", 0), p.get("lng", 0))
         if dist > float(lst.get("raggio_km", 15)):

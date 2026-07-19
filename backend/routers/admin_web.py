@@ -161,6 +161,7 @@ ADMIN_HTML = """<!DOCTYPE html>
       <div class="tab" data-t="bookings" onclick="go('bookings')">Bookings</div>
       <div class="tab" data-t="disputes" onclick="go('disputes')">Disputes</div>
       <div class="tab" data-t="pulizie" onclick="go('pulizie')">Pulizie</div>
+      <div class="tab" data-t="onboarding" onclick="go('onboarding')">Onboarding</div>
     </div>
 
     <div id="dashboard"></div>
@@ -169,6 +170,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <div id="bookings" class="hidden"></div>
     <div id="disputes" class="hidden"></div>
     <div id="pulizie" class="hidden"></div>
+    <div id="onboarding" class="hidden"></div>
   </div>
 </div>
 <div id="docModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:9">
@@ -293,10 +295,10 @@ async function connect(){
   catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
 }
 function go(t){
-  ['dashboard','categories','users','bookings','disputes','pulizie'].forEach(x=>document.getElementById(x).classList.add('hidden'));
+  ['dashboard','categories','users','bookings','disputes','pulizie','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.t===t));
   document.getElementById(t).classList.remove('hidden');
-  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie();
+  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='onboarding')loadOnboarding();
 }
 async function loadDash(){
   const s=await api('/admin/stats');
@@ -443,6 +445,40 @@ async function invitePulizie(rid){
   if(!ids.length){alert('Seleziona almeno un professionista');return;}
   await api('/admin/pulizie/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
   loadPulizie();
+}
+function img(src,label){return src?('<div style="text-align:center"><div class="muted" style="font-size:11px">'+label+'</div><img src="'+src+'" style="width:90px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"/></div>'):'';}
+async function loadOnboarding(){
+  const list=await api('/admin/onboarding/pending');
+  if(!list.length){document.getElementById('onboarding').innerHTML='<div class="muted" style="padding:20px">No providers pending approval.</div>';return;}
+  let html='<div class="sec">Approvazione provider ('+list.length+')</div>';
+  list.forEach(u=>{
+    const imgs=[img(u.id_document_front,'ID fronte'),img(u.id_document_back,'ID retro'),img(u.selfie_document,'Selfie'),img(u.presentation_photo,'Logo/Foto')].join('');
+    html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="em">${u.provider_profile_type==='impresa'?'🏢':u.provider_profile_type==='piva'?'🧾':'🧍'}</span>
+        <div class="t"><b>${u.business_name||u.name||'—'}</b>
+          <div class="muted">${u.provider_profile_type||''} · ${u.phone||'no phone'} ${u.phone_verified?'✅':'❌'}</div></div>
+        <span class="pill" style="background:#eee">${u.provider_state}</span>
+      </div>
+      <div class="muted">P.IVA: ${u.vat_number||'—'} · CF: ${u.codice_fiscale||'—'} · IBAN: ${u.iban||'—'}</div>
+      <div class="muted">${u.address||''} ${u.condizione_soggettiva?('· '+u.condizione_soggettiva):''}</div>
+      ${u.bio?('<div class="muted">"'+u.bio+'"</div>'):''}
+      ${u.provider_profile_type==='persona_lf'?('<div class="muted">Delega: '+(u.lf_delega_signed?'firmata ✅':'no')+' · INPS: '+(u.lf_inps_registered?'registrato ✅':'in corso')+'</div>'):''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${imgs||'<span class="muted">Nessun documento caricato</span>'}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="b-approve" onclick="onbDecision('${u.user_id}','approve')">Approva</button>
+        <button class="b-suspend" onclick="onbDecision('${u.user_id}','waitlist')">Lista d'attesa</button>
+        <button class="b-suspend" onclick="onbDecision('${u.user_id}','convert_lf')">Converti in Libretto</button>
+        <button class="b-reject" onclick="onbDecision('${u.user_id}','reject')">Rifiuta</button>
+      </div>
+    </div>`;
+  });
+  document.getElementById('onboarding').innerHTML=html;
+}
+async function onbDecision(uid,action){
+  if(!confirm(action+' this provider?'))return;
+  await api('/admin/onboarding/'+uid+'/decision',{method:'POST',body:JSON.stringify({action})});
+  loadOnboarding();
 }
 (function(){const t=localStorage.getItem('jobby_admin_token');if(t){document.getElementById('token').value=t;connect();}})();
 </script>

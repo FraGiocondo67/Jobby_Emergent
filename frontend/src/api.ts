@@ -148,6 +148,21 @@ export const api = {
   adminRichieste: (token: string) => adminRequest("/admin/pulizie/richieste", token),
   adminInvite: (rid: string, provider_ids: string[], token: string) =>
     adminRequest(`/admin/pulizie/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
+  // provider onboarding (Spec 2)
+  sendOtp: (phone: string) => request("/phone/send-otp", { method: "POST", body: JSON.stringify({ phone }) }),
+  verifyOtp: (phone: string, code: string) => request("/phone/verify-otp", { method: "POST", body: JSON.stringify({ phone, code }) }),
+  onbConfig: () => request("/onboarding/config"),
+  setProviderProfile: (data: any) => request("/onboarding/provider/profile", { method: "POST", body: JSON.stringify(data) }),
+  uploadProviderDoc: (kind: string, image: string) => request("/onboarding/provider/document", { method: "POST", body: JSON.stringify({ kind, image }) }),
+  signDelega: (signature_name: string) => request("/onboarding/lf/delega", { method: "POST", body: JSON.stringify({ signature_name }) }),
+  setInps: (registered: boolean) => request("/onboarding/lf/inps", { method: "POST", body: JSON.stringify({ registered }) }),
+  setAvailability: (availability: any) => request("/onboarding/availability", { method: "PUT", body: JSON.stringify({ availability }) }),
+  submitProvider: () => request("/onboarding/provider/submit", { method: "POST" }),
+  providerStatus: () => request("/onboarding/provider/status"),
+  selfSuspend: (suspend: boolean) => request("/provider/suspend", { method: "POST", body: JSON.stringify({ suspend }) }),
+  adminPendingProviders: (token: string) => adminRequest("/admin/onboarding/pending", token),
+  adminProviderDecision: (userId: string, action: string, token: string) =>
+    adminRequest(`/admin/onboarding/${userId}/decision`, token, { method: "POST", body: JSON.stringify({ action }) }),
   topupCheckout: (packageId: string, originUrl: string) =>
     request("/wallet/topup/checkout", { method: "POST", body: JSON.stringify({ package_id: packageId, origin_url: originUrl }) }),
   topupStatus: (sessionId: string) => request(`/wallet/topup/status/${sessionId}`),

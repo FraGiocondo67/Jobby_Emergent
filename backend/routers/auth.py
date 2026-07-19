@@ -156,6 +156,8 @@ async def create_session(body: SessionIn):
 
 @router.get("/auth/me")
 async def me(user=Depends(get_current_user)):
+    from routers.provider_onboarding import provider_state
+    user["provider_state"] = provider_state(user)
     return user
 
 

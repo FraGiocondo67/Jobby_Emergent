@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 23: Spec 2 provider onboarding (registration, phone OTP, 3 tracks, Libretto Famiglia, availability, fee, 5-state machine, admin approval, matching gate) — backend 26/26 pytest PASS. Twilio Verify trial 400 'unverified' cleanly surfaced (not 500). Age gate ✓ (2015 DOB → 400 minor_not_allowed, 1990 OK). Profile: persona_lf/piva → role=provider; impresa → role=business; invalid → 400 invalid_profile_type. LF delega empty → 400 empty_signature; signed → lf_delega_signed=true. INPS toggle persists. Availability PUT persists. /onboarding/config returns fee(visit_fixed_total=8, provider_share=4, recurring_total=6) + 4 condizioni + price_ranges. Submit gate: no phone_verified → 400 phone_not_verified; success → onboarding_completed + provider_state='in_verifica'. Self-suspend {true}→sospeso, {false}→attivo (only when self_suspended). Admin approve of persona_lf w/o INPS → 'attivo_inps_pending'; then INPS true → 'attivo'. All admin actions (approve/waitlist/reject/suspend/convert_lf) create an 'onboarding' notification for the user. Matching gate ✓: persona_lf provider with lf_inps_registered=false is EXCLUDED from /pulizie/estimate binario=persona_lf; also excluded when approval_status='pending'; impresa bots unaffected. Frontend Playwright (mobile 390x844) verified: role-client/role-provider/role-business cards render; role-next on provider routes to /provider-onboarding; provider-onboarding testID mounts; 'Come lavori?' shows prof-impresa/prof-piva/prof-persona_lf cards + dob-input; picking persona_lf leads to phone step (phone-input + send-otp) with correct Italian copy 'Verifica il telefono / Ti inviamo un codice via SMS'; impresa track goes intro→profile→phone directly (no lf_edu injected before data), matching the steps memo in provider-onboarding.tsx:57-61. Twilio trial 400 handled per spec (not treated as bug per agent note).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/onboarding/{uid}/decision (action=reject)", "issue": "After 'reject', provider_state() returns 'in_verifica' because the state function only branches on approval_status ∈ {suspended, waitlist, approved} — rejected users fall through the pending branch and, since onboarding_completed=true, are labelled 'in_verifica' instead of a dedicated 'rejected' state. Reference: /app/backend/routers/provider_onboarding.py:39-53. Consider adding explicit `if appr == 'rejected': return 'rifiutato'` so the frontend/admin UI can differentiate rejected accounts from those genuinely under review."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow.card style prop", "issue": "Console warning 'shadow*' style props are deprecated. Use boxShadow. Recurs on onboarding-flow and provider-onboarding screens. Reference: /app/frontend/src/theme.ts."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_provider_onboarding_iter23.py",
+    "/app/test_reports/pytest/iter23_onboarding.xml"
+  ],
+  "action_items": [
+    "(minor) Add an explicit 'rifiutato' branch in provider_state() so rejected accounts render distinctly from 'in_verifica' in status/admin panels (/app/backend/routers/provider_onboarding.py:39-53).",
+    "(minor, carried over) Migrate shadow* props to boxShadow in /app/frontend/src/theme.ts to silence the deprecation warnings on onboarding screens."
+  ],
+  "critical_code_review_comments": [
+    "provider_onboarding.py (316 lines) is well-scoped and self-contained. Twilio exceptions are wrapped in HTTPException 400 with 'twilio_error: <msg>' so unverified-trial-caller errors surface cleanly to the client — matches the expected UX. ✓",
+    "Age gate _is_adult() correctly guards profile POST; role assignment (persona_lf/piva → provider, impresa → business) is deterministic. ✓",
+    "State machine 5 states (incompleto/in_verifica/attivo_inps_pending/attivo/waitlist/sospeso) derived reactively from user doc — no denormalisation drift. ✓",
+    "Admin decisions always call push_notification() with type='onboarding' — verified in Mongo. ✓",
+    "Matching gate correctly excludes persona_lf providers with lf_inps_registered==False AND rejects pending/suspended/waitlist accounts via {$nin} in compatible_providers() /app/backend/routers/richieste.py:137-144. ✓",
+    "provider-onboarding.tsx step memo correctly injects lf_edu + lf_delega only when profileType==='persona_lf'. ✓",
+    "onboarding-flow.tsx role selection routes provider/business to /provider-onboarding and keeps client on the legacy 8-step onboarding. ✓",
+    "onb-back testID is present on the header — navigation both directions works. ✓",
+    "settings-based fee config (get_fee_config) allows admin override while defaulting to €8/€4/€6 — matches spec. ✓"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_provider_onboarding_iter23.py (new, 26 tests: 24 passed initially; after fixing seed-provider query, all 26 pass)",
+    "/app/test_reports/pytest/iter23_onboarding.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "100% (all onboarding testIDs render, both persona_lf and impresa flows verified)"},
+  "seed_data_creation": "Reused seeded tokens: onb-token (user_onbtest01, persona_lf), disp-test-token-777 (client), demo-preview-token-123 (demo client for frontend nav), plus admin header jobby-admin-7c2f9a. Test helper _reset_onb_user() mutates user_onbtest01 between scenarios and restores baseline at teardown; matching-gate tests toggle lf_inps_registered/approval_status on a seeded persona_lf bot (user_63e358a12980) and restore on finally. No new users created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Rerun with `pytest /app/backend/tests/test_provider_onboarding_iter23.py -v` — idempotent (each test resets user_onbtest01 baseline). Frontend flow: inject localStorage keys BOTH 'jobby_session_token' AND '@AsyncStorage:jobby_session_token' with JSON.stringify('demo-preview-token-123') (AsyncStorage web wrapper stores under the prefixed key, api.ts reads via storage which normalises); then load /onboarding-flow → tap role-provider → role-next lands on /provider-onboarding; further steps require phone verification which cannot pass in tests because Twilio trial rejects unverified caller IDs (this is expected). For matching-gate reproduction: flip db.users.updateOne({user_id:'user_63e358a12980'},{$set:{lf_inps_registered:false}}) then POST /api/pulizie/estimate binario=persona_lf → providers count drops by 1; restore afterwards.",
+  "rca_of_issue": "N/A — no functional bugs introduced by Spec 2. Only observation: 'rejected' users get provider_state='in_verifica' (state function has no explicit rejected branch). Reproduction: create user with approval_status='rejected', onboarding_completed=true → provider_state()->'in_verifica'. Mitigation: add `if appr == 'rejected': return 'rifiutato'` at line 44."
+}
