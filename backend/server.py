@@ -8,7 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 from core import db, client, now_utc, new_id
 from catalog import seed_categories, BOT_PROVIDERS
 from trust import recalc_provider_trust
-from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding
+from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,6 +18,7 @@ app = FastAPI(title="JOBBY API")
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(onboarding.router)
+api.include_router(payments_services.router)
 api.include_router(catalog_routes.router)
 api.include_router(missions.router)
 api.include_router(bookings.router)

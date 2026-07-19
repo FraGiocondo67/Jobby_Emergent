@@ -235,3 +235,22 @@
   - Frontend (web, client demo-preview-token-123): Richieste tab -> a pending mission/biz request shows 'Annulla richiesta' button; tapping it and confirming removes/marks cancelled. Proximity flow -> a business with photos shows the photo gallery (biz-photo-0) on the business-request screen.
   - Admin UI: /api/admin/ui (token jobby-admin-7c2f9a) -> Categories -> 'Fields' on a category opens editor; add a field, Save; reopening shows it persisted.
   Credentials: client demo-preview-token-123; business user_2f996c8a010a; admin token jobby-admin-7c2f9a.
+
+## agent_communication (2026-06 fork — Phase C: Payment services structure + transaction history)
+-agent: "main"
+-message: |
+  Implemented payment SERVICES structure (simulated charge; real Aimon/OpenAPI/YOB PAY + PayPal wired later once user gives PayPal keys):
+  Backend (routers/payments_services.py, mounted):
+  - GET /api/payments/options?country=IT -> {operators:[10 IT mobile ops], billers:[14 IT utility providers]}.
+  - Beneficiaries: GET /api/beneficiaries[?type=abroad|local], POST /api/beneficiaries {name,type,iban,swift,bank_name,country} (400 invalid_type/name_required/iban_required), DELETE /api/beneficiaries/{id}.
+  - POST /api/payments/service {kind:topup|bill|abroad|local, amount, source:wallet|card, operator_id/phone_number | biller_id/bill_ref | beneficiary_id}. Validations: invalid_kind/amount/source, operator_required, phone_required, biller_required, beneficiary_required. Charge: source=wallet blocks with 400 insufficient_funds if amount>balance and deducts; source=card requires user.payment_method else 400 no_card (simulated, no real charge). Records a transaction {type:service, kind, label, amount:-x, source, jobby_benefit, meta}.
+  - GET /api/payments/history?kind=all|topup|bill|abroad|local -> filterable list from transactions (type=service).
+  Frontend (new app/pay/*):
+  - /pay hub (testID pay-topup/pay-bill/pay-abroad/pay-local, pay-history, pay-beneficiaries) shows wallet balance + 4 service tiles.
+  - /pay/[kind] dynamic screen: topup(svc-operator dropdown+svc-phone), bill(svc-biller dropdown+svc-billref), abroad/local(svc-beneficiary dropdown + svc-add-ben link). svc-amount, source toggle (svc-src-wallet/svc-src-card), svc-pay. Handles insufficient/no_card with alerts.
+  - /pay/beneficiaries: list + add form (ben-type-abroad/local, ben-name, ben-iban, ben-swift, ben-bank, ben-country, ben-save; ben-del-{id}).
+  - /pay/history: filter chips (hist-filter-all/topup/bill/abroad/local) + list.
+  - Home 'Pagamenti' tile now routes to /pay.
+  Curl-verified: options (10 ops/14 billers), create beneficiary, topup wallet (benefit 0.4), abroad wallet (benefit 2.5), insufficient_funds 400, history all=2 topup=1.
+  TEST both (do NOT retest Phase A/B1/B2). Client demo-preview-token-123 (client), storage key jobby_session_token JSON.stringify. NOTE: demo user demo@jobby.app is read-only (blocked) — use demo-preview-token-123 which is a normal client. Admin token jobby-admin-7c2f9a.
+  Frontend flows: /pay hub -> topup: pick operator + phone + amount + wallet -> Pay -> success -> lands on history; bill similarly; abroad: add a beneficiary via svc-add-ben then select + amount + pay; history filter chips filter list. PayPal NOT built yet (awaiting keys) — do not test PayPal.

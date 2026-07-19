@@ -1,0 +1,42 @@
+{
+  "summary": "Phase C (payment services) tested end-to-end. Backend: 17/17 pytest cases pass (1 skipped for no_card because demo-preview account currently has a saved payment_method, so 400 no_card cannot be provoked on this user — logic itself is correct in code). Frontend: /pay hub loads with balance + 4 tiles (topup/bill/abroad/local) + history + beneficiaries. Top-up flow (Iliad, €3, wallet) completed and appeared in /pay/history; hist-filter-topup filters correctly. Beneficiaries CRUD (create abroad, delete) works via UI. React Native shadow* style-props deprecation warning observed (non-blocking).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/payments/service (source=card no_card)", "issue": "Could not exercise no_card branch because user_demopreview01 now has a payment_method (card_last4 4242) persisted from a previous iteration. Code path is correct; suggest resetting payment_method to null in seed for repeatability."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/pay", "issues": ["Initial balance shown as €0.00 for ~250ms before wallet() resolves (no loader). Minor: consider showing a skeleton or hiding the amount until first fetch completes."]}
+    ],
+    "react_native_issues": [
+      {"component": "shadow styles", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' emitted on /pay, /pay/[kind], /pay/history and /pay/beneficiaries. Reference: /app/frontend/src/theme.ts (shadow.card). Non-blocking on native (iOS/Android still supports shadow*), but produces noisy web console warnings and will be a hard-deprecation later in React Native Web."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_c_payments_services.py",
+    "/app/test_reports/pytest/iter17_phase_c.xml"
+  ],
+  "action_items": [
+    "Optional: migrate theme.shadow to boxShadow to silence the deprecation warning on RN Web.",
+    "Optional: add a small loader/skeleton for the balance card on /pay so the '€0.00' flash goes away.",
+    "Optional: reset user_demopreview01.payment_method to null in the local seed so the no_card branch is directly re-runnable by test suites (or add a separate test user without a card)."
+  ],
+  "critical_code_review_comments": [
+    "payments_services.py: charge from wallet reads user['wallet_balance'] captured at request start — safe under low concurrency, but for future consider an atomic $inc with a conditional filter ({'wallet_balance': {'$gte': amount}}) to prevent double-spend under concurrent requests.",
+    "payments_services.py returns transaction dict via dict-comp to strip _id — motor's insert_one mutates the doc adding _id, which is correctly excluded; OK.",
+    "BeneficiaryIn.iban is Optional but router rejects empty via iban_required — consistent, keeps 400 (business) instead of 422 (schema)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_c_payments_services.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17 executed, 1 conditional skip)", "frontend": "100% of Phase C smoke flows"},
+  "seed_data_creation": "Test created and cleaned up TEST_* beneficiaries. Wallet balance for user_demopreview01 dropped from ~92.29 to ~24.29 due to successful simulated charges (topup 10+10+5+3 = 28 + bill 5 + abroad 5 + UI topup 3 ≈ 46, distributed across iterations). No further seed changes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase C payments services fully covered by /app/backend/tests/test_phase_c_payments_services.py (18 cases). Auth uses Bearer demo-preview-token-123. Frontend token seeded via localStorage key 'jobby_session_token' as JSON.stringify string. Note: demo-preview account has a saved payment_method — no_card branch on POST /api/payments/service (source=card) can only be re-verified with a user that has payment_method=None.",
+  "rca_of_issue": "N/A — no bugs found in Phase C."
+}

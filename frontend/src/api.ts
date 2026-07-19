@@ -140,6 +140,13 @@ export const api = {
   // payments
   pay: (data: { service_id: string; label: string; amount: number; answers: any }) =>
     request("/payments", { method: "POST", body: JSON.stringify(data) }),
+  // payment services (top-up / bills / abroad / local SEPA) — simulated charge
+  paymentOptions: (country = "IT") => request(`/payments/options?country=${country}`),
+  beneficiaries: (type?: string) => request(`/beneficiaries${type ? `?type=${type}` : ""}`),
+  createBeneficiary: (data: any) => request("/beneficiaries", { method: "POST", body: JSON.stringify(data) }),
+  deleteBeneficiary: (id: string) => request(`/beneficiaries/${id}`, { method: "DELETE" }),
+  servicePayment: (data: any) => request("/payments/service", { method: "POST", body: JSON.stringify(data) }),
+  paymentHistory: (kind = "all") => request(`/payments/history?kind=${kind}`),
 
   // requests (Richieste)
   requests: () => request("/requests"),

@@ -41,6 +41,28 @@ class ImageIn(BaseModel):
     image: str
 
 
+class BeneficiaryIn(BaseModel):
+    name: str
+    type: str  # "abroad" | "local"
+    iban: Optional[str] = None
+    swift: Optional[str] = None
+    bank_name: Optional[str] = None
+    country: Optional[str] = None
+    note: Optional[str] = None
+
+
+class ServicePaymentIn(BaseModel):
+    kind: str            # "topup" | "bill" | "abroad" | "local"
+    amount: float
+    source: str          # "wallet" | "card"
+    operator_id: Optional[str] = None
+    phone_number: Optional[str] = None
+    biller_id: Optional[str] = None
+    bill_ref: Optional[str] = None
+    beneficiary_id: Optional[str] = None
+    note: Optional[str] = None
+
+
 class PriceItem(BaseModel):
     name: str
     price: float = Field(default=0.0, ge=0)

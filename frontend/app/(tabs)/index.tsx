@@ -56,7 +56,7 @@ function CustomerHome() {
   const openCategory = (c: any) => {
     Haptics.selectionAsync().catch(() => {});
     if (c.kind === "proximity") router.push(`/list/prossimita`);
-    else if (c.kind === "payment") router.push(`/list/pagamenti`);
+    else if (c.kind === "payment") router.push("/pay");
     else router.push(`/request/${c.cat_id}?type=service`);
   };
 
