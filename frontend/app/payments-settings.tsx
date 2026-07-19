@@ -92,7 +92,7 @@ export default function PaymentsSettings() {
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>{t("paymentsSettings")}</Text>
-        <Text style={styles.desc}>{isProvider ? t("payoutDesc") : t("paymentDesc")}</Text>
+        <Text style={styles.desc}>{isProvider ? t("payoutDesc") : t("clientPayoutDesc")}</Text>
 
         {/* Card */}
         <Text style={styles.section}>{t("paymentMethod")}</Text>
@@ -113,8 +113,8 @@ export default function PaymentsSettings() {
           </View>
         ) : null}
 
-        {/* Provider/Business payout */}
-        {isProvider ? (
+        {/* Payout / withdrawal methods (client & provider) */}
+        {user ? (
           <>
             <Text style={styles.section}>{t("bankAccount")}</Text>
             <Pressable style={[styles.setupRow, shadow.card]} testID="bank-row" onPress={() => setBankOpen((v) => !v)}>

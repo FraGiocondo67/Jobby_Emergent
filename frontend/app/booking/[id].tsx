@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Platform, Alert, Modal } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -22,9 +22,18 @@ export default function BookingDetail() {
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [dispute, setDispute] = useState<any>(null);
+  const [reasonCodes, setReasonCodes] = useState<{ code: string; label: string }[]>([]);
+  const [dispModal, setDispModal] = useState(false);
+  const [selReason, setSelReason] = useState<string>("");
+  const [dispDesc, setDispDesc] = useState("");
 
   const load = useCallback(async () => {
     try { setB(await api.getBooking(id as string)); } catch {}
+    try {
+      const list = await api.disputes();
+      setDispute((list || []).find((x: any) => x.booking_id === id) || null);
+    } catch {}
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -78,7 +87,34 @@ export default function BookingDetail() {
     setBusy(false);
   };
 
+  const openDisputeModal = async () => {
+    try { setReasonCodes(await api.disputeReasonCodes()); } catch {}
+    setSelReason(""); setDispDesc(""); setDispModal(true);
+  };
+
+  const submitDispute = async () => {
+    if (!selReason) { Alert.alert(t("selectReason")); return; }
+    setBusy(true);
+    try {
+      const dsp = await api.createDispute({ booking_id: id as string, reason_code: selReason, description: dispDesc.trim() });
+      setDispModal(false);
+      await load();
+      router.push(`/dispute/${dsp.dispute_id}`);
+    } catch (e: any) {
+      const m = String(e?.message || "");
+      if (m.includes("window_expired")) Alert.alert(t("disputeWindowNote"));
+      else if (m.includes("dispute_exists")) { setDispModal(false); await load(); }
+      else Alert.alert(t("error"));
+    } finally { setBusy(false); }
+  };
+
   if (!b) return <View style={styles.container} />;
+
+  const withinWindow = (() => {
+    if (!b.completed_at) return b.status === "completed";
+    const diffH = (Date.now() - new Date(b.completed_at).getTime()) / 36e5;
+    return diffH <= 8;
+  })();
 
   const isProvider = user?.role === "provider" || user?.role === "business";
   const partnerName = isProvider ? b.customer_name : b.provider_name;
@@ -195,7 +231,52 @@ export default function BookingDetail() {
             <Text style={styles.cancelBookingText}>✕ {t("cancelRequest")}{b.escrow_status === "held" ? ` · ${t("refund")}` : ""}</Text>
           </Pressable>
         ) : null}
+
+        {/* Disputes */}
+        {dispute ? (
+          <Pressable testID="view-dispute-button" style={[styles.disputeCard, shadow.card]} onPress={() => router.push(`/dispute/${dispute.dispute_id}`)}>
+            <Ionicons name="alert-circle-outline" size={22} color={colors.warning} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.disputeCardTitle}>{t("disputeTitle")}</Text>
+              <Text style={styles.disputeCardSub}>{t(`status${dispute.status === "open" ? "Open" : dispute.status === "provider_responded" ? "ProviderResponded" : dispute.status === "resolved_mutual" ? "ResolvedMutual" : dispute.status === "resolved_jobby" ? "ResolvedJobby" : dispute.status === "escalated" ? "Escalated" : "Rejected"}` as any)}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        ) : !isProvider && (b.status === "completed" || b.status === "disputed") && withinWindow && b.escrow_status !== "refunded" ? (
+          <>
+            <Pressable testID="open-dispute-button" style={styles.openDisputeBtn} onPress={openDisputeModal}>
+              <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
+              <Text style={styles.openDisputeText}>{t("openDispute")}</Text>
+            </Pressable>
+            <Text style={styles.stripeNote}>{t("disputeWindowNote")}</Text>
+          </>
+        ) : null}
       </ScrollView>
+
+      <Modal visible={dispModal} transparent animationType="slide" onRequestClose={() => setDispModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>{t("openDispute")}</Text>
+              <Pressable testID="dispute-modal-close" onPress={() => setDispModal(false)} hitSlop={10}>
+                <Ionicons name="close" size={24} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <Text style={styles.sectionLabel}>{t("disputeReason")}</Text>
+              {reasonCodes.map((rc) => (
+                <Pressable key={rc.code} testID={`reason-${rc.code}`} style={[styles.reasonOpt, selReason === rc.code && styles.reasonOptOn]} onPress={() => setSelReason(rc.code)}>
+                  <Text style={[styles.reasonOptText, selReason === rc.code && styles.reasonOptTextOn]}>{rc.label}</Text>
+                  {selReason === rc.code ? <Ionicons name="checkmark-circle" size={20} color={colors.brand} /> : null}
+                </Pressable>
+              ))}
+              <Text style={styles.sectionLabel}>{t("disputeDescription")}</Text>
+              <TextInput testID="dispute-desc-input" style={styles.input} value={dispDesc} onChangeText={setDispDesc} placeholder={t("disputeDescPlaceholder")} placeholderTextColor={colors.muted} multiline />
+              <Button testID="submit-dispute-button" label={t("submitDispute")} loading={busy} onPress={submitDispute} style={{ marginTop: spacing.md }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -231,4 +312,17 @@ const styles = StyleSheet.create({
   stripeNote: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: spacing.sm, textAlign: "center" },
   cancelBookingBtn: { marginTop: spacing.lg, alignSelf: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.error },
   cancelBookingText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.error },
+  disputeCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.md },
+  disputeCardTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface },
+  disputeCardSub: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted, marginTop: 1 },
+  openDisputeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.warning },
+  openDisputeText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.warning },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg, maxHeight: "85%" },
+  modalHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  modalTitle: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.onSurface },
+  reasonOpt: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, marginBottom: spacing.sm },
+  reasonOptOn: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  reasonOptText: { fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface, flex: 1 },
+  reasonOptTextOn: { color: colors.onBrandTertiary, fontFamily: font.medium },
 });

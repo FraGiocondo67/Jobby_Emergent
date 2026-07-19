@@ -1,0 +1,47 @@
+{
+  "summary": "Backend disputes end-to-end (create/list/get/message/admin-list/admin-UI/admin-resolve/payouts/demo-readonly) + Frontend dispute flow + DateTimeField all PASSING. 15/15 pytest cases green. Full UI flow verified: booking → open-dispute-button → modal (reason chip + description + submit) → /dispute/<id> screen with AI recommendation card (95% confidence + rationale + reason + messages + msg-input/send). DateTimeField calendar (cal-day-15, cal-next) + time picker (hh-10, mm-30, time-done) verified in /mission/create. Admin HTML UI /api/admin/ui contains 'Disputes' tab + loadDisputes + resolveDispute. CRITICAL SEED-DATA BUGS FOUND & PATCHED IN DB TO UNBLOCK TESTING: (1) session token disp-test-token-777 was missing expires_at → every authenticated call for the dispute-test client returned 500 (KeyError in deps.py); (2) demo user user_demopreview01 was missing is_demo=true → demo readonly middleware never fired, allowing writes as demo. Both must be fixed in the seeder so future iterations don't need manual DB patching.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "seed: user_sessions{'session_token':'disp-test-token-777'}", "issue": "Missing 'expires_at' field → deps.get_current_user raises KeyError → HTTP 500 on ALL authenticated calls for user_disptest01. Patched by test to now+30d; seeder must set expires_at when creating this session.", "priority": "CRITICAL"},
+      {"endpoint": "seed: users{'email':'demo@jobby.preview'}", "issue": "Missing is_demo=true → demo_readonly middleware short-circuits and demo user can perform writes on /api/* (security regression). Patched by test; seeder must set is_demo=true for the demo user.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/admin/disputes/{id}/resolve", "issue": "When resolve is called with pct>0 (refund_full/partial), booking.status is left as 'disputed' (only escrow_status is updated). If user tries to reopen a dispute later after admin resolve, create_dispute returns 400 not_completed. Consider setting booking.status='completed' on resolved_jobby with refund."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "client payments-settings visibility", "issue": "Live browser check could NOT confirm bank-row/paypal-row/add-crypto sections render for CLIENT because injected token via IDB failed to hydrate AuthContext.user in time (test harness limitation; not an app bug). Code review of /app/frontend/app/payments-settings.tsx line 117 confirms the sections are gated only by `{user ?}` (no isProvider gate), so they SHOULD show for any logged-in role. Main agent should manually verify with a real logged-in client session.", "affected_testIDs": ["bank-row", "paypal-row", "add-crypto"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_disputes_iter20.py",
+    "/app/test_reports/pytest/iter20_disputes.xml"
+  ],
+  "action_items": [
+    "Fix the disp-test-token-777 session seeder to include expires_at (30-day future datetime). Right now every request for that user returns 500.",
+    "Fix demo user seeder to set is_demo=true on user_demopreview01, otherwise demo_readonly middleware doesn't block writes (security regression).",
+    "Consider updating admin_resolve() to set booking.status='completed' when pct>0 so a follow-up dispute cycle is possible if needed.",
+    "Main agent to manually verify client payout sections (bank-row/paypal-row/add-crypto) render in the live app when a real client user is logged in via password login — code review looks correct but couldn't be lived-checked due to AsyncStorage IDB token-injection timing in the test browser."
+  ],
+  "critical_code_review_comments": [
+    "dispute_ai.py fallback logic is sensible; Claude Sonnet 4.6 call returned in ~5s with 95% confidence — real integration works.",
+    "disputes.py _apply_refund updates escrow_status but does NOT reset booking.status back to completed on partial/full refund; the booking stays 'disputed' forever after admin resolution.",
+    "payments-settings.tsx correctly removes isProvider gate for payout sections (only guards on `user`).",
+    "DateTimeField.tsx is clean and self-contained with correct testIDs (cal-prev/cal-next/cal-day-N, hh-N, mm-N, time-done).",
+    "Admin HTML in admin_web.py has full Disputes tab with loadDisputes() rendering AI proposal (confidence bar + rationale) + Confirm/Partial/Reject buttons — matches spec."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_disputes_iter20.py (new)",
+    "DB patch (runtime, no code): user_sessions{disp-test-token-777}.expires_at, users{demo@jobby.preview}.is_demo=true"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "seed_data_creation": "None; used the pre-seeded disp-test-token-777 client + bkg_disptest01 booking. Session-reset fixture in test_disputes_iter20.py resets booking.status/completed_at and deletes prior disputes for repeatable runs.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_disputes_iter20.py — run with `pytest -v`. A session-scoped autouse fixture resets booking bkg_disptest01 status back to 'completed' and clears prior disputes so create_dispute works idempotently. Frontend token injection for authenticated screens requires (a) fetch override to add Authorization header AND (b) navigate to home first, then IDB write to RKStorage->catalystLocalStorage key='jobby_session_token' value=JSON.stringify(token), then navigate to target — but this still doesn't populate AuthContext.user reliably; better to log in via /api/auth/login with mario@test.it/secret123 for AuthContext-dependent screens.",
+  "rca_of_issue": "Root cause of the 500 errors: /app/backend/deps.py:14 unconditionally reads session['expires_at']. The 2026-07 dispute-test seeder inserted user_sessions doc without that key, so KeyError → 500. Mitigation: (a) seeder fix (recommended) OR (b) make deps tolerant: `exp = session.get('expires_at'); if exp is None: skip expiry check`. Root cause of demo writes: middleware only fires when user.is_demo === true, but the demo user record was missing that field."
+}

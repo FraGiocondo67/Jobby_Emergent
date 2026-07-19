@@ -10,12 +10,13 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize } from "@/src/theme";
 import { Button } from "@/src/components/UI";
+import { DateField, TimeField } from "@/src/components/DateTimeField";
 
 const TREVISO = { lat: 45.6669, lng: 12.2433 };
 
 export default function CreateMission() {
   const { category } = useLocalSearchParams<{ category: string }>();
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -127,9 +128,9 @@ export default function CreateMission() {
           {step === 2 && (
             <>
               <Text style={styles.label}>{t("date")}</Text>
-              <TextInput testID="date-input" style={styles.input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.muted} />
+              <DateField testID="date-input" value={date} onChange={setDate} lang={lang} />
               <Text style={styles.label}>{t("time")}</Text>
-              <TextInput testID="time-input" style={styles.input} value={time} onChangeText={setTime} placeholder="HH:MM" placeholderTextColor={colors.muted} />
+              <TimeField testID="time-input" value={time} onChange={setTime} />
               <View style={styles.summary}>
                 <Text style={styles.summaryTitle}>{t(cat as any)} · {t(homeType as any)}</Text>
                 <Text style={styles.summaryLine}>{rooms} {t("rooms").toLowerCase()} · {duration} {t("hours")}</Text>

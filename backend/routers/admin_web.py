@@ -159,12 +159,14 @@ ADMIN_HTML = """<!DOCTYPE html>
       <div class="tab" data-t="categories" onclick="go('categories')">Categories</div>
       <div class="tab" data-t="users" onclick="go('users')">Users</div>
       <div class="tab" data-t="bookings" onclick="go('bookings')">Bookings</div>
+      <div class="tab" data-t="disputes" onclick="go('disputes')">Disputes</div>
     </div>
 
     <div id="dashboard"></div>
     <div id="categories" class="hidden"></div>
     <div id="users" class="hidden"></div>
     <div id="bookings" class="hidden"></div>
+    <div id="disputes" class="hidden"></div>
   </div>
 </div>
 <div id="docModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:9">
@@ -213,6 +215,7 @@ async function viewDocs(id){
 </style>
 <script>
 let EDIT_CAT=''; let EF=[];
+function moveField(i,dir){const j=i+dir;if(j<0||j>=EF.length)return;const tmp=EF[i];EF[i]=EF[j];EF[j]=tmp;renderFields();}
 function editFields(id){
   EDIT_CAT=id;
   const c=(window.__CATS||[]).find(x=>x.cat_id===id);
@@ -230,9 +233,12 @@ function editFields(id){
 function renderFields(){
   let h='';
   EF.forEach((f,i)=>{
-    h+='<div class="fld"><div class="g"><div><label>Field id</label><input value="'+f.id+'" oninput="EF['+i+'].id=this.value"/></div>'+
+    h+='<div class="fld"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b class="muted">#'+(i+1)+'</b>'+
+       '<div style="display:flex;gap:4px"><button class="ghost" '+(i===0?'disabled':'')+' onclick="moveField('+i+',-1)">&uarr;</button>'+
+       '<button class="ghost" '+(i===EF.length-1?'disabled':'')+' onclick="moveField('+i+',1)">&darr;</button></div></div>'+
+       '<div class="g"><div><label>Field id</label><input value="'+f.id+'" oninput="EF['+i+'].id=this.value"/></div>'+
        '<div><label>Type</label><select onchange="EF['+i+'].type=this.value;renderFields()">'+
-       ['text','number','select'].map(t=>'<option value="'+t+'" '+(f.type===t?'selected':'')+'>'+t+'</option>').join('')+'</select></div></div>'+
+       ['text','number','select','date','time'].map(t=>'<option value="'+t+'" '+(f.type===t?'selected':'')+'>'+t+'</option>').join('')+'</select></div></div>'+
        '<div class="g"><div><label>Label IT</label><input value="'+f.li+'" oninput="EF['+i+'].li=this.value"/></div>'+
        '<div><label>Label EN</label><input value="'+f.le+'" oninput="EF['+i+'].le=this.value"/></div></div>';
     if(f.type==='text'){
@@ -285,10 +291,10 @@ async function connect(){
   catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
 }
 function go(t){
-  ['dashboard','categories','users','bookings'].forEach(x=>document.getElementById(x).classList.add('hidden'));
+  ['dashboard','categories','users','bookings','disputes'].forEach(x=>document.getElementById(x).classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.t===t));
   document.getElementById(t).classList.remove('hidden');
-  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings();
+  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes();
 }
 async function loadDash(){
   const s=await api('/admin/stats');
@@ -359,6 +365,50 @@ async function loadBookings(){
   let rows=b.map(x=>`<tr><td>${x.category}</td><td>${x.customer_name}</td><td>${x.provider_name}</td>
     <td><span class="pill" style="background:#eee">${x.status}</span></td><td>€${(x.total||0).toFixed(2)}</td><td>${x.date} ${x.time}</td></tr>`).join('');
   document.getElementById('bookings').innerHTML='<table><tr><th>Service</th><th>Client</th><th>Provider</th><th>Status</th><th>Total</th><th>When</th></tr>'+rows+'</table>';
+}
+const RECLABEL={refund_full:'Full refund',refund_partial:'Partial refund',reject:'No refund'};
+async function loadDisputes(){
+  const list=await api('/admin/disputes');
+  if(!list.length){document.getElementById('disputes').innerHTML='<div class="muted" style="padding:20px">No disputes yet.</div>';return;}
+  let html='<div class="sec">Contestazioni / Disputes</div>';
+  list.forEach(d=>{
+    const ai=d.ai_recommendation||{};
+    const conf=Math.round((ai.confidence||0)*100);
+    const resolved=['resolved_mutual','resolved_jobby','rejected'].includes(d.status);
+    const defPct=ai.refund_pct!=null?ai.refund_pct:50;
+    const msgs=(d.messages||[]).map(m=>`<div style="margin:2px 0"><b>${m.from}:</b> ${m.text||''}</div>`).join('');
+    html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="em">⚖️</span>
+        <div class="t"><b>${d.reason_code}</b> · €${(d.amount||0).toFixed(2)}
+          <div class="muted">${d.dispute_id} · booking ${d.booking_id}</div></div>
+        <span class="pill" style="background:#eee">${d.status}</span>
+      </div>
+      ${d.description?`<div class="muted">Cliente: ${d.description}</div>`:''}
+      ${d.provider_response?`<div class="muted">Fornitore: ${d.provider_response}</div>`:''}
+      <div style="background:#F5F1FF;border:1px solid #E0D4FF;border-radius:10px;padding:10px">
+        <div style="color:var(--purple);font-weight:700;font-size:12px;text-transform:uppercase">AI proposal · ${conf}% confidence</div>
+        <div style="font-weight:700;margin-top:4px">${RECLABEL[ai.recommendation]||'—'}${ai.recommendation==='refund_partial'?' · '+ai.refund_pct+'%':''}</div>
+        <div class="muted" style="margin-top:4px">${ai.rationale||''}</div>
+      </div>
+      ${msgs?`<div style="font-size:13px">${msgs}</div>`:''}
+      ${resolved?`<div class="muted">Resolved: ${d.resolution?(RECLABEL[d.resolution.decision]||(d.resolution.refund_pct>=100?'Full refund':d.resolution.refund_pct>0?('Partial '+d.resolution.refund_pct+'%'):'No refund')):''} ${d.resolution&&d.resolution.refund_amount!=null?('· €'+d.resolution.refund_amount.toFixed(2)):''}</div>`:
+      `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="pct-${d.dispute_id}" type="number" min="0" max="100" value="${defPct}" style="width:70px;padding:6px;border:1px solid var(--line);border-radius:8px"/>
+        <input id="note-${d.dispute_id}" placeholder="Note (optional)" style="flex:1;min-width:140px;padding:6px;border:1px solid var(--line);border-radius:8px"/>
+        <button class="b-approve" onclick="resolveDispute('${d.dispute_id}','refund_full',100)">Confirm full refund</button>
+        <button class="b-suspend" onclick="resolveDispute('${d.dispute_id}','refund_partial',document.getElementById('pct-${d.dispute_id}').value)">Partial %</button>
+        <button class="b-reject" onclick="resolveDispute('${d.dispute_id}','reject',0)">Reject</button>
+      </div>`}
+    </div>`;
+  });
+  document.getElementById('disputes').innerHTML=html;
+}
+async function resolveDispute(id,decision,pct){
+  if(!confirm('Apply resolution: '+decision+(decision==='refund_partial'?(' '+pct+'%'):'')+'?'))return;
+  const note=(document.getElementById('note-'+id)||{}).value||'';
+  await api('/admin/disputes/'+id+'/resolve',{method:'POST',body:JSON.stringify({decision,refund_pct:Number(pct)||0,note})});
+  loadDisputes();
 }
 (function(){const t=localStorage.getItem('jobby_admin_token');if(t){document.getElementById('token').value=t;connect();}})();
 </script>

@@ -11,6 +11,7 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
+import { DateField, TimeField } from "@/src/components/DateTimeField";
 
 const TREVISO = { lat: 45.6669, lng: 12.2433 };
 
@@ -148,6 +149,12 @@ export default function RequestScreen() {
                   placeholderTextColor={colors.muted}
                 />
               )}
+              {q.type === "date" && (
+                <DateField testID={`input-${q.id}`} value={answers[q.id] || ""} onChange={(v) => setAnswers({ ...answers, [q.id]: v })} lang={lang} />
+              )}
+              {q.type === "time" && (
+                <TimeField testID={`input-${q.id}`} value={answers[q.id] || ""} onChange={(v) => setAnswers({ ...answers, [q.id]: v })} />
+              )}
             </View>
           ))}
 
@@ -159,11 +166,11 @@ export default function RequestScreen() {
               <View style={styles.row2}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>{t("date")}</Text>
-                  <TextInput testID="date-input" style={styles.input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.muted} />
+                  <DateField testID="date-input" value={date} onChange={setDate} lang={lang} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>{t("time")}</Text>
-                  <TextInput testID="time-input" style={styles.input} value={time} onChangeText={setTime} placeholder="HH:MM" placeholderTextColor={colors.muted} />
+                  <TimeField testID="time-input" value={time} onChange={setTime} />
                 </View>
               </View>
               <Text style={styles.label}>{t("budgetOptional")}</Text>
