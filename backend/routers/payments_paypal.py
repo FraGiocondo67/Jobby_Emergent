@@ -86,6 +86,8 @@ async def capture_paypal_order(order_id: str, user=Depends(get_current_user)):
     tx = await db.payment_transactions.find_one({"session_id": order_id, "provider": "paypal"}, {"_id": 0})
     if not tx:
         raise HTTPException(status_code=404, detail="tx_not_found")
+    if tx["user_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
     async with httpx.AsyncClient(timeout=30) as client:
         token = await _access_token(client)
         r = await client.post(
