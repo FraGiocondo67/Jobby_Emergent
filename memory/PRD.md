@@ -108,6 +108,17 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Costanti limiti in `richieste_config.py`: LF_FAMILY_ANNUAL_EUR=10000, LF_COUPLE_CEILING_EUR=2500, LF_PROVIDER_ANNUAL_EUR=5000, LF_PROVIDER_HOURS=280, LF_AGEVOLATE_WEIGHT=0.75, LF_WARN_THRESHOLD=0.8.
 - Testato 9/9 backend + frontend (iter Spec 5). Seed demo: `bstest@jobby.app` ora ha 1 richiesta completata + 1 futura → Home ricorrente con card Giulia.
 
+## Implemented (2026-06 — Spec 4 Cancellazioni/No-show/Recensioni)
+- **Motore generico** `routers/spec4.py` sul collection condiviso `db.richieste` (endpoint `/api/richieste/{rid}/...`), valido per tutte le categorie; importi su **ledger simulato** (wallet_balance / lf_borsellino liberato).
+- **Cancellazioni a scaglioni** (Impresa): ≥48h rimborso pieno · 24–48h solo fee trattenuta · <24h fee + **50%** lavoro come indennizzo al provider + strike. **Libretto**: tardiva = perde fee + strike + priorità rimatching + voucher liberati.
+- **Provider-cancel** (rimborso pieno + stato→in_matching + risostituzione + alert admin), **no-show** (grazia 15 min + alert, verifica admin), **report-delay**, **pausa/riprendi ricorrenza**.
+- **Recensioni**: finestra 14gg, moderazione admin (pubblica solo `moderato:true`), 1 replica provider, cliente elimina la propria entro 14gg, badge **"Nuovo su JOBBY"** < 3 recensioni (media nascosta finché nuovo).
+- **Punteggio privato cliente** (provider valuta 1–5 + flag + nota, mai pubblico) + **contatori affidabilità** (strike cancel<24h/no-show, soglia 3/180gg → alert admin).
+- Soglie **tutte configurabili** (`db.settings` key `spec4_config`) via admin tab **"Regole"** (soglie + coda moderazione + affidabilità).
+- Frontend Pulizie `[id].tsx` cablato (cancel tier-aware, no-show, provider-cancel, valuta cliente, replica recensione). `cancelRichiesta`/`reviewRichiesta` ripuntati al motore generico.
+- Testato 17/17 backend + frontend (iter30). Fix bug JSX orfano post-test.
+- Costanti default in `richieste_config.py` (`SPEC4_DEFAULTS`).
+
 ## Next Tasks
 - Add authorization checks + provider profile detail screen.
 - Consider Stripe/YOB Pay for the JOBBY service fee.

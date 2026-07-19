@@ -216,6 +216,7 @@ export default function RichiestaDetail() {
             ) : null}
           </View>
         ) : null}
+        {isClient && ["pubblicata", "in_matching", "con_proposte"].includes(r.stato) ? (
           <Pressable testID="cancel-richiesta" style={styles.cancelBtn} onPress={doCancel} disabled={busy}><Text style={styles.cancelText}>✕ {t("cancelRequest")}</Text></Pressable>
         ) : null}
       </ScrollView>
