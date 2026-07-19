@@ -1,8 +1,10 @@
 """JOBBY — Spec 2: provider onboarding (registration, phone OTP, 3 tracks,
 Libretto Famiglia guided flow, availability, fee, 5-state machine, admin approval)."""
 import os
+import base64
 from datetime import datetime, date
 
+import requests
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
@@ -13,9 +15,11 @@ from routers.notifications import push_notification
 
 router = APIRouter()
 
-TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-TWILIO_VERIFY = os.environ.get("TWILIO_VERIFY_SERVICE_SID", "")
+# --- Vonage Verify v2 (SMS OTP) ---
+VONAGE_API_KEY = os.environ.get("VONAGE_API_KEY", "")
+VONAGE_API_SECRET = os.environ.get("VONAGE_API_SECRET", "")
+VONAGE_BRAND = os.environ.get("VONAGE_BRAND_NAME", "JOBBY")
+VONAGE_BASE = "https://api.nexmo.com/v2/verify"
 
 DEFAULT_FEE = {"visit_fixed_total": 8.0, "provider_share": 4.0, "client_share": 4.0,
                "recurring_total": 6.0, "recurring_after_month": 1}
@@ -31,9 +35,14 @@ CONDIZIONI = [
 ]
 
 
-def _twilio_client():
-    from twilio.rest import Client
-    return Client(TWILIO_SID, TWILIO_TOKEN)
+def _vonage_headers():
+    tok = base64.b64encode(f"{VONAGE_API_KEY}:{VONAGE_API_SECRET}".encode()).decode()
+    return {"Authorization": f"Basic {tok}", "Content-Type": "application/json"}
+
+
+def _norm_phone(p: str) -> str:
+    """Vonage expects E.164 digits without the leading '+'."""
+    return "".join(ch for ch in (p or "") if ch.isdigit())
 
 
 def provider_state(u: dict) -> str:
@@ -55,7 +64,7 @@ def provider_state(u: dict) -> str:
     return "in_verifica" if u.get("onboarding_completed") else "incompleto"
 
 
-# ---------------- phone OTP (Twilio Verify) ----------------
+# ---------------- phone OTP (Vonage Verify v2) ----------------
 class PhoneIn(BaseModel):
     phone: str
 
@@ -67,32 +76,52 @@ class VerifyIn(BaseModel):
 
 @router.post("/phone/send-otp")
 async def send_otp(body: PhoneIn, user=Depends(get_current_user)):
-    if not TWILIO_VERIFY:
+    if not (VONAGE_API_KEY and VONAGE_API_SECRET):
         raise HTTPException(status_code=503, detail="sms_not_configured")
-    phone = body.phone.strip().replace(" ", "")
+    to = _norm_phone(body.phone)
+    if len(to) < 8:
+        raise HTTPException(status_code=400, detail="invalid_phone")
     try:
-        c = _twilio_client()
-        v = c.verify.v2.services(TWILIO_VERIFY).verifications.create(to=phone, channel="sms")
-        return {"status": v.status}
+        r = requests.post(VONAGE_BASE, headers=_vonage_headers(),
+                          json={"brand": VONAGE_BRAND, "workflow": [{"channel": "sms", "to": to}]}, timeout=15)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"twilio_error: {e}")
+        raise HTTPException(status_code=502, detail=f"vonage_unreachable: {e}")
+    if r.status_code in (200, 202):
+        req_id = r.json().get("request_id")
+        await db.otp_requests.update_one({"user_id": user["user_id"], "phone": to},
+                                         {"$set": {"request_id": req_id, "created_at": now_utc().isoformat()}}, upsert=True)
+        return {"status": "pending"}
+    # surface Vonage error cleanly (e.g. trial number not whitelisted, throttling)
+    detail = "vonage_error"
+    try:
+        j = r.json(); detail = j.get("title") or j.get("detail") or detail
+    except Exception:
+        pass
+    raise HTTPException(status_code=400, detail=f"vonage_error: {detail}")
 
 
 @router.post("/phone/verify-otp")
 async def verify_otp(body: VerifyIn, user=Depends(get_current_user)):
-    if not TWILIO_VERIFY:
+    if not (VONAGE_API_KEY and VONAGE_API_SECRET):
         raise HTTPException(status_code=503, detail="sms_not_configured")
-    phone = body.phone.strip().replace(" ", "")
+    to = _norm_phone(body.phone)
+    rec = await db.otp_requests.find_one({"user_id": user["user_id"], "phone": to})
+    if not rec or not rec.get("request_id"):
+        raise HTTPException(status_code=400, detail="no_pending_verification")
     try:
-        c = _twilio_client()
-        check = c.verify.v2.services(TWILIO_VERIFY).verification_checks.create(to=phone, code=body.code.strip())
-        ok = check.status == "approved"
+        r = requests.post(f"{VONAGE_BASE}/{rec['request_id']}", headers=_vonage_headers(),
+                          json={"code": body.code.strip()}, timeout=15)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"twilio_error: {e}")
-    if not ok:
+        raise HTTPException(status_code=502, detail=f"vonage_unreachable: {e}")
+    if r.status_code == 200:
+        await db.otp_requests.delete_one({"_id": rec["_id"]})
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"phone": "+" + to, "phone_verified": True}})
+        return {"verified": True}
+    if r.status_code == 409:
         raise HTTPException(status_code=400, detail="invalid_code")
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"phone": phone, "phone_verified": True}})
-    return {"verified": True}
+    if r.status_code == 410:
+        raise HTTPException(status_code=400, detail="code_expired")
+    raise HTTPException(status_code=400, detail="invalid_code")
 
 
 # ---------------- provider profile / tracks ----------------

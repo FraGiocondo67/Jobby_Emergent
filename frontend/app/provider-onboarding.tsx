@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert, Switch } from "react-native";
-import { Image } from "expo-image";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -64,7 +63,7 @@ export default function ProviderOnboarding() {
   const pickImage = async (useCamera: boolean): Promise<string | null> => {
     const perm = useCamera ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert(t("permissionNeeded"), "", [{ text: "OK" }, { text: t("openSettings"), onPress: () => require("react-native").Linking.openSettings() }]);
+      Alert.alert(t("permissionNeeded"), "", [{ text: "OK" }, { text: t("openSettings"), onPress: () => Linking.openSettings() }]);
       return null;
     }
     const res = useCamera
@@ -97,7 +96,8 @@ export default function ProviderOnboarding() {
     setBusy(true);
     try { await api.sendOtp(phone.trim()); setOtpSent(true); Alert.alert(t("otpSent")); }
     catch (e: any) {
-      if (String(e?.message).includes("unverified")) Alert.alert(t("otpTrialWarn"));
+      const m = String(e?.message || "");
+      if (m.includes("vonage_error") || m.includes("Non-Whitelisted") || m.includes("whitelist")) Alert.alert(t("otpTrialWarn"));
       else Alert.alert(t("error"), t("otpError"));
     } finally { setBusy(false); }
   };
