@@ -1,34 +1,34 @@
 {
   "app_name": "JOBBY",
   "personality": "1 iOS-Native Clean",
-  "personality_one_liner": "A trustworthy, highly structured, and flexible marketplace where time and reliability are paramount.",
+  "personality_one_liner": "Shortest path to booking for new users; the ultimate relationship guardian and honest financial dashboard for recurring clients.",
   "color": {
-    "surface": "#F8F7F4",
-    "onSurface": "#1C1B1A",
-    "surfaceSecondary": "#FFFFFF",
-    "onSurfaceSecondary": "#1C1B1A",
-    "surfaceTertiary": "#EAE8E3",
-    "onSurfaceTertiary": "#4A4846",
-    "surfaceInverse": "#2C2C2C",
-    "onSurfaceInverse": "#FFFFFF",
-    "brand": "#4A7B59",
-    "brandPrimary": "#4A7B59",
+    "surface": "#FFFFFF",
+    "onSurface": "#171A18",
+    "surfaceSecondary": "#F5F7F5",
+    "onSurfaceSecondary": "#3E4540",
+    "surfaceTertiary": "#E9EFEA",
+    "onSurfaceTertiary": "#4B544E",
+    "surfaceInverse": "#1B1F1C",
+    "onSurfaceInverse": "#F5F7F5",
+    "brand": "#1B4D3E",
+    "brandPrimary": "#1B4D3E",
     "onBrandPrimary": "#FFFFFF",
-    "brandSecondary": "#C57B57",
-    "onBrandSecondary": "#FFFFFF",
-    "brandTertiary": "#E8F0EA",
-    "onBrandTertiary": "#2E5039",
-    "success": "#3A7D44",
+    "brandSecondary": "#D7E3DA",
+    "onBrandSecondary": "#12362B",
+    "brandTertiary": "#B8CCBF",
+    "onBrandTertiary": "#0D261E",
+    "success": "#2D7A31",
     "onSuccess": "#FFFFFF",
-    "warning": "#D48B3E",
-    "onWarning": "#FFFFFF",
-    "error": "#B94A48",
+    "warning": "#DD8A1C",
+    "onWarning": "#4A2F00",
+    "error": "#D33F31",
     "onError": "#FFFFFF",
-    "info": "#4A4846",
+    "info": "#477259",
     "onInfo": "#FFFFFF",
-    "border": "#E2DFD8",
-    "borderStrong": "#C8C4BA",
-    "divider": "#EBE8E0"
+    "border": "#E1E6E2",
+    "borderStrong": "#AEC2B4",
+    "divider": "#E8EBE8"
   },
   "typography": {
     "displayFontFamily": "Plus Jakarta Sans",
@@ -42,7 +42,7 @@
     }
   },
   "spacing": {
-    "rule": "Generous vertical rhythm and native iOS margins. Cards never sit flush to the screen edge. Ensure bottom spacing accounts for the safe area and sticky CTAs.",
+    "rule": "Generous iOS-native margins (lg/xl). No dense dashboards; let data breathe. Use visual hierarchy instead of boxes to separate dashboard blocks.",
     "xs": 4,
     "sm": 8,
     "md": 12,
@@ -57,20 +57,20 @@
     "lg": 20,
     "pill": 999
   },
-  "shadow_tier": 1,
+  "shadow_tier": "1",
   "navigation": "bottom_tabs",
   "icon_set": "Ionicons",
   "glassmorphism": {
-    "enabled": true,
+    "enabled": "true",
     "do's": [
-      "Bottom tab bar background",
-      "Sticky headers when scrolling content",
-      "Bottom sheet drag handles and headers"
+      "Use glass for sticky bottom CTA in configurations",
+      "Use glass for the bottom tab bar",
+      "Use glass for the global WhatsApp FAB background"
     ],
     "dont's": [
-      "Form inputs",
-      "List rows",
-      "Dense provider listing cards"
+      "No glass on form inputs",
+      "No glass on simple list items",
+      "No glass on dashboard data cards to preserve readability"
     ]
   },
   "platform_libraries": {
@@ -87,102 +87,62 @@
   },
   "screens": [
     {
-      "name": "Onboarding & Auth",
-      "purpose": "Introduce the value of time and trust, toggle language, and login via Google.",
+      "name": "Home (State 1: Visitor)",
+      "purpose": "Conversion page with the shortest path to configuration and strong trust signals.",
       "states": {
-        "loading": "Spinner over glass overlay",
+        "loading": "Centered spinner over a faded background.",
+        "empty": "N/A - Catalog is static.",
+        "error": "Error loading configurations. Retry button."
+      },
+      "layout": "Root is a ScrollView. Top: Hero section (glass overlay on home interior image) with one-line promise 'Aiuto in casa, in regola, in pochi tocchi'. Immediately below: Configurator entry card for 'Pulizie e stiro' (prominent, showing a price estimate natively). Below that: Other active categories (Babysitting, Driver, Artigiani) in a clean 2-column or list layout (DO NOT HIDE). Bottom: Trust signals section (Verified identities, Insured services, Real reviews, First-service guarantee) styled as a surfaceSecondary block with icon lists."
+    },
+    {
+      "name": "Home (State 2: Recurring Client)",
+      "purpose": "Guard and manage the recurring relationship with the cleaner.",
+      "states": {
+        "loading": "Skeleton of relationship cards.",
         "empty": "N/A",
-        "error": "Standard alert or inline toast for failed auth"
+        "error": "Error loading upcoming visits. Retry button."
       },
-      "layout": "Full-bleed background image with a top-to-bottom dark gradient scrim (0% to 80% surfaceInverse). Bilingual toggle (IT/EN) at top right. Brand wordmark and tagline in the bottom 40%, above a sticky Google Login button (surfaceSecondary bg, onSurface text)."
+      "layout": "Root is a ScrollView. Topmost: Relationship Cards (one per active cleaner). Each card is an elevated surface card. Content: avatar of cleaner on left, Name on right. Below avatar: 'Next visit: Giovedì alle 15:00'. Bottom of card: 3 'pill' buttons for 'Prenota di nuovo', 'Sposta', 'Messaggio'. If there's an issue (e.g., failed payment), a full-width warning/error banner sits inside the card at the top. Below the relationship cards: The standard catalog grid (Pulizie, Babysitting, Driver, Artigiani)."
     },
     {
-      "name": "Customer Home",
-      "purpose": "Dashboard to start a new mission or view active/upcoming bookings.",
+      "name": "Portafoglio (Client Dashboard)",
+      "purpose": "Honest, 4-block financial and legal dashboard.",
       "states": {
-        "loading": "Skeleton grids for categories",
-        "empty": "N/A",
-        "error": "Error boundary with a retry button"
+        "loading": "Skeletons for wallet numbers and progress bars.",
+        "empty": "Illustration of a clean wallet with zero transactions.",
+        "error": "Cannot fetch wallet data. Retry button."
       },
-      "layout": "Top section: Glass header with greeting. Section 1: Active/Upcoming mission card (surfaceSecondary, shadow 1) showing status. Section 2: 'What do you need?' - 2-column grid of image-backed category cards (Cleaning, Ironing) using gradient scrims and bottom-aligned text."
+      "layout": "4 vertical blocks separated by '3xl' spacing. (1) Borsellino Card: 3 numeric highlights ('Caricato', 'Impegnato', 'Spendibile') with Spendibile the largest. Guided top-up button below, and a subtle text notice for 'in-progress top-ups' ('€100 in ricarica, disp. mercoledì'). (2) Limiti Legali: Annual €10,000 progress bar, plus Per-Cleaner €2,500 progress bars (with cleaner avatar). Show '75%' weighting explanatory note. At 80% filled, show a warning-colored upsell card ('Passa a un contratto domestico?'). (3) Attività e Documenti: List of upcoming services with committed vouchers, and a history section to download receipts/invoices. (4) Recupero Fiscale: Annual estimate card ('~€180 di contributi deducibili') with a 'Add external usages' manual button."
     },
     {
-      "name": "Mission Creation Wizard",
-      "purpose": "Structured flow to define service, location, and time.",
+      "name": "Provider Dashboard",
+      "purpose": "Mirror of the client dashboard tailored to the worker's earnings and limits.",
       "states": {
-        "loading": "Inline spinner during submission",
-        "empty": "N/A",
-        "error": "Validation styling on missed fields"
+        "loading": "Spinner.",
+        "empty": "Welcome illustration for new providers.",
+        "error": "Error fetching earnings. Retry button."
       },
-      "layout": "Progress bar at top. Single column form layout with generous spacing. Each step (Config, Location, Date/Time) is a separate view to avoid cognitive overload. Persistent sticky bottom CTA ('Next'/'Broadcast') over a glass background, leaving bottom padding for scroll clearance."
-    },
-    {
-      "name": "Matching Radar",
-      "purpose": "Waiting screen (Modello D) while nearby providers accept the mission.",
-      "states": {
-        "loading": "Pulse animation expanding from center map pin",
-        "empty": "Message: 'Searching for trusted providers...'",
-        "error": "Timeout message with 'Expand search radius' CTA"
-      },
-      "layout": "Map view occupying the upper 60% with subtle radar pulse animations. Bottom 40% is a bottom-sheet (surfaceSecondary) showing real-time counters ('Invited 12, Accepted 2...') and a 'Cancel Request' secondary action."
-    },
-    {
-      "name": "Provider Selection",
-      "purpose": "Compare and choose from providers who accepted the mission.",
-      "states": {
-        "loading": "Skeleton list items",
-        "empty": "Empty state illustration: 'No providers available right now.'",
-        "error": "Retry fetching providers"
-      },
-      "layout": "List view of cards. Each card displays provider avatar (or initials if missing logo/photo), rating, distance, price breakdown (Labor INPS + Jobby Fee). Primary 'Select Provider' button per card. Sticky bottom summary of the requested service."
-    },
-    {
-      "name": "Provider Home",
-      "purpose": "Provider dashboard to manage incoming requests and availability.",
-      "states": {
-        "loading": "Skeleton map and list",
-        "empty": "Illustration: 'No missions nearby. Take a break!'",
-        "error": "Retry connection to Jobby servers"
-      },
-      "layout": "Distinct UI structure from Customer: Top header features an 'Online/Offline' toggle. Split view: Top half is a map of incoming mission pings, bottom half is a scrollable list of 'Mission Requests'. Each card has clear 'Accept' / 'Decline' actions."
-    },
-    {
-      "name": "Profile & Settings",
-      "purpose": "Manage identity, reviews, INPS wallet, and switch roles.",
-      "states": {
-        "loading": "Skeleton text lines",
-        "empty": "N/A",
-        "error": "Failed to load profile data"
-      },
-      "layout": "Profile header with avatar and rating badge. Prominent 'Switch to Provider/Customer' card at the top (brandTertiary bg for emphasis). Settings list (Language, Wallet/INPS setup, Support) using standard iOS list items with right chevrons."
+      "layout": "3 vertical blocks. (1) Guadagni: Incoming sums with prominent credit dates ('Accreditati €48 da INPS il 15 Ago'). (2) Limiti Personali: Progress bars for €5k/year, €2.5k/family, and 280 hours. (3) Storico Lavoro: List of past jobs, reviews received, reliability score, and a toggle for 'Non disturbare'."
     }
   ],
   "images": {
-    "onboarding_trust": {
-      "url": "https://images.pexels.com/photos/8112186/pexels-photo-8112186.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-      "alt": "Two people shaking hands symbolizing trust and agreement"
+    "cleaner_avatar": {
+      "url": "https://images.pexels.com/photos/9462192/pexels-photo-9462192.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Portrait of a smiling cleaner in uniform"
     },
-    "category_cleaning": {
-      "url": "https://images.pexels.com/photos/3935315/pexels-photo-3935315.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-      "alt": "Clean, bright, sunny living room"
-    },
-    "category_ironing": {
-      "url": "https://images.pexels.com/photos/28576633/pexels-photo-28576633.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-      "alt": "Neatly folded clothes on an ironing board"
+    "home_hero_bg": {
+      "url": "https://images.pexels.com/photos/35466644/pexels-photo-35466644.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Beautiful Mediterranean home interior with arches"
     }
   },
   "instructions_to_main_agent": [
-    "Strictly follow the No Blues/Purples rule for the brand. Use the Sage Green (#4A7B59) and Terracotta (#C57B57) palette to convey trust and warmth.",
-    "Implement the 'Modello D' workflow accurately: Mission Creation -> Radar Waiting Screen -> Provider Selection. These are separate steps.",
-    "The Role Switch functionality should be a prominent toggle or distinct card in the Profile tab, dynamically changing the Home layout between the 'Customer' booking view and the 'Provider' map/earnings view.",
-    "Apply gradient scrims (transparent to 80% surfaceInverse) to all category image cards and the onboarding background to ensure text readability.",
-    "Use 'Plus Jakarta Sans' weight 400 and 500 exclusively. Avoid 600+ or bold weights; use size changes (e.g., xl or 2xl) to create hierarchy.",
-    "For sticky CTAs, use a fixed container at the screen root, styled with glass (expo-glass-effect or expo-blur) and leave corresponding bottom padding on the ScrollView so content isn't obscured."
-  ],
-  "haptics": {
-    "role_switch": "impactHeavy",
-    "primary_button_press": "impactMedium",
-    "accept_mission": "notificationSuccess",
-    "tab_change": "selection"
-  }
+    "REUSE EXISTING THEME: Map the provided color hexes to the existing Expo theme in /app/frontend/src/theme where possible. If the existing theme uses different variable names, bridge them.",
+    "CRITICAL NAV: Implement a 4-tab bottom navigation (Home, Attività, Portafoglio, Profilo).",
+    "GLOBAL WHATSAPP: Implement a floating action button (FAB) reachable from every screen using number +393481136876.",
+    "NO REGISTRATION WALL: For Home State 1, the 'Pulizie e stiro' configurator MUST be fully usable without login, only asking for registration upon final confirmation.",
+    "RELATIONSHIP CARD: Treat the relationship card on Home State 2 as the crown jewel of the UI. It must look trustworthy, clear, and make the 3 actions (re-book, reschedule, message) frictionless.",
+    "PROGRESS BARS: For the Portafoglio and Provider dashboards, use dynamic progress bars. If a limit hits 80%, change the color mapping to `warning` and show the upsell prompt."
+  ]
 }
