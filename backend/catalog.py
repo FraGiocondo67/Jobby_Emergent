@@ -23,6 +23,7 @@ STANDARD_SERVICES = [
         {"id": "petType", "label": L("Tipo di animale", "Pet type"), "type": "select",
          "options": [{"id": "dog", "label": L("Cane", "Dog")}, {"id": "cat", "label": L("Gatto", "Cat")}, {"id": "other", "label": L("Altro", "Other")}]}, q_duration(2, 10)]},
     {"cat_id": "driver", "emoji": "🚗", "label": L("Driver", "Driver"), "questions": [q_note(), q_duration(2)]},
+    {"cat_id": "artigiani", "emoji": "🛠️", "label": L("Artigiani della casa", "Home craftsmen"), "questions": [q_note(), q_duration(2)]},
     {"cat_id": "tuttofare", "emoji": "🔧", "label": L("Tuttofare", "Handyman"), "questions": [q_note(), q_duration(2)]},
     {"cat_id": "hospitality", "emoji": "🍽️", "label": L("Hospitality", "Hospitality support"), "questions": [
         {"id": "guests", "label": L("Numero di ospiti", "Guests"), "type": "number", "min": 1, "max": 50, "default": 4}, q_duration(3, 10)]},
@@ -97,3 +98,5 @@ async def seed_categories():
     await db.categories.update_many(
         {"kind": {"$in": ["standard", "proximity"]}, "commission_pct": {"$exists": False}},
         {"$set": {"commission_pct": 10.0}})
+    # Migration: "tuttofare" is deprecated and replaced by "artigiani" → keep it inactive.
+    await db.categories.update_one({"cat_id": "tuttofare"}, {"$set": {"active": False}})
