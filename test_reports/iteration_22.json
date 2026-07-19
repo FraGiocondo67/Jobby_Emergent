@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 22: PULIZIE configurator (Spec 1) end-to-end regression. Backend 15/15 pytest PASS covering /pulizie/config, /pulizie/estimate (deterministic pricing + recurrence discount + fee 15%), full IMPRESA lifecycle (create -> admin list w/ compatible[] -> invite -> in_matching -> incoming -> propose -> con_proposte -> confirm charged fee + psp_pending -> start -> complete -> review -> recensita), variation reasons (valid urgenza=80EUR ; invalid reason -> 400 invalid_variation_reason ; decline -> declined:true ; propose without invite -> 403 not_invited), PERSONA_LF flow (voucher rounded to 10EUR multiples, netto = 80% nominale, insufficient borsellino -> 400 lf_insufficient_borsellino, topup -> confirm success, year_total/year_hours updated), provider listino GET/PUT persistence, admin_ui HTML contains 'Pulizie' loader. Frontend 9-step configurator verified in mobile viewport: home->mq->tipo->extra->prod->durata->ricorrenza->flex->details->track->publish flow produced req_f69decc185d1 and navigated to /pulizie/<id> showing 'Richiesta pubblicata!' + 'In attesa di proposte...' as spec'd. Listino screen (/pulizie/listino for req-prov-token) renders with f-tariffa_ordinaria/save-listino and pre-filled €13/€16/€19 rates. Client richieste tab correctly merges pulizie rows w/ Italian status pills (Pubblicata, In matching, Con proposte, Confermata, Recensita). One real integration bug found: provider 'Richieste in arrivo' incoming section is NOT rendered for BUSINESS-role users because /app/frontend/app/(tabs)/richieste.tsx:12 gates on `user?.role === 'provider'` only, but req-prov-token seeded user is role='business' (backend /api/pulizie/incoming already allows both roles). One backend semantics quirk in confirm(): the LF branch sets pagamento_lavoro = {'stato':'lf', **lf}, but lf dict also contains 'stato':'coperto' -> dict-spread overrides -> final stato is 'coperto' not 'lf' (still functionally OK because nominale/voucher/netto_lavoratrice are stored). Otherwise deterministic pricing matches spec exactly (13*3 + 5 supp + 10 forno = 54; 15% fee = 8.10 => 62.10). Deprecated shadow* style warning still recurring (see react_native_issues).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/pulizie/richieste/{rid}/confirm (persona_lf branch)", "issue": "pagamento_lavoro final 'stato' is 'coperto' instead of 'lf' because `{'stato':'lf', **lf}` is spread AFTER lf's own stato='coperto' key -> spread overrides. Reference: /app/backend/routers/richieste.py:326-332. Either rename lf dict key to avoid collision or reverse spread order: `{**lf, 'stato':'lf'}`. Not blocking (nominale/voucher/netto_lavoratrice persist correctly)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "(tabs)/richieste.tsx", "issue": "Provider incoming Pulizie section (`incoming-<id>` testIDs) is only rendered when user.role === 'provider'. Business-role users (e.g. req-prov-token seed) never see it, even though backend /api/pulizie/incoming allows business role and returns 6 pending invites. Fix: `user?.role === 'provider' || user?.role === 'business' ? <ProviderJobs /> : <CustomerRequests />`. Reference: /app/frontend/app/(tabs)/richieste.tsx:12.", "testID": "incoming-<id>", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Business provider (impresa) cannot see incoming Pulizie invitations in Richieste tab despite backend serving them via /api/pulizie/incoming.", "issue": "Role gate excludes 'business'.", "affected_testIDs": ["incoming-<id>"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow.card style prop", "issue": "Console warning 'shadow*' style props are deprecated. Use boxShadow. Recurs on /pulizie/configura, /pulizie/[id], /pulizie/listino, /richieste. Reference: /app/frontend/src/theme.ts. Migrate to `boxShadow: '0 2px 8px rgba(0,0,0,0.08)'` (react-native-web supports it) or Platform.select() split."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_pulizie_iter22.py",
+    "/app/test_reports/pytest/iter22_pulizie.xml"
+  ],
+  "action_items": [
+    "FIX (HIGH): /app/frontend/app/(tabs)/richieste.tsx:12 — include 'business' role in ProviderJobs gate so impresa providers see 'Richieste in arrivo' section with `incoming-<id>` testIDs (backend already supports it).",
+    "FIX (minor): /app/backend/routers/richieste.py:326-332 — reorder spread to `{**lf, 'stato':'lf'}` (or rename inner 'stato' key) so pagamento_lavoro.stato for LF is 'lf' not 'coperto'.",
+    "(minor) Migrate shadow* props to boxShadow to silence recurring deprecation warnings across the Pulizie screens."
+  ],
+  "critical_code_review_comments": [
+    "routers/richieste.py deterministic price engine is well-structured: compute_work_total() applies tariffa*ore + prodotti supplement + extras + stiro + ricorrenza discount, then price_breakdown() adds fee%; matches spec.",
+    "compatible_providers() correctly filters by role/services/binario/pulizie_listino + haversine distance vs listino.raggio_km + prodotti_propri check + minimo_ore. ✓",
+    "State machine is enforced consistently: STATES_OPEN gate on propose(), 'no_proposals' check on confirm(), 'not_confirmed' on start(), 'not_in_progress' on complete(), 'not_completed' on review(). ✓",
+    "get_richiesta() correctly hides exact indirizzo for non-owner (until confirmed). ✓",
+    "admin_invite() is idempotent (skips already-invited providers) and only transitions to in_matching when new invites happen. ✓",
+    "lf_topup input validates amount>0. LF year totals are $inc'd on confirm — good, but there is no server-side ceiling enforcement (LF_YEAR_CEILING_EUR=2500) beyond the 'alert' flag; consider a hard cap.",
+    "9-step configurator (configura.tsx) has full testID coverage on every option and next/publish buttons. ✓",
+    "Client richieste tab merges richieste w/ correct StatusPill mapping for all 9 pulizie statuses (pubblicata/in_matching/con_proposte/confermata/in_corso/completata/recensita/scaduta/annullata). ✓",
+    "listino.tsx exposes f-<key> testIDs for every tariff & extra + save-listino; GET/PUT round-trips through the same shape. ✓"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_pulizie_iter22.py (new, 15 tests)",
+    "/app/test_reports/pytest/iter22_pulizie.xml (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "~85% (1 role-gate bug blocks provider incoming UI for business role)"},
+  "seed_data_creation": "Reused seeded tokens: disp-test-token-777 (client, user_disptest01), req-prov-token (business, user_2f996c8a010a, impresa listino €13/€16/€19), lf-prov-token (provider, user_63e358a12980, persona_lf listino), plus jobby-admin-7c2f9a admin header. Tests create fresh richieste per lifecycle test and LF topup is dynamic (only tops up if borsellino < nominale). Test data prefix not applicable — richieste have auto-generated IDs. Client req_f69decc185d1 was created via the frontend Playwright flow for manual verification.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run backend regression with `EXPO_PUBLIC_BACKEND_URL=https://jobby-mvp-update.preview.emergentagent.com pytest /app/backend/tests/test_pulizie_iter22.py -v`. Idempotent — safe to rerun. To verify the frontend role-gate fix, inject `req-prov-token` in localStorage(jobby_session_token) and navigate to /richieste — you should now see the '🧹 Richieste in arrivo' section with `incoming-<rid>` rows and euro prices (backend returns 6 open invites for this user). To reproduce the configurator flow: inject `disp-test-token-777`, go to /pulizie/configura, tap through home-appartamento -> mq-80_120 -> next -> tipo-ordinaria -> next -> extra-forno -> next -> prod-provider -> next -> next (durata 3h default) -> ric-settimanale -> next -> flex-fascia -> next -> fill address-input -> next -> track-impresa -> publish-button. Backend req_ IDs from this iteration still exist in db.richieste.",
+  "rca_of_issue": "Frontend role-gate: /app/frontend/app/(tabs)/richieste.tsx line 12 uses strict equality `user?.role === 'provider'` to decide between ProviderJobs and CustomerRequests. Backend seeds impresa listino on both 'provider' and 'business' users (server.py line 82-96 iterates all users with services='pulizie'), and /api/pulizie/incoming allows role in ('provider','business'). Business-role providers therefore correctly RECEIVE invitations from admin, but the frontend never renders the ProviderJobs view for them so the 'Richieste in arrivo' section is invisible. Reproduction: inject req-prov-token, open /richieste — you see the CustomerRequests empty/mixed view. Curl `/api/pulizie/incoming` with the same token returns 6 open invites. Mitigation: widen the gate to `['provider','business'].includes(user?.role)`. Similar patterns likely elsewhere (profile-listino access) — worth grepping for `role === 'provider'`."
+}

@@ -160,6 +160,7 @@ ADMIN_HTML = """<!DOCTYPE html>
       <div class="tab" data-t="users" onclick="go('users')">Users</div>
       <div class="tab" data-t="bookings" onclick="go('bookings')">Bookings</div>
       <div class="tab" data-t="disputes" onclick="go('disputes')">Disputes</div>
+      <div class="tab" data-t="pulizie" onclick="go('pulizie')">Pulizie</div>
     </div>
 
     <div id="dashboard"></div>
@@ -167,6 +168,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <div id="users" class="hidden"></div>
     <div id="bookings" class="hidden"></div>
     <div id="disputes" class="hidden"></div>
+    <div id="pulizie" class="hidden"></div>
   </div>
 </div>
 <div id="docModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:9">
@@ -291,10 +293,10 @@ async function connect(){
   catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
 }
 function go(t){
-  ['dashboard','categories','users','bookings','disputes'].forEach(x=>document.getElementById(x).classList.add('hidden'));
+  ['dashboard','categories','users','bookings','disputes','pulizie'].forEach(x=>document.getElementById(x).classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.t===t));
   document.getElementById(t).classList.remove('hidden');
-  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes();
+  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie();
 }
 async function loadDash(){
   const s=await api('/admin/stats');
@@ -409,6 +411,38 @@ async function resolveDispute(id,decision,pct){
   const note=(document.getElementById('note-'+id)||{}).value||'';
   await api('/admin/disputes/'+id+'/resolve',{method:'POST',body:JSON.stringify({decision,refund_pct:Number(pct)||0,note})});
   loadDisputes();
+}
+async function loadPulizie(){
+  const list=await api('/admin/pulizie/richieste');
+  if(!list.length){document.getElementById('pulizie').innerHTML='<div class="muted" style="padding:20px">No open cleaning requests.</div>';return;}
+  let html='<div class="sec">Richieste Pulizie · matching manuale</div>';
+  list.forEach(r=>{
+    const c=r.config||{};
+    const comps=(r.compatible||[]);
+    let rows=comps.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" data-rid="${r.richiesta_id}" value="${p.provider_id}" ${p.invited?'checked disabled':''}/>
+      <span style="flex:1"><b>${p.nome}</b> <span class="muted">· ${p.distance}km · ⭐${(p.rating||0).toFixed(1)} · Trust ${Math.round(p.trust||0)}</span></span>
+      <b>€${(p.price||0).toFixed(2)}</b> ${p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':''}
+    </label>`).join('') || '<div class="muted">Nessun professionista compatibile in zona.</div>';
+    html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="em">🧹</span>
+        <div class="t"><b>${c.tipo_pulizia} · ${(c.mq_band||'').replace('_','–')} m² · ${c.durata_ore}h</b>
+          <div class="muted">${r.binario} · ${r.data_ora||''} · ${r.indirizzo||''}</div></div>
+        <span class="pill" style="background:#eee">${r.stato}</span>
+      </div>
+      ${c.extra&&c.extra.length?`<div class="muted">Extra: ${c.extra.join(', ')}</div>`:''}
+      <div><b class="muted">Professionisti compatibili (${comps.length})</b>${rows}</div>
+      <button class="b-approve" onclick="invitePulizie('${r.richiesta_id}')">Invita selezionati</button>
+    </div>`;
+  });
+  document.getElementById('pulizie').innerHTML=html;
+}
+async function invitePulizie(rid){
+  const ids=[...document.querySelectorAll('input[type=checkbox][data-rid="'+rid+'"]:checked:not(:disabled)')].map(x=>x.value);
+  if(!ids.length){alert('Seleziona almeno un professionista');return;}
+  await api('/admin/pulizie/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
+  loadPulizie();
 }
 (function(){const t=localStorage.getItem('jobby_admin_token');if(t){document.getElementById('token').value=t;connect();}})();
 </script>

@@ -158,6 +158,17 @@ export default function ProfileTab() {
         </Pressable>
 
         {/* Payments & payout settings */}
+        {isProvider ? (
+          <Pressable testID="profile-listino" style={[styles.listRow, shadow.card]} onPress={() => router.push("/pulizie/listino")}>
+            <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="pricetags" size={22} color={colors.brand} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{t("listinoTitle")}</Text>
+              <Text style={styles.rowSub}>{t("listinoSub")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        ) : null}
+
         <Pressable testID="profile-payments" style={[styles.listRow, shadow.card]} onPress={() => router.push("/payments-settings")}>
           <View style={[styles.rowIcon, { backgroundColor: colors.blueBg }]}><Ionicons name="card" size={22} color={colors.blue} /></View>
           <View style={{ flex: 1 }}>

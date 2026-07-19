@@ -123,6 +123,31 @@ export const api = {
     request("/connect/onboarding-link", { method: "POST", body: JSON.stringify({ origin_url: originUrl }) }),
   withdrawStripe: (amount: number) =>
     request("/wallet/withdraw/stripe", { method: "POST", body: JSON.stringify({ amount }) }),
+  // pulizie configurator (Spec 1)
+  pulizieConfig: () => request("/pulizie/config"),
+  pulizieEstimate: (data: any) => request("/pulizie/estimate", { method: "POST", body: JSON.stringify(data) }),
+  createRichiesta: (data: any) => request("/pulizie/richieste", { method: "POST", body: JSON.stringify(data) }),
+  myRichieste: () => request("/pulizie/richieste"),
+  getRichiesta: (id: string) => request(`/pulizie/richieste/${id}`),
+  cancelRichiesta: (id: string) => request(`/pulizie/richieste/${id}/cancel`, { method: "POST" }),
+  confirmRichiesta: (id: string, provider_id: string) =>
+    request(`/pulizie/richieste/${id}/confirm`, { method: "POST", body: JSON.stringify({ provider_id }) }),
+  startRichiesta: (id: string) => request(`/pulizie/richieste/${id}/start`, { method: "POST" }),
+  completeRichiesta: (id: string) => request(`/pulizie/richieste/${id}/complete`, { method: "POST" }),
+  reviewRichiesta: (id: string, rating: number, comment: string) =>
+    request(`/pulizie/richieste/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
+  pulizieIncoming: () => request("/pulizie/incoming"),
+  proposeRichiesta: (id: string, data: { accept: boolean; variation_reason?: string | null; variation_price?: number | null; message?: string }) =>
+    request(`/pulizie/richieste/${id}/propose`, { method: "POST", body: JSON.stringify(data) }),
+  getListino: () => request("/pulizie/listino"),
+  setListino: (binario: string, listino: any) =>
+    request("/pulizie/listino", { method: "PUT", body: JSON.stringify({ binario, listino }) }),
+  lfBorsellino: () => request("/pulizie/lf/borsellino"),
+  lfTopup: (amount: number) => request("/pulizie/lf/topup", { method: "POST", body: JSON.stringify({ amount }) }),
+  // admin pulizie
+  adminRichieste: (token: string) => adminRequest("/admin/pulizie/richieste", token),
+  adminInvite: (rid: string, provider_ids: string[], token: string) =>
+    adminRequest(`/admin/pulizie/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
   topupCheckout: (packageId: string, originUrl: string) =>
     request("/wallet/topup/checkout", { method: "POST", body: JSON.stringify({ package_id: packageId, origin_url: originUrl }) }),
   topupStatus: (sessionId: string) => request(`/wallet/topup/status/${sessionId}`),

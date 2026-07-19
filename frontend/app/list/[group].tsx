@@ -33,7 +33,9 @@ export default function ListScreen() {
   const arrowColor = cfg.accent === "purple" ? colors.purple : cfg.accent === "green" ? colors.green : colors.primary;
 
   const onPress = (item: any) => {
-    if (cfg.mode === "proximity") {
+    if (item.cat_id === "pulizie") {
+      router.push("/pulizie/configura");
+    } else if (cfg.mode === "proximity") {
       router.push(`/businesses/${item.cat_id}?label=${encodeURIComponent(item.label[lang])}&emoji=${encodeURIComponent(item.emoji || "🏪")}`);
     } else {
       router.push(`/request/${item.cat_id}?type=${cfg.mode}`);

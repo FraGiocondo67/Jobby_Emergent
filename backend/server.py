@@ -8,7 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 from core import db, client, now_utc, new_id
 from catalog import seed_categories, BOT_PROVIDERS
 from trust import recalc_provider_trust
-from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, payments_connect
+from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, payments_connect, richieste
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ api.include_router(payments_paypal.router)
 api.include_router(disputes.router)
 api.include_router(notifications.router)
 api.include_router(payments_connect.router)
+api.include_router(richieste.router)
 api.include_router(catalog_routes.router)
 api.include_router(missions.router)
 api.include_router(bookings.router)
@@ -80,6 +81,22 @@ async def startup():
         logger.info("Seeded bot providers")
     for p in await db.users.find({"is_bot": True}, {"_id": 0, "user_id": 1}).to_list(100):
         await recalc_provider_trust(p["user_id"])
+    # Seed Pulizie listini on bot cleaning providers (alternate binario for both tracks).
+    idx = 0
+    for p in await db.users.find({"services": "pulizie", "pulizie_listino": {"$exists": False}}, {"_id": 0, "user_id": 1, "hourly_rate": 1}).to_list(100):
+        binario = "impresa" if idx % 2 == 0 else "persona_lf"
+        rate = p.get("hourly_rate", 14.0)
+        listino = {
+            "binario": binario,
+            "tariffa_ordinaria": rate, "tariffa_afondo": round(rate + 3, 2), "tariffa_posttrasloco": round(rate + 6, 2),
+            "prodotti_propri": True, "supplemento_prodotti": 5.0,
+            "extra": {"forno": 10.0, "frigo": 8.0, "finestre": 15.0, "balconi": 12.0},
+            "stiro_ora": 12.0, "sconto_ricorrenza_pct": 10.0, "raggio_km": 20.0, "minimo_ore": 2,
+        }
+        await db.users.update_one({"user_id": p["user_id"]}, {"$set": {"pulizie_binario": binario, "pulizie_listino": listino}})
+        idx += 1
+    if idx:
+        logger.info("Seeded pulizie listini on %d providers", idx)
 
 
 @app.on_event("shutdown")
