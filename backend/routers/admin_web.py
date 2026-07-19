@@ -163,6 +163,7 @@ ADMIN_HTML = """<!DOCTYPE html>
       <div class="tab" data-t="pulizie" onclick="go('pulizie')">Pulizie</div>
       <div class="tab" data-t="babysitting" onclick="go('babysitting')">Babysitting</div>
       <div class="tab" data-t="driver" onclick="go('driver')">Driver</div>
+      <div class="tab" data-t="artigiani" onclick="go('artigiani')">Artigiani</div>
       <div class="tab" data-t="onboarding" onclick="go('onboarding')">Onboarding</div>
     </div>
 
@@ -174,6 +175,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <div id="pulizie" class="hidden"></div>
     <div id="babysitting" class="hidden"></div>
     <div id="driver" class="hidden"></div>
+    <div id="artigiani" class="hidden"></div>
     <div id="onboarding" class="hidden"></div>
   </div>
 </div>
@@ -299,10 +301,10 @@ async function connect(){
   catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
 }
 function go(t){
-  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','driver','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
+  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','driver','artigiani','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.t===t));
   document.getElementById(t).classList.remove('hidden');
-  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='driver')loadDriver(); if(t==='onboarding')loadOnboarding();
+  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='driver')loadDriver(); if(t==='artigiani')loadArtigiani(); if(t==='onboarding')loadOnboarding();
 }
 async function loadDash(){
   const s=await api('/admin/stats');
@@ -514,6 +516,37 @@ async function inviteDriver(rid){
   await api('/admin/driver/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
   loadDriver();
 }
+async function loadArtigiani(){
+  const list=await api('/admin/artigiani/richieste');
+  if(!list.length){document.getElementById('artigiani').innerHTML='<div class="muted" style="padding:20px">No open artigiani requests.</div>';return;}
+  let html='<div class="sec">Richieste Artigiani · matching manuale (urgenze in cima)</div>';
+  list.forEach(r=>{
+    const c=r.config||{};
+    const comps=(r.compatible||[]);
+    let rows=comps.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" data-arid="${r.richiesta_id}" value="${p.provider_id}" ${p.invited?'checked disabled':''}/>
+      <span style="flex:1"><b>${p.nome}</b> <span class="muted">· ${p.distance}km · ⭐${(p.rating||0).toFixed(1)} ${p.abilitazione_ok?'· 🛡️ abilitato':''}</span></span>
+      ${p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':''}
+    </label>`).join('') || '<div class="muted">Nessun artigiano compatibile in zona.</div>';
+    html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="em">🔧</span>
+        <div class="t"><b>${(c.mestiere||'').toUpperCase()} · ${c.modalita==='diagnosi'?'Chiamata-diagnosi':'Paniere'}</b>
+          <div class="muted">${r.binario||''} · ${(c.descrizione||'').slice(0,80)}${r.urgente?' · ⚡ urgente':''}</div></div>
+        <span class="pill">${r.stato}</span>
+      </div>
+      <div><b class="muted">Artigiani compatibili (${comps.length})</b>${rows}</div>
+      <button class="b-approve" onclick="inviteArtigiani('${r.richiesta_id}')">Invita selezionati</button>
+    </div>`;
+  });
+  document.getElementById('artigiani').innerHTML=html;
+}
+async function inviteArtigiani(rid){
+  const ids=[...document.querySelectorAll('input[type=checkbox][data-arid="'+rid+'"]:checked:not(:disabled)')].map(x=>x.value);
+  if(!ids.length){alert('Seleziona almeno un artigiano');return;}
+  await api('/admin/artigiani/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
+  loadArtigiani();
+}
 function img(src,label){return src?('<div style="text-align:center"><div class="muted" style="font-size:11px">'+label+'</div><img src="'+src+'" style="width:90px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"/></div>'):'';}
 async function loadOnboarding(){
   const list=await api('/admin/onboarding/pending');
@@ -541,6 +574,7 @@ async function loadOnboarding(){
         <button class="b-reject" onclick="onbDecision('${u.user_id}','reject')">Rifiuta</button>
         ${u.casellario_doc&&!u.casellario_verified?('<button class="b-approve" onclick="verifyCasellario(&#39;'+u.user_id+'&#39;)">🛡️ Verifica casellario</button>'):''}
         ${u.driver_auth_doc&&!u.driver_auth_verified?('<button class="b-approve" onclick="verifyDriverAuth(&#39;'+u.user_id+'&#39;)">🚘 Verifica autorizzazione</button>'):''}
+        ${u.art_abilitazione_doc&&!u.art_abilitazione_verified?('<button class="b-approve" onclick="verifyAbilitazione(&#39;'+u.user_id+'&#39;)">🔧 Verifica abilitazione</button>'):''}
       </div>
     </div>`;
   });
@@ -557,6 +591,10 @@ async function verifyCasellario(uid){
 }
 async function verifyDriverAuth(uid){
   await api('/admin/driver/'+uid+'/authorization',{method:'POST',body:JSON.stringify({verified:true})});
+  loadOnboarding();
+}
+async function verifyAbilitazione(uid){
+  await api('/admin/artigiani/'+uid+'/abilitazione',{method:'POST',body:JSON.stringify({verified:true})});
   loadOnboarding();
 }
 (function(){const t=localStorage.getItem('jobby_admin_token');if(t){document.getElementById('token').value=t;connect();}})();

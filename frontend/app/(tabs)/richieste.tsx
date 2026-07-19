@@ -14,7 +14,7 @@ export default function RichiesteTab() {
 
 function StatusPill({ status }: { status: string }) {
   const { t } = useLang();
-  const map: Record<string, string> = { pending: colors.warning, matched: "#E07B39", confirmed: colors.blue, in_progress: colors.brand, completed: colors.success, booked: colors.brand, disputed: colors.error, cancelled: colors.muted, declined: colors.error, pubblicata: colors.warning, in_matching: "#E07B39", con_proposte: colors.blue, confermata: colors.success, in_corso: colors.brand, completata: colors.success, recensita: colors.muted, scaduta: colors.error, annullata: colors.muted };
+  const map: Record<string, string> = { pending: colors.warning, matched: "#E07B39", confirmed: colors.blue, in_progress: colors.brand, completed: colors.success, booked: colors.brand, disputed: colors.error, cancelled: colors.muted, declined: colors.error, pubblicata: colors.warning, in_matching: "#E07B39", con_proposte: colors.blue, confermata: colors.success, in_corso: colors.brand, completata: colors.success, recensita: colors.muted, scaduta: colors.error, annullata: colors.muted, preventivo: colors.blue };
   const c = map[status] || colors.muted;
   const label = (t as any)(`status_${status}`) || status;
   return <View style={[styles.pill, { backgroundColor: c + "22" }]}><Text style={[styles.pillText, { color: c }]}>{label}</Text></View>;
@@ -31,13 +31,14 @@ function CustomerRequests() {
   const [richieste, setRichieste] = useState<any[]>([]);
   const [bsReqs, setBsReqs] = useState<any[]>([]);
   const [drvReqs, setDrvReqs] = useState<any[]>([]);
+  const [artReqs, setArtReqs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [sortDir, setSortDir] = useState<"newest" | "oldest">("newest");
 
   const load = useCallback(async () => {
     try {
-      const [r, b, br, rq, bs, dr] = await Promise.all([api.requests(), api.bookings(), api.businessRequests(), api.myRichieste(), api.bsMyRichieste(), api.drvMyRichieste()]);
+      const [r, b, br, rq, bs, dr, art] = await Promise.all([api.requests(), api.bookings(), api.businessRequests(), api.myRichieste(), api.bsMyRichieste(), api.drvMyRichieste(), api.artMyRichieste()]);
       setMissions(r.missions.filter((m: any) => m.status !== "booked"));
       setPayments(r.payments);
       setBookings(b);
@@ -45,6 +46,7 @@ function CustomerRequests() {
       setRichieste(rq || []);
       setBsReqs(bs || []);
       setDrvReqs(dr || []);
+      setArtReqs(art || []);
     } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -55,10 +57,11 @@ function CustomerRequests() {
     richieste.forEach((r) => list.push({ key: `rq-${r.richiesta_id}`, type: "pulizie", created_at: r.created_at, status: r.stato, data: r }));
     bsReqs.forEach((r) => list.push({ key: `bs-${r.richiesta_id}`, type: "babysitting", created_at: r.created_at, status: r.stato, data: r }));
     drvReqs.forEach((r) => list.push({ key: `drv-${r.richiesta_id}`, type: "driver", created_at: r.created_at, status: r.stato, data: r }));
+    artReqs.forEach((r) => list.push({ key: `art-${r.richiesta_id}`, type: "artigiani", created_at: r.created_at, status: r.stato, data: r }));
     bizReqs.forEach((r) => list.push({ key: `b-${r.request_id}`, type: "biz", created_at: r.created_at, status: r.status, data: r }));
     bookings.forEach((b) => list.push({ key: `k-${b.booking_id}`, type: "booking", created_at: b.created_at, status: b.status, data: b }));
     payments.forEach((p) => list.push({ key: `p-${p.request_id}`, type: "payment", created_at: p.created_at, status: "completed", data: p }));
-    const activeStatuses = ["pending", "matched", "confirmed", "in_progress", "booked", "pubblicata", "in_matching", "con_proposte", "confermata", "in_corso"];
+    const activeStatuses = ["pending", "matched", "confirmed", "in_progress", "booked", "pubblicata", "in_matching", "con_proposte", "confermata", "in_corso", "preventivo"];
     const phase = (s: string) => (activeStatuses.includes(s) ? "active" : "completed");
     let out = list;
     if (filter === "active") out = list.filter((x) => phase(x.status) === "active");
@@ -68,7 +71,7 @@ function CustomerRequests() {
       const dbt = new Date(b.created_at || 0).getTime();
       return sortDir === "newest" ? dbt - da : da - dbt;
     });
-  }, [missions, richieste, bsReqs, drvReqs, bizReqs, bookings, payments, filter, sortDir]);
+  }, [missions, richieste, bsReqs, drvReqs, artReqs, bizReqs, bookings, payments, filter, sortDir]);
 
   const empty = merged.length === 0;
 
@@ -131,6 +134,22 @@ function CustomerRequests() {
           <View style={{ marginTop: 6 }}><StatusPill status={r.stato} /></View>
         </View>
         {r.prezzo_finale ? <Text style={styles.cardPrice}>€{r.prezzo_finale.toFixed(2)}</Text> : null}
+      </Pressable>
+    );
+  };
+
+  const renderArtigiani = (r: any) => {
+    const m = r.config?.mestiere || "";
+    const isDiag = r.config?.modalita === "diagnosi";
+    return (
+      <Pressable key={`art-${r.richiesta_id}`} testID={`req-artigiani-${r.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/artigiani/${r.richiesta_id}`)}>
+        <Text style={{ fontSize: 26 }}>🔧</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{m}{r.urgente ? " ⚡" : ""}</Text>
+          <Text style={styles.cardSub}>{isDiag ? t("artDiagnosi") : t("artPaniere")} · {(r.proposte || []).length} {t("proposalsLabel")}</Text>
+          <View style={{ marginTop: 6 }}><StatusPill status={r.stato} /></View>
+        </View>
+        {r.importo_totale ? <Text style={styles.cardPrice}>€{r.importo_totale.toFixed(2)}</Text> : null}
       </Pressable>
     );
   };
@@ -235,6 +254,7 @@ function CustomerRequests() {
             : item.type === "pulizie" ? renderPulizie(item.data)
             : item.type === "babysitting" ? renderBabysitting(item.data)
             : item.type === "driver" ? renderDriver(item.data)
+            : item.type === "artigiani" ? renderArtigiani(item.data)
             : item.type === "biz" ? renderBiz(item.data)
             : item.type === "booking" ? renderBooking(item.data)
             : renderPayment(item.data)
@@ -252,11 +272,12 @@ function ProviderJobs() {
   const [incoming, setIncoming] = useState<any[]>([]);
   const [bsIncoming, setBsIncoming] = useState<any[]>([]);
   const [drvIncoming, setDrvIncoming] = useState<any[]>([]);
+  const [artIncoming, setArtIncoming] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
   const load = useCallback(async () => {
-    try { const [e, b, inc, bsInc, drvInc] = await Promise.all([api.earnings(), api.bookings(), api.pulizieIncoming(), api.bsIncoming(), api.drvIncoming()]); setData(e); setBookings(b); setIncoming(inc || []); setBsIncoming(bsInc || []); setDrvIncoming(drvInc || []); } catch {}
+    try { const [e, b, inc, bsInc, drvInc, artInc] = await Promise.all([api.earnings(), api.bookings(), api.pulizieIncoming(), api.bsIncoming(), api.drvIncoming(), api.artIncoming()]); setData(e); setBookings(b); setIncoming(inc || []); setBsIncoming(bsInc || []); setDrvIncoming(drvInc || []); setArtIncoming(artInc || []); } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -317,6 +338,23 @@ function ProviderJobs() {
                     <Text style={styles.cardSub}>{r.pickup_at?.replace("T", " ").slice(0, 16)} · {r.config?.route?.distance_km} km</Text>
                   </View>
                   <Text style={styles.cardPrice}>€{(r.suggested_price ?? r.taxi_estimate ?? 0).toFixed(2)}</Text>
+                </Pressable>);
+            })}
+          </>
+        ) : null}
+        {artIncoming.length > 0 ? (
+          <>
+            <Text style={styles.sectionHdr}>🔧 {t("artigiani")}</Text>
+            {artIncoming.map((r) => {
+              const isDiag = r.config?.modalita === "diagnosi";
+              return (
+                <Pressable key={r.richiesta_id} testID={`art-incoming-${r.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/artigiani/${r.richiesta_id}`)}>
+                  <Text style={{ fontSize: 26 }}>🔧</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>{r.config?.mestiere}{r.urgente ? " ⚡" : ""}</Text>
+                    <Text style={styles.cardSub}>{isDiag ? t("artDiagnosi") : t("artPaniere")} · {r.my_proposal ? t("proposalSent") : t("respondWithin24h")}</Text>
+                  </View>
+                  {r.my_price != null ? <Text style={styles.cardPrice}>€{Number(r.my_price).toFixed(2)}</Text> : null}
                 </Pressable>);
             })}
           </>
