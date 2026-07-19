@@ -66,6 +66,7 @@ async def _apply_refund(booking: dict, refund_pct: int):
                                           "status": "available", "created_at": now_utc().isoformat()})
     await db.bookings.update_one({"booking_id": booking["booking_id"]},
                                  {"$set": {"escrow_status": "refunded" if pct >= 100 else "released",
+                                           "status": "completed",
                                            "dispute_resolution_pct": pct}})
     return {"refund_amount": refund_amount, "jobby_guaranteed": max(0.0, guaranteed)}
 
