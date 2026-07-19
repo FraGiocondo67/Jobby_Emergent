@@ -77,7 +77,7 @@ export default function PaymentsSettings() {
       }
     } catch (e: any) {
       const m = String(e?.message || "");
-      if (m.includes("signed up for Connect") || m.includes("Connect")) Alert.alert(t("stripePayout"), t("stripeConnectNotEnabled"));
+      if (m.includes("stripe_connect_not_enabled") || m.includes("Connect")) Alert.alert(t("stripePayout"), t("stripeConnectNotEnabled"));
       else Alert.alert(t("error"));
     } finally { setConnBusy(false); }
   };

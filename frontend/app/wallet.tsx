@@ -70,7 +70,7 @@ export default function Wallet() {
       else if (m.includes("no_crypto_wallet")) Alert.alert(t("methodCrypto"), t("notSet"));
       else if (m.includes("no_connect_account")) Alert.alert(t("methodStripe"), t("noConnectAccountMsg"));
       else if (m.includes("payouts_not_enabled")) Alert.alert(t("methodStripe"), t("payoutsNotEnabledMsg"));
-      else if (m.includes("signed up for Connect") || m.includes("Connect")) Alert.alert(t("methodStripe"), t("stripeConnectNotEnabled"));
+      else if (m.includes("stripe_connect_not_enabled") || m.includes("Connect")) Alert.alert(t("methodStripe"), t("stripeConnectNotEnabled"));
       else Alert.alert(t("error"));
     } finally { setBusy(false); }
   };

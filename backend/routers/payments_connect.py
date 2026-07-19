@@ -68,7 +68,10 @@ async def onboarding_link(body: OriginIn, user=Depends(get_current_user)):
         return {"url": link["url"], "account_id": acct_id}
     except stripe.error.StripeError as e:
         logger.warning("connect onboarding failed: %s", e)
-        raise HTTPException(status_code=502, detail=str(getattr(e, "user_message", "") or e))
+        msg = str(getattr(e, "user_message", "") or e)
+        if "sign" in msg.lower() and "connect" in msg.lower():
+            raise HTTPException(status_code=400, detail="stripe_connect_not_enabled")
+        raise HTTPException(status_code=400, detail=f"stripe_error: {msg}")
 
 
 @router.get("/connect/status")
@@ -85,7 +88,7 @@ async def connect_status(user=Depends(get_current_user)):
                                   {"$set": {"stripe_onboarding_completed": details, "stripe_payouts_enabled": payouts}})
         return {"connected": True, "account_id": acct_id, "details_submitted": details, "payouts_enabled": payouts}
     except stripe.error.StripeError as e:
-        raise HTTPException(status_code=502, detail=str(getattr(e, "user_message", "") or e))
+        raise HTTPException(status_code=400, detail=f"stripe_error: {getattr(e, 'user_message', '') or e}")
 
 
 @router.post("/wallet/withdraw/stripe")
@@ -106,7 +109,7 @@ async def withdraw_stripe(body: StripeWithdrawIn, user=Depends(get_current_user)
     try:
         acct = stripe.Account.retrieve(acct_id)
     except stripe.error.StripeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"stripe_error: {getattr(e, 'user_message', '') or e}")
     if not acct.get("payouts_enabled"):
         raise HTTPException(status_code=400, detail="payouts_not_enabled")
 
@@ -126,7 +129,7 @@ async def withdraw_stripe(body: StripeWithdrawIn, user=Depends(get_current_user)
             metadata={"jobby_user_id": user["user_id"]},
         )
     except stripe.error.StripeError as e:
-        raise HTTPException(status_code=502, detail=str(getattr(e, "user_message", "") or e))
+        raise HTTPException(status_code=400, detail=f"stripe_error: {getattr(e, 'user_message', '') or e}")
 
     new_balance = round(available - amount, 2)
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"wallet_balance": new_balance}})
