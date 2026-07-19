@@ -169,6 +169,26 @@ export default function ProfileTab() {
           </Pressable>
         ) : null}
 
+        {isProvider ? (
+          <Pressable testID="profile-bs-profile" style={[styles.listRow, shadow.card]} onPress={() => router.push("/babysitting/profilo")}>
+            <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="happy" size={22} color={colors.brand} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{t("bsProfileTitle")}</Text>
+              <Text style={styles.rowSub}>{t("babysitting")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        ) : (
+          <Pressable testID="profile-children" style={[styles.listRow, shadow.card]} onPress={() => router.push("/babysitting/children")}>
+            <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="people" size={22} color={colors.brand} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{t("bsChildren")}</Text>
+              <Text style={styles.rowSub}>{t("babysitting")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        )}
+
         <Pressable testID="profile-payments" style={[styles.listRow, shadow.card]} onPress={() => router.push("/payments-settings")}>
           <View style={[styles.rowIcon, { backgroundColor: colors.blueBg }]}><Ionicons name="card" size={22} color={colors.blue} /></View>
           <View style={{ flex: 1 }}>

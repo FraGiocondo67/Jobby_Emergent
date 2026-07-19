@@ -161,6 +161,7 @@ ADMIN_HTML = """<!DOCTYPE html>
       <div class="tab" data-t="bookings" onclick="go('bookings')">Bookings</div>
       <div class="tab" data-t="disputes" onclick="go('disputes')">Disputes</div>
       <div class="tab" data-t="pulizie" onclick="go('pulizie')">Pulizie</div>
+      <div class="tab" data-t="babysitting" onclick="go('babysitting')">Babysitting</div>
       <div class="tab" data-t="onboarding" onclick="go('onboarding')">Onboarding</div>
     </div>
 
@@ -170,6 +171,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <div id="bookings" class="hidden"></div>
     <div id="disputes" class="hidden"></div>
     <div id="pulizie" class="hidden"></div>
+    <div id="babysitting" class="hidden"></div>
     <div id="onboarding" class="hidden"></div>
   </div>
 </div>
@@ -295,10 +297,10 @@ async function connect(){
   catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
 }
 function go(t){
-  ['dashboard','categories','users','bookings','disputes','pulizie','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
+  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.t===t));
   document.getElementById(t).classList.remove('hidden');
-  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='onboarding')loadOnboarding();
+  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='onboarding')loadOnboarding();
 }
 async function loadDash(){
   const s=await api('/admin/stats');
@@ -446,6 +448,39 @@ async function invitePulizie(rid){
   await api('/admin/pulizie/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
   loadPulizie();
 }
+async function loadBabysitting(){
+  const list=await api('/admin/babysitting/richieste');
+  if(!list.length){document.getElementById('babysitting').innerHTML='<div class="muted" style="padding:20px">No open babysitting requests.</div>';return;}
+  let html='<div class="sec">Richieste Babysitting · matching manuale (urgenze in cima)</div>';
+  list.forEach(r=>{
+    const c=r.config||{};
+    const comps=(r.compatible||[]);
+    let rows=comps.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" data-brid="${r.richiesta_id}" value="${p.provider_id}" ${p.invited?'checked disabled':''}/>
+      <span style="flex:1"><b>${p.nome}</b> <span class="muted">· ${p.distance}km · ⭐${(p.rating||0).toFixed(1)} · ${p.esperienza_anni||0}y ${p.casellario_ok?'· 🛡️':''} ${(p.certificazioni||[]).includes('primo_soccorso_pediatrico')?'· 🩹':''}</span></span>
+      <b>€${(p.price||0).toFixed(2)}</b> ${p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':''}
+    </label>`).join('') || '<div class="muted">Nessuna babysitter compatibile in zona.</div>';
+    const gen=(r.bambini_generic||[]).map(x=>x.eta_band_it+(x.esigenza?(' ⚠️'+x.esigenza):'')).join(', ');
+    html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="em">🧸</span>
+        <div class="t"><b>${c.durata_ore}h · ${c.n_bambini} bimbi${r.urgente?' ⚡ URGENTE':''}</b>
+          <div class="muted">${r.binario} · ${r.data_ora||''} · zona ${(r.lat||0).toFixed(3)},${(r.lng||0).toFixed(3)}</div></div>
+        <span class="pill" style="background:${r.urgente?'#FDE2E1':'#eee'}">${r.stato}</span>
+      </div>
+      <div class="muted">Bambini: ${gen||'—'}${c.ripetizioni_attiva?(' · 📚 ripetizioni '+c.ripetizioni_ore+'h '+c.ripetizioni_livello):''}</div>
+      <div><b class="muted">Babysitter compatibili (${comps.length})</b>${rows}</div>
+      <button class="b-approve" onclick="inviteBabysitting('${r.richiesta_id}')">Invita selezionate</button>
+    </div>`;
+  });
+  document.getElementById('babysitting').innerHTML=html;
+}
+async function inviteBabysitting(rid){
+  const ids=[...document.querySelectorAll('input[type=checkbox][data-brid="'+rid+'"]:checked:not(:disabled)')].map(x=>x.value);
+  if(!ids.length){alert('Seleziona almeno una babysitter');return;}
+  await api('/admin/babysitting/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
+  loadBabysitting();
+}
 function img(src,label){return src?('<div style="text-align:center"><div class="muted" style="font-size:11px">'+label+'</div><img src="'+src+'" style="width:90px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"/></div>'):'';}
 async function loadOnboarding(){
   const list=await api('/admin/onboarding/pending');
@@ -464,12 +499,14 @@ async function loadOnboarding(){
       <div class="muted">${u.address||''} ${u.condizione_soggettiva?('· '+u.condizione_soggettiva):''}</div>
       ${u.bio?('<div class="muted">"'+u.bio+'"</div>'):''}
       ${u.provider_profile_type==='persona_lf'?('<div class="muted">Delega: '+(u.lf_delega_signed?'firmata ✅':'no')+' · INPS: '+(u.lf_inps_registered?'registrato ✅':'in corso')+'</div>'):''}
-      <div style="display:flex;gap:8px;flex-wrap:wrap">${imgs||'<span class="muted">Nessun documento caricato</span>'}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${imgs||'<span class="muted">Nessun documento caricato</span>'}${u.casellario_doc?img(u.casellario_doc,'Casellario'):''}</div>
+      ${u.casellario_doc?('<div class="muted">Casellario: '+(u.casellario_verified?'verificato ✅':'da verificare')+'</div>'):''}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="b-approve" onclick="onbDecision('${u.user_id}','approve')">Approva</button>
         <button class="b-suspend" onclick="onbDecision('${u.user_id}','waitlist')">Lista d'attesa</button>
         <button class="b-suspend" onclick="onbDecision('${u.user_id}','convert_lf')">Converti in Libretto</button>
         <button class="b-reject" onclick="onbDecision('${u.user_id}','reject')">Rifiuta</button>
+        ${u.casellario_doc&&!u.casellario_verified?('<button class="b-approve" onclick="verifyCasellario(\''+u.user_id+'\')">🛡️ Verifica casellario</button>'):''}
       </div>
     </div>`;
   });
@@ -478,6 +515,10 @@ async function loadOnboarding(){
 async function onbDecision(uid,action){
   if(!confirm(action+' this provider?'))return;
   await api('/admin/onboarding/'+uid+'/decision',{method:'POST',body:JSON.stringify({action})});
+  loadOnboarding();
+}
+async function verifyCasellario(uid){
+  await api('/admin/babysitting/'+uid+'/casellario',{method:'POST',body:JSON.stringify({verified:true})});
   loadOnboarding();
 }
 (function(){const t=localStorage.getItem('jobby_admin_token');if(t){document.getElementById('token').value=t;connect();}})();

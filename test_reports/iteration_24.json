@@ -1,0 +1,37 @@
+{
+  "summary": "Spec 6 BABYSITTING (Jobby) — full end-to-end test PASSED. Backend: 25/25 pytest tests green (child-cards CRUD + consent/name/age gates, config, estimate, full persona_lf lifecycle from create → admin invite → provider generic-only incoming → propose → confirm (LF impegno nominale+1h margin) → confirmed-provider full visibility → incontro (Jitsi link) → inizio(4-digit code) → inizio/confirm → fine → invalid_code rejected → fine/confirm → consuntivo (billable_ore ≥ booked_ore min-guarantee) → completata → review, garanzia primo incontro refunds LF borsellino + fee, emergency returns 112/118 + parent_contact, provider profile/listino/casellario, admin casellario verify 12mo expiry, admin listing urgent-first with compatible providers). Frontend E2E via mobile viewport (390x844) also works: login bstest@jobby.app/test1234 → Home '🧸 Babysitting' card → /babysitting/configura wizard (children/when/where/ripetizioni/recurrence/summary steps navigation confirmed) → child creation modal enforces name + consenso toggle (consenso required before Salva succeeds) → configurator shows live estimate 'Stima: €44.95' in footer → Publish → /babysitting/[id] detail renders 'Richiesta inviata!', 'In pubblicazione', child card and 'In attesa di babysitter disponibili' with Annulla button → Richieste tab lists new request with 🧸 icon and 'Pubblicata' badge → Profile tab loads correctly. No crashes, no red screen, no console errors. Only non-blocking React Native web deprecation warnings observed (shadow* and props.pointerEvents).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles.shadow (theme.shadow.card usage)", "issue": "Console warning: 'shadow*' style props are deprecated. Use 'boxShadow'. Emitted from /app/frontend/src/theme (shadow.card) used e.g. in /app/frontend/app/babysitting/children.tsx:55. Non-blocking but should be migrated for React Native Web / RN 0.76+."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Not from babysitting screens directly but shared UI components; consider fixing at UI layer."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_babysitting_iter24.py",
+    "/app/test_reports/pytest/iter24_babysitting.xml"
+  ],
+  "action_items": [
+    "Optional: migrate theme shadow.card to boxShadow to silence RN Web deprecation warnings.",
+    "Optional: replace pointerEvents prop with style.pointerEvents in shared UI components."
+  ],
+  "critical_code_review_comments": [
+    "routers/babysitting.py: consuntivo per_hour recomputed from voce_babysitting/booked but booked can be 0 → guarded (per_hour=0). OK.",
+    "Two-level child visibility correctly enforced in GET /richieste/{id}: address+bambini stripped unless owner or confirmed provider (line ~404).",
+    "LF engagement subtracts nominale + 1h prudential margin (VOUCHER_MARGIN_HOURS=1) from lf_borsellino and restores on garanzia — verified live (bors before/after checks passed).",
+    "fine/confirm returns 400 invalid_code when non-empty wrong code is provided; empty code path allowed (implicit ok) — matches spec.",
+    "Emergency numbers 112 (Italian single European) + 118 (medical) present in config and endpoint response."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_babysitting_iter24.py (new)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% (login, wizard, child modal, publish, detail, Richieste list, Profile)"},
+  "seed_data_creation": "Created transient child cards (TEST_Luca, TEST_LucaLC, TEST_Baby) and 3 babysitting richieste (one full-lifecycle completed→recensita, one garanzia-cancelled, one urgent still open) plus one UI-published richiesta (child 'Mia', bsr_67076dfbc9ee). Test-created children with TEST_ prefix are auto-cleaned via module fixture; richieste remain in DB but are all in terminal or open state and prefixed via TEST_ children so they can be identified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All Spec 6 babysitting endpoints verified against public URL. Reuse /app/backend/tests/test_babysitting_iter24.py as regression suite; it self-cleans children. Note: it does mutate Giulia's bs_listino and casellario verification — restore if needed. Frontend wizard uses testIDs: sel-child-<id>, manage-children, bs-back, bs-next, bs-publish, bs-date/bs-start/bs-end, bs-urgent, bs-address, bs-access, bs-rip-on, rip-lvl-*, rip-mat-*, rip-ore-plus/minus, bs-ric-*, bs-serale, bs-festivo, bs-track-*, bs-note. Children screen: add-child-btn, child-<id>, child-del-<id>, child-name, child-age, child-sex-m/f/none, child-habits, child-allergies, child-notes, child-consent, child-save, child-modal-close.",
+  "rca_of_issue": "N/A — no bugs found. Spec 6 backend + frontend both operate as designed."
+}

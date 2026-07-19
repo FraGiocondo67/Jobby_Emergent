@@ -240,4 +240,44 @@ export const api = {
   respondBusinessRequest: (id: string, data: { accept: boolean; eta?: string; mode?: string; delivery_cost?: number; price?: number; note?: string }) =>
     request(`/business-requests/${id}/respond`, { method: "POST", body: JSON.stringify(data) }),
   cancelBusinessRequest: (id: string) => request(`/business-requests/${id}/cancel`, { method: "POST" }),
+
+  // babysitting (Spec 6)
+  bsConfig: () => request("/babysitting/config"),
+  bsEstimate: (data: any) => request("/babysitting/estimate", { method: "POST", body: JSON.stringify(data) }),
+  bsChildren: () => request("/babysitting/children"),
+  bsCreateChild: (data: any) => request("/babysitting/children", { method: "POST", body: JSON.stringify(data) }),
+  bsUpdateChild: (cid: string, data: any) => request(`/babysitting/children/${cid}`, { method: "PUT", body: JSON.stringify(data) }),
+  bsDeleteChild: (cid: string) => request(`/babysitting/children/${cid}`, { method: "DELETE" }),
+  bsCreateRichiesta: (data: any) => request("/babysitting/richieste", { method: "POST", body: JSON.stringify(data) }),
+  bsMyRichieste: () => request("/babysitting/richieste"),
+  bsGetRichiesta: (id: string) => request(`/babysitting/richieste/${id}`),
+  bsCancelRichiesta: (id: string) => request(`/babysitting/richieste/${id}/cancel`, { method: "POST" }),
+  bsIncoming: () => request("/babysitting/incoming"),
+  bsPropose: (id: string, data: { accept: boolean; message?: string }) =>
+    request(`/babysitting/richieste/${id}/propose`, { method: "POST", body: JSON.stringify(data) }),
+  bsConfirm: (id: string, provider_id: string) =>
+    request(`/babysitting/richieste/${id}/confirm`, { method: "POST", body: JSON.stringify({ provider_id }) }),
+  bsSetIncontro: (id: string, mode: string, slot: string) =>
+    request(`/babysitting/richieste/${id}/incontro`, { method: "POST", body: JSON.stringify({ mode, slot }) }),
+  bsCancelRefund: (id: string) => request(`/babysitting/richieste/${id}/incontro/cancel-refund`, { method: "POST" }),
+  bsInizio: (id: string) => request(`/babysitting/richieste/${id}/inizio`, { method: "POST" }),
+  bsInizioConfirm: (id: string, code: string) => request(`/babysitting/richieste/${id}/inizio/confirm`, { method: "POST", body: JSON.stringify({ code }) }),
+  bsFine: (id: string) => request(`/babysitting/richieste/${id}/fine`, { method: "POST" }),
+  bsFineConfirm: (id: string, code: string) => request(`/babysitting/richieste/${id}/fine/confirm`, { method: "POST", body: JSON.stringify({ code }) }),
+  bsReview: (id: string, rating: number, comment: string) =>
+    request(`/babysitting/richieste/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
+  bsEmergency: (id: string) => request(`/babysitting/richieste/${id}/emergency`, { method: "POST" }),
+  bsAddChild: (id: string, card_id: string) => request(`/babysitting/richieste/${id}/add-child`, { method: "POST", body: JSON.stringify({ card_id }) }),
+  bsAddChildDecision: (id: string, accept: boolean) => request(`/babysitting/richieste/${id}/add-child/decision`, { method: "POST", body: JSON.stringify({ accept }) }),
+  bsGetProfile: () => request("/babysitting/profile"),
+  bsSetProfile: (data: any) => request("/babysitting/profile", { method: "PUT", body: JSON.stringify(data) }),
+  bsUploadCasellario: (image: string) => request("/babysitting/casellario", { method: "POST", body: JSON.stringify({ image }) }),
+  bsGetListino: () => request("/babysitting/listino"),
+  bsSetListino: (binario: string, listino: any) => request("/babysitting/listino", { method: "PUT", body: JSON.stringify({ binario, listino }) }),
+  // admin babysitting
+  adminBsRichieste: (token: string) => adminRequest("/admin/babysitting/richieste", token),
+  adminBsInvite: (rid: string, provider_ids: string[], token: string) =>
+    adminRequest(`/admin/babysitting/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
+  adminBsCasellario: (userId: string, verified: boolean, token: string) =>
+    adminRequest(`/admin/babysitting/${userId}/casellario`, token, { method: "POST", body: JSON.stringify({ verified }) }),
 };
