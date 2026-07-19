@@ -170,6 +170,17 @@ export default function ProfileTab() {
         ) : null}
 
         {isProvider ? (
+          <Pressable testID="profile-driver-listino" style={[styles.listRow, shadow.card]} onPress={() => router.push("/driver/listino")}>
+            <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="car-sport" size={22} color={colors.brand} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{t("drvListinoTitle")}</Text>
+              <Text style={styles.rowSub}>{t("driver")} (NCC / Taxi)</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        ) : null}
+
+        {isProvider ? (
           <Pressable testID="profile-bs-profile" style={[styles.listRow, shadow.card]} onPress={() => router.push("/babysitting/profilo")}>
             <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="happy" size={22} color={colors.brand} /></View>
             <View style={{ flex: 1 }}>

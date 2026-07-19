@@ -1,0 +1,41 @@
+{
+  "summary": "Spec 8 DRIVER (NCC + TAXI) end-to-end test PASSED. Backend: 26/26 pytest tests green — config (3 vehicle_classes, 6 shortcuts, ritocco_motivi, fee_pct=12), geocode (Nominatim + fallback), estimate (NCC min/max range across compatible drivers, TAXI meter estimate + tassametro note), full NCC lifecycle create (Treviso→VCE, standard, 25.3 km) → admin invite prov_cfbd9805ce97 → provider /incoming shows suggested_price → propose upward WITHOUT motivo returns 400 ritocco_requires_reason → propose with 'bagagli' motivo accepted (ritocco delta preserved) → client /confirm (stato confermata, prezzo_finale=proposal, jobby_fee=12%, pagamento.stato=prepaid) → provider /depart → provider /extra {attesa,€15} → client /extra/approve → /complete → importo_totale = prezzo + extras (verified) → client /review, full TAXI lifecycle create → admin invite user_onbtest01 → propose (is_estimate=true, prezzo=taxi_estimate) → confirm (meter_pending) → depart → /complete WITHOUT meter_amount returns 400 meter_amount_required → /complete{meter_amount:42.5} sets stato meter_to_settle → client /pay settles (stato settled, importo 42.5), cancellation schema (>4h ⇒ 100% refund band '>4h', <4h ⇒ 50% band '<4h', <30min ⇒ 0% band '<30min'), admin listing + authorization endpoint. Frontend (mobile 390x844): login bstest@jobby.app/test1234 → Home '🚗 Driver' card → /driver/configura 7-step wizard fully navigable (tipo NCC → shortcuts sc-from-tv_st + sc-to-vce fill both endpoints → flight FR1234 → class Standard → passeggeri stepper +1 → extras skip → Summary shows '25.3 km · ~28 min, Prezzo indicativo €43.42, 1 driver, Annulli oltre 4h: rimborso totale · sotto 4h: 50% · sotto 30 min: intero') → Pubblica → lands on /driver/drv_e62ae1ef3eaf?new=1 showing '🚘 NCC · Richiesta inviata! · In pubblicazione · In attesa di driver disponibili · Annulla' → Richieste tab lists it with 🚘 icon 'Stazione Treviso Centrale → Aeroporto Venezia Marco Polo · 25.3 km · Pubblicata'; /driver/listino screen renders correctly (NCC/Taxi service type toggle, Autorizzazione section with number+upload, all 3 vehicle classes with rate rows, notturno/festivo/sconto/raggio fields, minori/animali toggles, veicoli section, Salva). No red screen, no page errors, only benign React Native web deprecation warnings ('shadow*' and 'props.pointerEvents' inherited from theme/UI layer, non-blocking). One backend 500 bug was found and FIXED during testing: /driver/richieste/{rid}/depart crashed with AttributeError when doc.passeggero is None (line 447) — patched to (r.get('passeggero') or {}).get('tel'). After the fix all 26 backend tests pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "theme/shadow (shadow.card)", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Non-blocking; inherited from shared theme. Reference: /app/frontend/src/theme (also visible on /driver/configura and other screens)."},
+      {"component": "props.pointerEvents (shared UI)", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking; not driver-specific."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_driver_iter25.py",
+    "/app/test_reports/pytest/iter25_driver.xml"
+  ],
+  "action_items": [
+    "None blocking. Optional cleanup only: migrate theme shadow.card to boxShadow and replace pointerEvents prop with style.pointerEvents in shared UI to silence RN-web deprecation warnings across the app (not driver-specific)."
+  ],
+  "critical_code_review_comments": [
+    "BUG FIXED: /app/backend/routers/driver.py::depart (line 447) — 'r.get(\"passeggero\", {}).get(\"tel\")' crashed with AttributeError when the field is stored as None (doc explicitly sets 'passeggero': None when no passeggero_nome is provided at creation, line 278). The .get(key, default) only returns default when key is MISSING, not when the stored value is None. Fixed to '(r.get(\"passeggero\") or {}).get(\"tel\")'. Recommend main agent apply the same defensive pattern to any similar chained access on optional-nullable fields (spot-check: r.get('pagamento').get(...) at line 558 is safe because pagamento is always initialised as dict).",
+    "routers/driver.py::ncc_price correctly guards against unknown classes via DEFAULT_LISTINO fallback (line 62). Return-leg discount and notturno/festivo surcharges applied in correct order.",
+    "compatible_drivers filters by services='driver', driver_tipo, class presence in listino, and haversine within raggio_km — matches admin listing behaviour.",
+    "propose() correctly rejects upward NCC price without a motivo in RITOCCO_MOTIVI id list, and taxi proposals ignore body.prezzo (always set to taxi_estimate + is_estimate=true).",
+    "complete() enforces meter_amount only for taxi; NCC uses prezzo_finale; approved extras are summed for importo_totale (verified live: 43.42 + 15 = 58.42, matches).",
+    "cancellation bands mapped correctly to >4h / <4h / <30min in _cancellation_outcome; refund_pct 100/50/0 and charge computed on prezzo_finale (0 when not yet confirmed, so >4h test passes with charge 0)."
+  ],
+  "updated_files": [
+    "/app/backend/routers/driver.py (1-line defensive fix in /depart)",
+    "/app/backend/tests/test_driver_iter25.py (new regression suite, 26 tests)"
+  ],
+  "success_rate": {"backend": "100% (26/26 after the 1-line depart fix; 24/26 before)", "frontend": "100% (login, home Driver card, 7-step wizard, publish, detail screen, Richieste list with 🚘, /driver/listino render)"},
+  "seed_data_creation": "Test suite created (all under stable client user_disptest01): 1 completed NCC richiesta drv_* (full lifecycle: proposta accettata con ritocco bagagli, prepaid €43.42+15=58.42, review 5⭐), 1 settled TAXI richiesta drv_* (meter 42.5, stato settled), 3 cancelled NCC (one per cancellation band: >4h, <4h, <30min). One UI-published NCC drv_e62ae1ef3eaf still in 'pubblicata' state (Treviso→VCE 25.3 km) — safe to leave, matching is manual. All richieste tagged with note starting 'TEST_' for identification. Admin also flipped user_onbtest01.driver_auth_verified=true (idempotent, was already true).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_driver_iter25.py as regression suite. It self-configures via the public URL and completes in ~4s. Note: taxi tests use user_onbtest01 as both provider AND the onboarding OTP test user; the admin_verify_authorization test toggles driver_auth_verified=true (idempotent). Frontend wizard testIDs verified working: drv-tipo-ncc/taxi, sc-from-<id>/sc-to-<id> (shortcuts), drv-from-input/drv-to-input + drv-from-search/drv-to-search (address text+geocode), drv-date/drv-time/drv-flight, drv-class-<standard|business|van>, drv-pax-plus/minus, drv-lug-plus/minus, drv-who-me/drv-who-else, drv-pname/drv-pphone, drv-minor, drv-minor-consent, drv-sp-<seggiolino|animale>, drv-return, drv-return-time, drv-note, drv-back, drv-next, drv-publish. Backend engineer's smoke curls matched actual behaviour (NCC standard Treviso→VCE ~€43-44 base, +10 ritocco bagagli = €53-54; taxi Treviso→VCE ~€33-38 estimate; test used 42.5 meter to verify no coupling to estimate).",
+  "rca_of_issue": "RCA (1 bug found and fixed): POST /api/driver/richieste/{rid}/depart returned 500 with `AttributeError: 'NoneType' object has no attribute 'get'` for any richiesta created without a passeggero_nome. Reproduction: create richiesta with default payload (no passeggero_nome) → confirm → depart → 500. Root cause: create_richiesta stores `passeggero: {...} if body.passeggero_nome else None` (routers/driver.py:278), so the field is present with value None. depart() used `r.get('passeggero', {}).get('tel')` which returns None (not the default {}) when the key exists with value None, then chained .get('tel') crashes. Mitigation applied: replaced with `(r.get('passeggero') or {}).get('tel')` on line 447. Verified: after fix, both NCC depart and TAXI depart complete 200 and full lifecycles finish (all 26 tests green)."
+}

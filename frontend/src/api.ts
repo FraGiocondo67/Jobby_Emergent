@@ -280,4 +280,33 @@ export const api = {
     adminRequest(`/admin/babysitting/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
   adminBsCasellario: (userId: string, verified: boolean, token: string) =>
     adminRequest(`/admin/babysitting/${userId}/casellario`, token, { method: "POST", body: JSON.stringify({ verified }) }),
+
+  // driver / NCC + TAXI (Spec 8)
+  drvConfig: () => request("/driver/config"),
+  drvGeocode: (query: string) => request("/driver/geocode", { method: "POST", body: JSON.stringify({ query }) }),
+  drvEstimate: (data: any) => request("/driver/estimate", { method: "POST", body: JSON.stringify(data) }),
+  drvCreateRichiesta: (data: any) => request("/driver/richieste", { method: "POST", body: JSON.stringify(data) }),
+  drvMyRichieste: () => request("/driver/richieste"),
+  drvGetRichiesta: (id: string) => request(`/driver/richieste/${id}`),
+  drvCancelRichiesta: (id: string) => request(`/driver/richieste/${id}/cancel`, { method: "POST" }),
+  drvIncoming: () => request("/driver/incoming"),
+  drvPropose: (id: string, data: any) => request(`/driver/richieste/${id}/propose`, { method: "POST", body: JSON.stringify(data) }),
+  drvConfirm: (id: string, provider_id: string) => request(`/driver/richieste/${id}/confirm`, { method: "POST", body: JSON.stringify({ provider_id }) }),
+  drvDepart: (id: string) => request(`/driver/richieste/${id}/depart`, { method: "POST" }),
+  drvExtra: (id: string, data: any) => request(`/driver/richieste/${id}/extra`, { method: "POST", body: JSON.stringify(data) }),
+  drvExtraApprove: (id: string, extra_id: string, approve: boolean) => request(`/driver/richieste/${id}/extra/approve`, { method: "POST", body: JSON.stringify({ extra_id, approve }) }),
+  drvNoshow: (id: string) => request(`/driver/richieste/${id}/noshow`, { method: "POST" }),
+  drvComplete: (id: string, meter_amount?: number) => request(`/driver/richieste/${id}/complete`, { method: "POST", body: JSON.stringify({ meter_amount }) }),
+  drvPay: (id: string) => request(`/driver/richieste/${id}/pay`, { method: "POST" }),
+  drvReview: (id: string, rating: number, comment: string) => request(`/driver/richieste/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
+  drvGetListino: () => request("/driver/listino"),
+  drvSetListino: (data: any) => request("/driver/listino", { method: "PUT", body: JSON.stringify(data) }),
+  drvAddVehicle: (data: any) => request("/driver/vehicles", { method: "POST", body: JSON.stringify(data) }),
+  drvDelVehicle: (vid: string) => request(`/driver/vehicles/${vid}`, { method: "DELETE" }),
+  drvUploadAuth: (data: any) => request("/driver/authorization", { method: "POST", body: JSON.stringify(data) }),
+  adminDrvRichieste: (token: string) => adminRequest("/admin/driver/richieste", token),
+  adminDrvInvite: (rid: string, provider_ids: string[], token: string) =>
+    adminRequest(`/admin/driver/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
+  adminDrvAuth: (userId: string, verified: boolean, token: string) =>
+    adminRequest(`/admin/driver/${userId}/authorization`, token, { method: "POST", body: JSON.stringify({ verified }) }),
 };

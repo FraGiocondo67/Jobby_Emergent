@@ -162,6 +162,7 @@ ADMIN_HTML = """<!DOCTYPE html>
       <div class="tab" data-t="disputes" onclick="go('disputes')">Disputes</div>
       <div class="tab" data-t="pulizie" onclick="go('pulizie')">Pulizie</div>
       <div class="tab" data-t="babysitting" onclick="go('babysitting')">Babysitting</div>
+      <div class="tab" data-t="driver" onclick="go('driver')">Driver</div>
       <div class="tab" data-t="onboarding" onclick="go('onboarding')">Onboarding</div>
     </div>
 
@@ -172,6 +173,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <div id="disputes" class="hidden"></div>
     <div id="pulizie" class="hidden"></div>
     <div id="babysitting" class="hidden"></div>
+    <div id="driver" class="hidden"></div>
     <div id="onboarding" class="hidden"></div>
   </div>
 </div>
@@ -297,10 +299,10 @@ async function connect(){
   catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
 }
 function go(t){
-  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
+  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','driver','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.t===t));
   document.getElementById(t).classList.remove('hidden');
-  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='onboarding')loadOnboarding();
+  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='driver')loadDriver(); if(t==='onboarding')loadOnboarding();
 }
 async function loadDash(){
   const s=await api('/admin/stats');
@@ -481,6 +483,37 @@ async function inviteBabysitting(rid){
   await api('/admin/babysitting/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
   loadBabysitting();
 }
+async function loadDriver(){
+  const list=await api('/admin/driver/richieste');
+  if(!list.length){document.getElementById('driver').innerHTML='<div class="muted" style="padding:20px">No open driver requests.</div>';return;}
+  let html='<div class="sec">Richieste Driver (NCC/Taxi) · matching manuale</div>';
+  list.forEach(r=>{
+    const c=r.config||{};
+    const comps=(r.compatible||[]);
+    let rows=comps.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" data-drid="${r.richiesta_id}" value="${p.provider_id}" ${p.invited?'checked disabled':''}/>
+      <span style="flex:1"><b>${p.nome}</b> <span class="muted">· ${p.distance}km · ⭐${(p.rating||0).toFixed(1)} · affid. ${p.affidabilita||100}% ${p.auth_ok?'· 🛡️':''}</span></span>
+      <b>€${(p.price||0).toFixed(2)}</b> ${p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':''}
+    </label>`).join('') || '<div class="muted">Nessun driver compatibile in zona.</div>';
+    html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="em">${c.tipo==='taxi'?'🚕':'🚘'}</span>
+        <div class="t"><b>${(r.partenza&&r.partenza.label)||''} → ${(r.destinazione&&r.destinazione.label)||''}</b>
+          <div class="muted">${(c.tipo||'ncc').toUpperCase()} · ${c.classe} · ${r.pickup_at||''} · ${(c.route&&c.route.distance_km)||0} km${c.flight_number?(' · ✈️ '+c.flight_number):''}</div></div>
+        <span class="pill">${r.stato}</span>
+      </div>
+      <div><b class="muted">Driver compatibili (${comps.length})</b>${rows}</div>
+      <button class="b-approve" onclick="inviteDriver('${r.richiesta_id}')">Invita selezionati</button>
+    </div>`;
+  });
+  document.getElementById('driver').innerHTML=html;
+}
+async function inviteDriver(rid){
+  const ids=[...document.querySelectorAll('input[type=checkbox][data-drid="'+rid+'"]:checked:not(:disabled)')].map(x=>x.value);
+  if(!ids.length){alert('Seleziona almeno un driver');return;}
+  await api('/admin/driver/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
+  loadDriver();
+}
 function img(src,label){return src?('<div style="text-align:center"><div class="muted" style="font-size:11px">'+label+'</div><img src="'+src+'" style="width:90px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"/></div>'):'';}
 async function loadOnboarding(){
   const list=await api('/admin/onboarding/pending');
@@ -507,6 +540,7 @@ async function loadOnboarding(){
         <button class="b-suspend" onclick="onbDecision('${u.user_id}','convert_lf')">Converti in Libretto</button>
         <button class="b-reject" onclick="onbDecision('${u.user_id}','reject')">Rifiuta</button>
         ${u.casellario_doc&&!u.casellario_verified?('<button class="b-approve" onclick="verifyCasellario(&#39;'+u.user_id+'&#39;)">🛡️ Verifica casellario</button>'):''}
+        ${u.driver_auth_doc&&!u.driver_auth_verified?('<button class="b-approve" onclick="verifyDriverAuth(&#39;'+u.user_id+'&#39;)">🚘 Verifica autorizzazione</button>'):''}
       </div>
     </div>`;
   });
@@ -519,6 +553,10 @@ async function onbDecision(uid,action){
 }
 async function verifyCasellario(uid){
   await api('/admin/babysitting/'+uid+'/casellario',{method:'POST',body:JSON.stringify({verified:true})});
+  loadOnboarding();
+}
+async function verifyDriverAuth(uid){
+  await api('/admin/driver/'+uid+'/authorization',{method:'POST',body:JSON.stringify({verified:true})});
   loadOnboarding();
 }
 (function(){const t=localStorage.getItem('jobby_admin_token');if(t){document.getElementById('token').value=t;connect();}})();

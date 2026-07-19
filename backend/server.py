@@ -8,7 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 from core import db, client, now_utc, new_id
 from catalog import seed_categories, BOT_PROVIDERS
 from trust import recalc_provider_trust
-from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, payments_connect, richieste, provider_onboarding, babysitting
+from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, payments_connect, richieste, provider_onboarding, babysitting, driver
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ api.include_router(notifications.router)
 api.include_router(payments_connect.router)
 api.include_router(richieste.router)
 api.include_router(babysitting.router)
+api.include_router(driver.router)
 api.include_router(provider_onboarding.router)
 api.include_router(catalog_routes.router)
 api.include_router(missions.router)
