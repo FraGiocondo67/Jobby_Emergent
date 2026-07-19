@@ -122,12 +122,20 @@ def compute_work_total(listino: dict, config: dict) -> float:
 def price_breakdown(listino: dict, config: dict, binario: str, fee: float) -> dict:
     work = compute_work_total(listino, config)
     jobby_fee = round(work * fee / 100.0, 2)
-    out = {"work_total": work, "jobby_fee": jobby_fee, "fee_pct": fee, "total_client": round(work + jobby_fee, 2)}
+    # Binario Impresa: fee divisa 50/50 — cliente paga metà, impresa trattiene l'altra metà.
+    fee_client = round(jobby_fee / 2.0, 2)
+    fee_provider = round(jobby_fee - fee_client, 2)
+    provider_net = round(work - fee_provider, 2)
+    out = {"work_total": work, "jobby_fee": jobby_fee, "fee_pct": fee,
+           "fee_client": fee_client, "fee_provider": fee_provider, "provider_net": provider_net,
+           "total_client": round(work + fee_client, 2)}
     if binario == "persona_lf":
+        # Binario Libretto: fee interamente a carico del cliente; alla lavoratrice il netto pieno dei voucher.
         nominale = C.lf_round_nominale(work)
         out.update({
             "lf_nominale": nominale, "lf_voucher": int(nominale / 10),
             "lf_netto_lavoratrice": round(nominale * C.LF_VOUCHER_NET_RATE, 2),
+            "fee_client": jobby_fee, "fee_provider": 0.0, "provider_net": 0.0,
             "total_client": round(nominale + jobby_fee, 2),
         })
     return out
@@ -328,10 +336,13 @@ async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
                                                                           "lf_year_hours": float(r["config"].get("durata_ore", 0))}})
         lf = {"nominale": nominale, "voucher": prop["breakdown"].get("lf_voucher"),
               "netto_lavoratrice": prop["breakdown"].get("lf_netto_lavoratrice"), "stato": "coperto"}
+    bd = prop.get("breakdown", {})
     upd = {
         "stato": "confermata", "provider_scelto": body.provider_id,
-        "pagamento_fee": {"stato": "charged", "importo": prop["breakdown"]["jobby_fee"], "at": now_utc().isoformat()},
-        "pagamento_lavoro": ({"stato": "psp_pending", "importo": prop["price"]} if r["binario"] == "impresa"
+        "pagamento_fee": {"stato": "charged", "importo": bd.get("fee_client", bd.get("jobby_fee", 0)),
+                          "jobby_fee_total": bd.get("jobby_fee", 0), "at": now_utc().isoformat()},
+        "pagamento_lavoro": ({"stato": "psp_pending", "importo": bd.get("provider_net", prop["price"]),
+                              "fee_provider": bd.get("fee_provider", 0)} if r["binario"] == "impresa"
                              else {**lf, "stato": "lf"}),
         "prezzo_finale": prop["price"], "updated_at": now_utc().isoformat(),
     }

@@ -33,8 +33,14 @@ export default function ListScreen() {
   const arrowColor = cfg.accent === "purple" ? colors.purple : cfg.accent === "green" ? colors.green : colors.primary;
 
   const onPress = (item: any) => {
-    if (item.cat_id === "pulizie") {
-      router.push("/pulizie/configura");
+    const configurators: Record<string, string> = {
+      pulizie: "/pulizie/configura",
+      babysitting: "/babysitting/configura",
+      driver: "/driver/configura",
+      artigiani: "/artigiani/configura",
+    };
+    if (configurators[item.cat_id]) {
+      router.push(configurators[item.cat_id] as any);
     } else if (cfg.mode === "proximity") {
       router.push(`/businesses/${item.cat_id}?label=${encodeURIComponent(item.label[lang])}&emoji=${encodeURIComponent(item.emoji || "🏪")}`);
     } else {

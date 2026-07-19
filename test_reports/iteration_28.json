@@ -1,0 +1,43 @@
+{
+  "summary": "Iter28 — scoped verification of (1) BUG FIX: /list/all routing to NEW configurators, (2) Spec 3 payment rule: JOBBY fee split 50/50 on Pulizie binario impresa vs 100% on client for persona_lf. BACKEND 5/5 PASSED (test_pulizie_iter28_fee_split.py in 1.17s): GET /api/pulizie/config returns fee_pct=15.0; provider /pulizie/incoming breakdown on IMPRESA gives work_total=54, jobby_fee=8.10, fee_client=4.05, fee_provider=4.05, provider_net=49.95, total_client=58.05 (exactly round(jobby_fee/2,2) and round(work-fee_provider,2)); on PERSONA_LF fee_client==jobby_fee, fee_provider==0.0, provider_net==0.0, total_client==lf_nominale+jobby_fee. Full IMPRESA lifecycle create→invite→propose→confirm persists pagamento_fee.importo==fee_client and pagamento_fee.jobby_fee_total==jobby_fee (full) plus pagamento_lavoro.importo==provider_net with fee_provider recorded; state 'psp_pending'. Full PERSONA_LF lifecycle: pagamento_fee.importo==full jobby_fee (client pays entire fee), pagamento_lavoro.stato in (lf, coperto) with nominale preserved and borsellino decremented. REGRESSION test_pulizie_iter22.py 15/15 PASSED — no breakage in estimate/matching/propose variations/listino GET/PUT/admin UI. FRONTEND (mobile 390x844, bstest@jobby.app/test1234, role switched to Cliente in Profile): Home shows FAB '+ Richiedi servizio' (button label present, cosmetic diff vs spec 'un servizio'); tapping it opens /list/all which lists 7 items (list-item-pulizie, list-item-babysitting, list-item-driver, list-item-artigiani, list-item-hospitality, list-item-assistenza, list-item-tecnico). Each of the 4 target items routed correctly to the NEW configurator — Pulizie → /pulizie/configura, Babysitting → /babysitting/configura, Driver → /driver/configura, Artigiani (labelled 'Artigiani della casa') → /artigiani/configura. None routed to /request/<cat> old flow. Deprecated packages detected: none. React Native warnings observed: shadow* → boxShadow deprecation (theme-wide, already tracked from iter25-27); props.pointerEvents deprecation on onboarding — non-blocking.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Home FAB label", "issue": "The floating button reads '+ Richiedi servizio' but the request refers to it as '+ Richiedi un servizio'. Purely cosmetic — functionality is correct. Reference: /app/frontend/app/(tabs)/index.tsx (FAB text).", "testID": "n/a", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "theme/shadow (shared)", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Already flagged in iter25/26/27. Reference: /app/frontend/src/theme"},
+      {"component": "onboarding (pointerEvents prop)", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' during login screen render. Non-blocking. Reference: /app/frontend/app/onboarding.tsx (or shared login form)"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_pulizie_iter28_fee_split.py",
+    "/app/backend/tests/test_pulizie_iter22.py",
+    "/app/test_reports/pytest/iter28_pulizie_fee_split.xml"
+  ],
+  "action_items": [
+    "OPTIONAL cosmetic: align Home FAB label to '+ Richiedi un servizio' if the exact spec wording matters (currently '+ Richiedi servizio' in /app/frontend/app/(tabs)/index.tsx).",
+    "OPTIONAL: continue shadow.* → boxShadow migration across theme (tracked since iter25) and replace pointerEvents prop with style.pointerEvents on login/onboarding components."
+  ],
+  "critical_code_review_comments": [
+    "richieste.py::price_breakdown() correctly implements Spec 3 for IMPRESA: fee_client = round(jobby_fee/2, 2) and fee_provider = round(jobby_fee - fee_client, 2). Cents-safe: for odd cents jobby_fee (e.g., 8.11) client would pay 4.06 and provider 4.05, so JOBBY still receives the full amount.",
+    "For PERSONA_LF the same function overrides with fee_client=jobby_fee, fee_provider=0.0, provider_net=0.0 and total_client=lf_nominale+jobby_fee — semantics match spec (voucher nominale is separate from the fee, fee is paid IN ADDITION by the client).",
+    "confirm() writes pagamento_fee.importo=bd.get('fee_client', bd.get('jobby_fee', 0)) and pagamento_fee.jobby_fee_total=bd.get('jobby_fee', 0). This dual-field approach makes downstream accounting explicit: JOBBY collects jobby_fee_total total (half from client fee_client + half deducted from provider net).",
+    "pagamento_lavoro on impresa uses bd.get('provider_net', prop['price']) and records fee_provider=bd.get('fee_provider', 0). Fallback to prop['price'] handles legacy proposals without breakdown, but new flow always writes provider_net = work − fee_provider. Verified end-to-end.",
+    "list/[group].tsx onPress() prioritises the configurators map by cat_id before falling back to /businesses (proximity) or /request/<cat> (old flow). This ensures the 4 flagship services always land on the new configurators regardless of the list mode."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_pulizie_iter28_fee_split.py (new — 5 tests)"
+  ],
+  "success_rate": {"backend": "100% (5/5 new + 15/15 regression = 20/20 passed)", "frontend": "100% (routing verified for all 4 target configurators on /list/all)"},
+  "seed_data_creation": "Created via E2E: 3 IMPRESA pulizie richieste (1 completed to recensita, 2 in variation/propose states) and 2 PERSONA_LF richieste (both confirmed with LF borsellino topup) as user_disptest01. All notes prefixed 'TEST_iter28'. lf_borsellino may have been drained; topup was applied when insufficient (nom+20). No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_pulizie_iter28_fee_split.py (self-contained, 1.17s). Requires env EXPO_PUBLIC_BACKEND_URL (from /app/frontend/.env). Client bearer disp-test-token-777, IMPRESA provider bearer req-prov-token (user_2f996c8a010a listino: tariffa 13, supplemento 5, forno extra 10 → work_total=54 for DEFAULT_CFG), LF provider bearer lf-prov-token (user_63e358a12980), admin token jobby-admin-7c2f9a. Frontend routing: bstest@jobby.app is auto-promoted to provider; switch to Cliente in Profile tab to see the client Home with '+ Richiedi servizio' FAB. list-item-<slug> testIDs are stable on /list/all. Configurators map lives in /app/frontend/app/list/[group].tsx lines 36-43.",
+  "rca_of_issue": "N/A — both changes verified working correctly. Payment split logic in price_breakdown() uses round(jobby_fee/2, 2) and confirm() persists both halves. Routing map (configurators dict) is keyed on cat_id and hit before any other branch."
+}
