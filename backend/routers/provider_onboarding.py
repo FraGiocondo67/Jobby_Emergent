@@ -19,6 +19,7 @@ router = APIRouter()
 VONAGE_API_KEY = os.environ.get("VONAGE_API_KEY", "")
 VONAGE_API_SECRET = os.environ.get("VONAGE_API_SECRET", "")
 VONAGE_BRAND = os.environ.get("VONAGE_BRAND_NAME", "JOBBY")
+VONAGE_SMS_FROM = os.environ.get("VONAGE_SMS_FROM", "")  # Italian LVN (+39...) required for delivery to IT
 VONAGE_BASE = "https://api.nexmo.com/v2/verify"
 
 DEFAULT_FEE = {"visit_fixed_total": 8.0, "provider_share": 4.0, "client_share": 4.0,
@@ -82,8 +83,11 @@ async def send_otp(body: PhoneIn, user=Depends(get_current_user)):
     if len(to) < 8:
         raise HTTPException(status_code=400, detail="invalid_phone")
     try:
+        sms_channel = {"channel": "sms", "to": to}
+        if VONAGE_SMS_FROM:
+            sms_channel["from"] = _norm_phone(VONAGE_SMS_FROM)
         r = requests.post(VONAGE_BASE, headers=_vonage_headers(),
-                          json={"brand": VONAGE_BRAND, "workflow": [{"channel": "sms", "to": to}]}, timeout=15)
+                          json={"brand": VONAGE_BRAND, "workflow": [sms_channel]}, timeout=15)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"vonage_unreachable: {e}")
     if r.status_code in (200, 202):
