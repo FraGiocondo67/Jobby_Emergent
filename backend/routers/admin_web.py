@@ -457,7 +457,7 @@ async function loadOnboarding(){
       <div style="display:flex;align-items:center;gap:10px">
         <span class="em">${u.provider_profile_type==='impresa'?'🏢':u.provider_profile_type==='piva'?'🧾':'🧍'}</span>
         <div class="t"><b>${u.business_name||u.name||'—'}</b>
-          <div class="muted">${u.provider_profile_type||''} · ${u.phone||'no phone'} ${u.phone_verified?'✅':'❌'}</div></div>
+          <div class="muted">${u.provider_profile_type||''} · ${u.contact_email||u.email||'no email'} ${u.email_verified?'✅':'❌'}</div></div>
         <span class="pill" style="background:#eee">${u.provider_state}</span>
       </div>
       <div class="muted">P.IVA: ${u.vat_number||'—'} · CF: ${u.codice_fiscale||'—'} · IBAN: ${u.iban||'—'}</div>

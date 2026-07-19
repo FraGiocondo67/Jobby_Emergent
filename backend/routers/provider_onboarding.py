@@ -1,12 +1,12 @@
 """JOBBY — Spec 2: provider onboarding (registration, phone OTP, 3 tracks,
 Libretto Famiglia guided flow, availability, fee, 5-state machine, admin approval)."""
 import os
-import base64
-from datetime import datetime, date
+import random
+from datetime import datetime, date, timedelta
 
 import requests
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 
 from core import db, now_utc
@@ -15,12 +15,11 @@ from routers.notifications import push_notification
 
 router = APIRouter()
 
-# --- Vonage Verify v2 (SMS OTP) ---
-VONAGE_API_KEY = os.environ.get("VONAGE_API_KEY", "")
-VONAGE_API_SECRET = os.environ.get("VONAGE_API_SECRET", "")
-VONAGE_BRAND = os.environ.get("VONAGE_BRAND_NAME", "JOBBY")
-VONAGE_SMS_FROM = os.environ.get("VONAGE_SMS_FROM", "")  # Italian LVN (+39...) required for delivery to IT
-VONAGE_BASE = "https://api.nexmo.com/v2/verify"
+# --- Resend (Email OTP verification) ---
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM = os.environ.get("RESEND_FROM", "JOBBY <verifica@yobbyfree.it>")
+RESEND_BASE = "https://api.resend.com/emails"
+OTP_TTL_MIN = 10
 
 DEFAULT_FEE = {"visit_fixed_total": 8.0, "provider_share": 4.0, "client_share": 4.0,
                "recurring_total": 6.0, "recurring_after_month": 1}
@@ -36,14 +35,37 @@ CONDIZIONI = [
 ]
 
 
-def _vonage_headers():
-    tok = base64.b64encode(f"{VONAGE_API_KEY}:{VONAGE_API_SECRET}".encode()).decode()
-    return {"Authorization": f"Basic {tok}", "Content-Type": "application/json"}
+def _send_email(to: str, subject: str, html: str):
+    if not RESEND_API_KEY:
+        raise HTTPException(status_code=503, detail="email_not_configured")
+    try:
+        r = requests.post(
+            RESEND_BASE,
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": RESEND_FROM, "to": [to], "subject": subject, "html": html},
+            timeout=15,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"resend_unreachable: {e}")
+    if r.status_code not in (200, 201, 202):
+        detail = "resend_error"
+        try:
+            detail = r.json().get("message") or detail
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail=f"resend_error: {detail}")
 
 
-def _norm_phone(p: str) -> str:
-    """Vonage expects E.164 digits without the leading '+'."""
-    return "".join(ch for ch in (p or "") if ch.isdigit())
+def _otp_email_html(code: str) -> str:
+    return (
+        f"<div style='font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px'>"
+        f"<h2 style='color:#1a1a1a'>JOBBY — Verifica email</h2>"
+        f"<p style='font-size:15px;color:#444'>Il tuo codice di verifica è:</p>"
+        f"<div style='font-size:34px;font-weight:bold;letter-spacing:8px;color:#2563eb;"
+        f"background:#eff4ff;border-radius:12px;padding:18px;text-align:center;margin:16px 0'>{code}</div>"
+        f"<p style='font-size:13px;color:#888'>Il codice scade tra {OTP_TTL_MIN} minuti. "
+        f"Se non hai richiesto questa verifica, ignora questa email.</p></div>"
+    )
 
 
 def provider_state(u: dict) -> str:
@@ -65,67 +87,50 @@ def provider_state(u: dict) -> str:
     return "in_verifica" if u.get("onboarding_completed") else "incompleto"
 
 
-# ---------------- phone OTP (Vonage Verify v2) ----------------
-class PhoneIn(BaseModel):
-    phone: str
+# ---------------- email OTP (Resend) ----------------
+class EmailIn(BaseModel):
+    email: EmailStr
 
 
 class VerifyIn(BaseModel):
-    phone: str
+    email: EmailStr
     code: str
 
 
-@router.post("/phone/send-otp")
-async def send_otp(body: PhoneIn, user=Depends(get_current_user)):
-    if not (VONAGE_API_KEY and VONAGE_API_SECRET):
-        raise HTTPException(status_code=503, detail="sms_not_configured")
-    to = _norm_phone(body.phone)
-    if len(to) < 8:
-        raise HTTPException(status_code=400, detail="invalid_phone")
-    try:
-        sms_channel = {"channel": "sms", "to": to}
-        if VONAGE_SMS_FROM:
-            sms_channel["from"] = _norm_phone(VONAGE_SMS_FROM)
-        r = requests.post(VONAGE_BASE, headers=_vonage_headers(),
-                          json={"brand": VONAGE_BRAND, "workflow": [sms_channel]}, timeout=15)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"vonage_unreachable: {e}")
-    if r.status_code in (200, 202):
-        req_id = r.json().get("request_id")
-        await db.otp_requests.update_one({"user_id": user["user_id"], "phone": to},
-                                         {"$set": {"request_id": req_id, "created_at": now_utc().isoformat()}}, upsert=True)
-        return {"status": "pending"}
-    # surface Vonage error cleanly (e.g. trial number not whitelisted, throttling)
-    detail = "vonage_error"
-    try:
-        j = r.json(); detail = j.get("title") or j.get("detail") or detail
-    except Exception:
-        pass
-    raise HTTPException(status_code=400, detail=f"vonage_error: {detail}")
+@router.post("/email/send-otp")
+async def send_otp(body: EmailIn, user=Depends(get_current_user)):
+    email = body.email.strip().lower()
+    code = f"{random.randint(0, 999999):06d}"
+    _send_email(email, "JOBBY — Codice di verifica", _otp_email_html(code))
+    await db.otp_requests.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"email": email, "code": code, "created_at": now_utc().isoformat(),
+                  "expires_at": (now_utc() + timedelta(minutes=OTP_TTL_MIN)).isoformat()},
+         "$unset": {"phone": "", "request_id": ""}},
+        upsert=True,
+    )
+    return {"status": "pending"}
 
 
-@router.post("/phone/verify-otp")
+@router.post("/email/verify-otp")
 async def verify_otp(body: VerifyIn, user=Depends(get_current_user)):
-    if not (VONAGE_API_KEY and VONAGE_API_SECRET):
-        raise HTTPException(status_code=503, detail="sms_not_configured")
-    to = _norm_phone(body.phone)
-    rec = await db.otp_requests.find_one({"user_id": user["user_id"], "phone": to})
-    if not rec or not rec.get("request_id"):
+    email = body.email.strip().lower()
+    rec = await db.otp_requests.find_one({"user_id": user["user_id"], "email": email})
+    if not rec or not rec.get("code"):
         raise HTTPException(status_code=400, detail="no_pending_verification")
     try:
-        r = requests.post(f"{VONAGE_BASE}/{rec['request_id']}", headers=_vonage_headers(),
-                          json={"code": body.code.strip()}, timeout=15)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"vonage_unreachable: {e}")
-    if r.status_code == 200:
+        expired = now_utc() > datetime.fromisoformat(rec["expires_at"])
+    except Exception:
+        expired = False
+    if expired:
         await db.otp_requests.delete_one({"_id": rec["_id"]})
-        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"phone": "+" + to, "phone_verified": True}})
-        return {"verified": True}
-    if r.status_code == 409:
-        raise HTTPException(status_code=400, detail="invalid_code")
-    if r.status_code == 410:
         raise HTTPException(status_code=400, detail="code_expired")
-    raise HTTPException(status_code=400, detail="invalid_code")
+    if body.code.strip() != rec["code"]:
+        raise HTTPException(status_code=400, detail="invalid_code")
+    await db.otp_requests.delete_one({"_id": rec["_id"]})
+    await db.users.update_one({"user_id": user["user_id"]},
+                              {"$set": {"contact_email": email, "email_verified": True}})
+    return {"verified": True}
 
 
 # ---------------- provider profile / tracks ----------------
@@ -245,8 +250,8 @@ async def onboarding_config(user=Depends(get_current_user)):
 @router.post("/onboarding/provider/submit")
 async def submit_provider(user=Depends(get_current_user)):
     u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
-    if not u.get("phone_verified"):
-        raise HTTPException(status_code=400, detail="phone_not_verified")
+    if not u.get("email_verified"):
+        raise HTTPException(status_code=400, detail="email_not_verified")
     if not u.get("provider_profile_type"):
         raise HTTPException(status_code=400, detail="profile_incomplete")
     appr = "approved" if u.get("provider_approved") else "pending"
@@ -264,7 +269,7 @@ async def provider_status(user=Depends(get_current_user)):
     return {
         "provider_state": provider_state(u),
         "profile_type": u.get("provider_profile_type"),
-        "phone_verified": u.get("phone_verified", False),
+        "email_verified": u.get("email_verified", False),
         "onboarding_completed": u.get("onboarding_completed", False),
         "lf_delega_signed": u.get("lf_delega_signed", False),
         "lf_inps_registered": u.get("lf_inps_registered", False),

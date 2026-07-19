@@ -22,7 +22,7 @@ const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const SLOTS = ["morning", "afternoon", "evening"];
 
 export default function ProviderOnboarding() {
-  const { setUser } = useAuth();
+  const { user, setUser } = useAuth();
   const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -32,10 +32,10 @@ export default function ProviderOnboarding() {
   const [busy, setBusy] = useState(false);
   const [profileType, setProfileType] = useState("");
   const [dob, setDob] = useState("1990-01-01");
-  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState(user?.email || "");
   const [otpSent, setOtpSent] = useState(false);
   const [code, setCode] = useState("");
-  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [name, setName] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [vat, setVat] = useState("");
@@ -55,8 +55,8 @@ export default function ProviderOnboarding() {
   const isLF = profileType === "persona_lf";
   const steps = useMemo(() => (
     isLF
-      ? ["intro", "phone", "lf_edu", "data", "docs", "lf_delega", "availability", "fee", "submit"]
-      : ["intro", "phone", "data", "docs", "availability", "fee", "submit"]
+      ? ["intro", "email", "lf_edu", "data", "docs", "lf_delega", "availability", "fee", "submit"]
+      : ["intro", "email", "data", "docs", "availability", "fee", "submit"]
   ), [isLF]);
   const cur = steps[step];
 
@@ -92,18 +92,15 @@ export default function ProviderOnboarding() {
   const isAdult = (() => { try { const d = new Date(dob); const n = new Date(); let a = n.getFullYear() - d.getFullYear(); if (n.getMonth() < d.getMonth() || (n.getMonth() === d.getMonth() && n.getDate() < d.getDate())) a--; return a >= 18; } catch { return false; } })();
 
   const sendOtp = async () => {
-    if (!phone.trim()) return;
+    if (!email.trim() || !email.includes("@")) { Alert.alert(t("invalidEmailMsg")); return; }
     setBusy(true);
-    try { await api.sendOtp(phone.trim()); setOtpSent(true); Alert.alert(t("otpSent")); }
-    catch (e: any) {
-      const m = String(e?.message || "");
-      if (m.includes("vonage_error") || m.includes("Non-Whitelisted") || m.includes("whitelist")) Alert.alert(t("otpTrialWarn"));
-      else Alert.alert(t("error"), t("otpError"));
-    } finally { setBusy(false); }
+    try { await api.sendOtp(email.trim()); setOtpSent(true); Alert.alert(t("otpSent")); }
+    catch { Alert.alert(t("error"), t("otpError")); }
+    finally { setBusy(false); }
   };
   const verifyOtp = async () => {
     setBusy(true);
-    try { await api.verifyOtp(phone.trim(), code.trim()); setPhoneVerified(true); }
+    try { await api.verifyOtp(email.trim(), code.trim()); setEmailVerified(true); }
     catch { Alert.alert(t("otpInvalid")); } finally { setBusy(false); }
   };
 
@@ -144,7 +141,7 @@ export default function ProviderOnboarding() {
       setUser(u);
       router.replace("/(tabs)");
     } catch (e: any) {
-      if (String(e?.message).includes("phone_not_verified")) Alert.alert(t("otpInvalid"));
+      if (String(e?.message).includes("email_not_verified")) Alert.alert(t("otpInvalid"));
       else Alert.alert(t("error"));
       setBusy(false);
     }
@@ -152,7 +149,7 @@ export default function ProviderOnboarding() {
 
   const next = async () => {
     if (cur === "intro") { if (!profileType) return; if (!isAdult) { Alert.alert(t("minorBlocked")); return; } }
-    if (cur === "phone" && !phoneVerified) { Alert.alert(t("verifyPhoneFirst")); return; }
+    if (cur === "email" && !emailVerified) { Alert.alert(t("verifyEmailFirst")); return; }
     if (cur === "data") { const ok = await saveProfile(); if (!ok) return; }
     if (cur === "lf_delega" && !delegaSigned) { Alert.alert(t("signDelegaFirst")); return; }
     if (cur === "availability") await saveAvailability();
@@ -178,13 +175,13 @@ export default function ProviderOnboarding() {
           <DateField testID="dob-input" value={dob} onChange={setDob} lang={lang} />
           {!isAdult ? <Text style={styles.warn}>⚠️ {t("minorBlocked")}</Text> : null}
         </>);
-      case "phone":
+      case "email":
         return (<>
-          <Text style={styles.h}>{t("verifyPhone")}</Text>
-          <Text style={styles.sub}>{t("verifyPhoneSub")}</Text>
-          <Text style={styles.label}>{t("phoneLabel2")}</Text>
-          <TextInput testID="phone-input" style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+39 333 1234567" placeholderTextColor={colors.muted} editable={!phoneVerified} />
-          {!phoneVerified ? (
+          <Text style={styles.h}>{t("verifyEmail")}</Text>
+          <Text style={styles.sub}>{t("verifyEmailSub")}</Text>
+          <Text style={styles.label}>{t("emailLabel")}</Text>
+          <TextInput testID="email-input" style={styles.input} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} placeholder="nome@esempio.it" placeholderTextColor={colors.muted} editable={!emailVerified} />
+          {!emailVerified ? (
             <>
               <Button testID="send-otp" label={otpSent ? t("resendOtp") : t("sendOtp")} variant={otpSent ? "secondary" : "primary"} loading={busy} onPress={sendOtp} style={{ marginTop: spacing.md }} />
               {otpSent ? (<>
@@ -193,7 +190,7 @@ export default function ProviderOnboarding() {
                 <Button testID="verify-otp" label={t("verify")} loading={busy} onPress={verifyOtp} style={{ marginTop: spacing.md }} />
               </>) : null}
             </>
-          ) : (<View style={styles.okRow}><Ionicons name="checkmark-circle" size={22} color={colors.success} /><Text style={styles.okText}>{t("phoneVerified")}</Text></View>)}
+          ) : (<View style={styles.okRow}><Ionicons name="checkmark-circle" size={22} color={colors.success} /><Text style={styles.okText}>{t("emailVerified")}</Text></View>)}
         </>);
       case "lf_edu":
         return (<>
@@ -302,7 +299,7 @@ export default function ProviderOnboarding() {
           {isLF ? <Text style={styles.highlight}>💶 {t("lfCeilings")}</Text> : null}
           <View style={styles.summaryBox}>
             <Text style={styles.summaryRow}>✓ {t(PROFILES.find((p) => p.id === profileType)?.tKey as any)}</Text>
-            <Text style={styles.summaryRow}>✓ {t("phoneVerified")}</Text>
+            <Text style={styles.summaryRow}>✓ {t("emailVerified")}</Text>
             <Text style={styles.summaryRow}>✓ {t("documents")}</Text>
             {isLF ? <Text style={styles.summaryRow}>✓ {t("delegaSigned")}</Text> : null}
           </View>

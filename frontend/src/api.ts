@@ -149,8 +149,8 @@ export const api = {
   adminInvite: (rid: string, provider_ids: string[], token: string) =>
     adminRequest(`/admin/pulizie/richieste/${rid}/invite`, token, { method: "POST", body: JSON.stringify({ provider_ids }) }),
   // provider onboarding (Spec 2)
-  sendOtp: (phone: string) => request("/phone/send-otp", { method: "POST", body: JSON.stringify({ phone }) }),
-  verifyOtp: (phone: string, code: string) => request("/phone/verify-otp", { method: "POST", body: JSON.stringify({ phone, code }) }),
+  sendOtp: (email: string) => request("/email/send-otp", { method: "POST", body: JSON.stringify({ email }) }),
+  verifyOtp: (email: string, code: string) => request("/email/verify-otp", { method: "POST", body: JSON.stringify({ email, code }) }),
   onbConfig: () => request("/onboarding/config"),
   setProviderProfile: (data: any) => request("/onboarding/provider/profile", { method: "POST", body: JSON.stringify(data) }),
   uploadProviderDoc: (kind: string, image: string) => request("/onboarding/provider/document", { method: "POST", body: JSON.stringify({ kind, image }) }),
