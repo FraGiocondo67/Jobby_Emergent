@@ -43,6 +43,8 @@ def provider_state(u: dict) -> str:
     appr = u.get("approval_status", "pending")
     if appr == "suspended":
         return "sospeso"
+    if appr == "rejected":
+        return "rifiutato"
     if appr == "waitlist":
         return "waitlist"
     if appr == "approved":
