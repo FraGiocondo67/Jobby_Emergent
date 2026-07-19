@@ -506,7 +506,7 @@ async function loadOnboarding(){
         <button class="b-suspend" onclick="onbDecision('${u.user_id}','waitlist')">Lista d'attesa</button>
         <button class="b-suspend" onclick="onbDecision('${u.user_id}','convert_lf')">Converti in Libretto</button>
         <button class="b-reject" onclick="onbDecision('${u.user_id}','reject')">Rifiuta</button>
-        ${u.casellario_doc&&!u.casellario_verified?('<button class="b-approve" onclick="verifyCasellario(\''+u.user_id+'\')">🛡️ Verifica casellario</button>'):''}
+        ${u.casellario_doc&&!u.casellario_verified?('<button class="b-approve" onclick="verifyCasellario(&#39;'+u.user_id+'&#39;)">🛡️ Verifica casellario</button>'):''}
       </div>
     </div>`;
   });
