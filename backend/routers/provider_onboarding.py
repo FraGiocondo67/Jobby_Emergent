@@ -353,3 +353,78 @@ class FeeConfigIn(BaseModel):
 async def admin_set_fee(body: FeeConfigIn, _=Depends(require_admin)):
     await db.settings.update_one({"key": "onboarding_fee"}, {"$set": {"value": body.dict()}}, upsert=True)
     return await get_fee_config()
+
+
+# ==================== Spec 9 — trigger IDV scritto + promemoria rinnovi ====================
+def _iso_week_key(dt: datetime) -> str:
+    y, w, _ = dt.isocalendar()
+    return f"{y}-W{w:02d}"
+
+
+@router.get("/admin/idv-trigger")
+async def admin_idv_trigger(_=Depends(require_admin)):
+    """Monitora il volume settimanale di registrazioni persone fisiche vs soglia scritta."""
+    s = await db.settings.find_one({"key": "idv_config"})
+    cfg = {"weekly_threshold": 15, "consecutive_weeks": 3, "multi_area": False, "provider": "manual"}
+    if s and isinstance(s.get("value"), dict):
+        cfg.update(s["value"])
+    # persone fisiche = provider senza business_name
+    users = await db.users.find({"role": "provider", "$or": [{"business_name": {"$in": [None, ""]}}, {"business_name": {"$exists": False}}]},
+                                {"_id": 0, "created_at": 1}).to_list(5000)
+    counts: dict = {}
+    for u in users:
+        ca = u.get("created_at")
+        if not ca:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(ca).replace("Z", ""))
+            counts[_iso_week_key(dt)] = counts.get(_iso_week_key(dt), 0) + 1
+        except Exception:
+            pass
+    now = datetime.now()
+    weeks = []
+    for i in range(cfg["consecutive_weeks"]):
+        wk = _iso_week_key(now - timedelta(weeks=i))
+        weeks.append({"week": wk, "count": counts.get(wk, 0)})
+    over = all(w["count"] >= cfg["weekly_threshold"] for w in weeks) and len(weeks) == cfg["consecutive_weeks"]
+    triggered = over or bool(cfg["multi_area"])
+    return {"config": cfg, "weeks": weeks, "over_volume": over, "multi_area": cfg["multi_area"],
+            "triggered": triggered, "current_idv_provider": cfg["provider"],
+            "recommendation": ("Adotta un fornitore IDV automatico: sostituisce SOLO il controllo visivo del documento." if triggered
+                               else "Verifica manuale sufficiente: volume sotto soglia.")}
+
+
+@router.post("/admin/idv-config")
+async def admin_idv_config(body: dict, _=Depends(require_admin)):
+    s = await db.settings.find_one({"key": "idv_config"})
+    cur = {"weekly_threshold": 15, "consecutive_weeks": 3, "multi_area": False, "provider": "manual"}
+    if s and isinstance(s.get("value"), dict):
+        cur.update(s["value"])
+    for k in ("weekly_threshold", "consecutive_weeks", "multi_area", "provider"):
+        if k in body:
+            cur[k] = body[k]
+    await db.settings.update_one({"key": "idv_config"}, {"$set": {"value": cur}}, upsert=True)
+    return cur
+
+
+@router.get("/admin/renewals")
+async def admin_renewals(_=Depends(require_admin)):
+    """Casellari e documenti in scadenza (o scaduti) entro N giorni."""
+    horizon_days = 60
+    now = datetime.now()
+    out = []
+    cur = db.users.find({"casellario_expires": {"$exists": True, "$ne": None}},
+                        {"_id": 0, "user_id": 1, "name": 1, "business_name": 1, "casellario_expires": 1, "casellario_verified": 1})
+    for u in await cur.to_list(2000):
+        exp = u.get("casellario_expires")
+        try:
+            dt = datetime.fromisoformat(str(exp).replace("Z", ""))
+            days = (dt.replace(tzinfo=None) - now).days
+        except Exception:
+            continue
+        if days <= horizon_days:
+            out.append({"user_id": u["user_id"], "name": u.get("business_name") or u.get("name"),
+                        "type": "casellario", "expires_at": exp, "days_left": days,
+                        "expired": days < 0, "verified": bool(u.get("casellario_verified"))})
+    out.sort(key=lambda x: x["days_left"])
+    return {"horizon_days": horizon_days, "items": out}

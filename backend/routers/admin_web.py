@@ -165,6 +165,7 @@ ADMIN_HTML = """<!DOCTYPE html>
       <div class="tab" data-t="driver" onclick="go('driver')">Driver</div>
       <div class="tab" data-t="artigiani" onclick="go('artigiani')">Artigiani</div>
       <div class="tab" data-t="spec4" onclick="go('spec4')">Regole</div>
+      <div class="tab" data-t="verifiche" onclick="go('verifiche')">Verifiche</div>
       <div class="tab" data-t="onboarding" onclick="go('onboarding')">Onboarding</div>
     </div>
 
@@ -178,6 +179,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <div id="driver" class="hidden"></div>
     <div id="artigiani" class="hidden"></div>
     <div id="spec4" class="hidden"></div>
+    <div id="verifiche" class="hidden"></div>
     <div id="onboarding" class="hidden"></div>
   </div>
 </div>
@@ -303,10 +305,10 @@ async function connect(){
   catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
 }
 function go(t){
-  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','driver','artigiani','spec4','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
+  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','driver','artigiani','spec4','verifiche','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.t===t));
   document.getElementById(t).classList.remove('hidden');
-  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='driver')loadDriver(); if(t==='artigiani')loadArtigiani(); if(t==='spec4')loadSpec4(); if(t==='onboarding')loadOnboarding();
+  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='driver')loadDriver(); if(t==='artigiani')loadArtigiani(); if(t==='spec4')loadSpec4(); if(t==='verifiche')loadVerifiche(); if(t==='onboarding')loadOnboarding();
 }
 async function loadDash(){
   const s=await api('/admin/stats');
@@ -540,6 +542,20 @@ async function saveSpec4(){
   alert('Soglie salvate'); loadSpec4();
 }
 async function moderate(rid,action){ await api('/admin/spec4/moderation/'+rid,{method:'POST',body:JSON.stringify({action})}); loadSpec4(); }
+async function loadVerifiche(){
+  const idv=await api('/admin/idv-trigger');
+  const ren=await api('/admin/renewals');
+  let html='<div class="sec">Trigger IDV automatico</div>';
+  const badge=idv.triggered?'<span class="pill" style="background:#FBE9E7;color:#DE4B3F">SOGLIA RAGGIUNTA</span>':'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">Manuale OK</span>';
+  html+=`<div class="row"><div class="t"><b>${badge}</b><div class="muted">${idv.recommendation}</div><div style="margin-top:6px">Fornitore IDV attuale: <b>${idv.current_idv_provider}</b> · Soglia: ${idv.config.weekly_threshold}/sett × ${idv.config.consecutive_weeks} sett</div></div></div>`;
+  html+='<div class="row" style="gap:14px">'+idv.weeks.map(w=>`<div class="t"><b style="font-size:20px">${w.count}</b><div class="muted">${w.week}</div></div>`).join('')+'</div>';
+  html+=`<label style="font-size:13px;color:var(--muted)">Espansione oltre la prima area <input id="idv_multi" type="checkbox" ${idv.multi_area?'checked':''} onchange="saveIdv()"/></label>`;
+  html+='<div class="sec" style="margin-top:18px">Rinnovi in scadenza ('+ren.items.length+', entro '+ren.horizon_days+'gg)</div>';
+  if(!ren.items.length){html+='<div class="muted">Nessun rinnovo imminente.</div>';}
+  ren.items.forEach(it=>{const col=it.expired?'#DE4B3F':(it.days_left<15?'#E8A33D':'inherit');html+=`<div class="row"><div class="t"><b>${it.name||it.user_id}</b> <span class="pill">${it.type}</span><div class="muted" style="color:${col}">${it.expired?'SCADUTO':it.days_left+' giorni'} · scade ${(it.expires_at||'').slice(0,10)}</div></div></div>`;});
+  document.getElementById('verifiche').innerHTML=html;
+}
+async function saveIdv(){ await api('/admin/idv-config',{method:'POST',body:JSON.stringify({multi_area:document.getElementById('idv_multi').checked})}); loadVerifiche(); }
 async function loadArtigiani(){
   const list=await api('/admin/artigiani/richieste');
   if(!list.length){document.getElementById('artigiani').innerHTML='<div class="muted" style="padding:20px">No open artigiani requests.</div>';return;}

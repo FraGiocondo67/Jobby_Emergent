@@ -11,6 +11,7 @@ from trust import recalc_provider_trust
 from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, payments_connect, richieste, provider_onboarding, babysitting, driver, artigiani
 from routers import dashboard
 from routers import spec4
+from routers import payments_split
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ api.include_router(driver.router)
 api.include_router(artigiani.router)
 api.include_router(dashboard.router)
 api.include_router(spec4.router)
+api.include_router(payments_split.router)
 api.include_router(provider_onboarding.router)
 api.include_router(catalog_routes.router)
 api.include_router(missions.router)

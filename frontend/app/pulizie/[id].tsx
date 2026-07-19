@@ -8,6 +8,7 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
+import PaymentSection from "@/src/components/PaymentSection";
 
 const STATE_META: Record<string, { color: string; bg: string }> = {
   pubblicata: { color: "#E8912A", bg: "#FDF0DD" }, in_matching: { color: "#6D3BEA", bg: "#EEE7FD" },
@@ -153,6 +154,11 @@ export default function RichiestaDetail() {
             <Pressable testID="client-cancel-confirmed" style={styles.cancelBtn} onPress={doCancel} disabled={busy}><Text style={styles.cancelText}>✕ {t("s4CancelTitle")}</Text></Pressable>
             <Pressable testID="client-noshow" style={styles.linkBtn} onPress={() => doNoShow("provider")} disabled={busy}><Text style={styles.linkBtnText}>⚠️ {t("s4NoShow")}</Text></Pressable>
           </View>
+        ) : null}
+
+        {/* Pagamento reale (Spec 3) — impresa/piva */}
+        {isClient && ["confermata", "in_corso", "completata"].includes(r.stato) ? (
+          <PaymentSection r={r} onDone={load} />
         ) : null}
 
         {/* Review */}

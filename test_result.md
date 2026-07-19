@@ -286,3 +286,24 @@
   Frontend: wallet.tsx shows Totale/Disponibile/Bloccato + pending holds (release date) + withdraw section (wm-bank/wm-crypto/wm-yobpay, withdraw-amount, withdraw-btn). booking/[id].tsx client 'Blocca in garanzia' (escrow-button) -> pay-escrow; insufficient -> alert offering Deposit->/wallet; escrow held shows paid-banner; client cancel-booking-button refunds; provider sees earning-banner (funds -> wallet). payments-settings.tsx has PayPal email field.
   Curl-verified end-to-end: insufficient(400)->add funds->pay-escrow held (client avail down)->complete->provider PENDING 25 + hold release_at +2d; forced-mature moved pending->available; admin hold-days set/get; withdraw yobpay ok + insufficient 400 + no_bank_account.
   TEST both (do NOT retest earlier phases). Client demo-preview-token-123 (client), storage key jobby_session_token JSON.stringify. Admin token jobby-admin-7c2f9a. To test a fresh escrow cycle, find an UNPAID booking owned by the client (GET /api/bookings) with escrow_status none/absent; ensure client has enough available (POST /api/wallet/add) then pay-escrow -> complete -> verify provider pending/available and client transactions. Also test wallet withdraw (yobpay works without bank) and the wallet screen 3 balances render + withdraw flow on web.
+
+
+## agent_communication (2026-06 fork — Spec 3.1 Real split payments: Stripe Connect destination charge + PayPal platform_fees)
+-agent: "main"
+-message: |
+  Implemented REAL split payments for confirmed richieste (ALL categories share db.richieste), binario impresa/piva only (persona_lf stays on INPS voucher/borsellino, NOT PSP).
+  New module routers/payments_split.py (generic, keyed on richiesta_id):
+  - POST /api/pay/richiesta/{rid}/checkout {method: stripe|paypal|wallet, origin_url}
+    * stripe = Stripe Connect DESTINATION CHARGE via hosted Checkout (raw STRIPE_CONNECT_SECRET_KEY): payment_intent_data.application_fee_amount = full jobby_fee, transfer_data.destination = provider stripe_connect_account_id. Provider must be onboarded (stripe_connect_account_id + stripe_payouts_enabled) else 400 provider_not_onboarded_stripe.
+    * paypal = Orders v2 multiparty: payee(merchant_id|email_address) + payment_instruction.platform_fees=jobby_fee. Needs provider paypal_email/paypal_merchant_id else 400 provider_not_onboarded_paypal.
+    * wallet = SIMULATED escrow fallback (so demo is testable E2E): deducts client wallet_balance, marks pagamento_lavoro.stato=held. 400 insufficient_wallet.
+  - GET /api/pay/stripe/status/{session_id} -> settles held on payment_status=paid (idempotent).
+  - POST /api/pay/paypal/capture/{order_id} -> captures + settles.
+  - POST /api/pay/richiesta/{rid}/release -> (simulato only) credits provider_net to provider wallet, stato=released.
+  - POST /api/pay/richiesta/{rid}/refund (admin) -> stripe Refund reverse_transfer+refund_application_fee / paypal platform_fees refund / simulato credit back to client.
+  - POST /api/pay/setup-card {origin_url} + GET /api/pay/setup-card/status/{session_id} -> SetupIntent off_session via Checkout mode=setup (save card).
+  - POST /api/pay/richiesta/{rid}/charge-recurring -> off_session destination-charge PaymentIntent on saved card.
+  Frontend: reusable src/components/PaymentSection.tsx (renders after confirm on impresa/piva; 3 buttons Carta/PayPal/Portafoglio; web redirect + native WebBrowser + polling). Wired into pulizie/babysitting/driver/artigiani [id].tsx. api.ts: payRichiestaCheckout/payRichiestaStripeStatus/payRichiestaPaypalCapture/releaseRichiestaPayment/setupCard/setupCardStatus/chargeRecurring. i18n pay* keys (IT/EN).
+  Curl-verified E2E (pulizie impresa, client disp-test-token-777, provider user_2f996c8a010a): confirm price 41.92 (jobby_fee 5.85, provider_net 36.07) -> stripe=provider_not_onboarded_stripe, paypal=provider_not_onboarded_paypal, wallet=held -> release -> client -41.92, provider +36.07, JOBBY keeps 5.85. CORRECT.
+  NOTE: real Stripe destination charge requires Connect enabled on platform account + provider onboarded (USER action; Connect still not enabled per prior note) -> only the wallet(simulated) happy-path is testable E2E now; stripe/paypal validated via guard/error paths.
+  TEST both. Login client UI: bstest@jobby.app / test1234. Admin X-Admin-Token jobby-admin-7c2f9a.

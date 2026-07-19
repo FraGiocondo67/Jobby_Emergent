@@ -186,6 +186,15 @@ export const api = {
   payoutProvider: (bookingId: string) => request(`/bookings/${bookingId}/payout`, { method: "POST" }),
   setPaypalEmail: (email: string) => request("/wallet/paypal-email", { method: "PUT", body: JSON.stringify({ email }) }),
   paymentStatus: (sessionId: string) => request(`/payments/status/${sessionId}`),
+  // Spec 3 — pagamenti reali con split marketplace (tutte le categorie, richiesta condivisa)
+  payRichiestaCheckout: (rid: string, method: "stripe" | "paypal" | "wallet", originUrl: string) =>
+    request(`/pay/richiesta/${rid}/checkout`, { method: "POST", body: JSON.stringify({ method, origin_url: originUrl }) }),
+  payRichiestaStripeStatus: (sessionId: string) => request(`/pay/stripe/status/${sessionId}`),
+  payRichiestaPaypalCapture: (orderId: string) => request(`/pay/paypal/capture/${orderId}`, { method: "POST" }),
+  releaseRichiestaPayment: (rid: string) => request(`/pay/richiesta/${rid}/release`, { method: "POST" }),
+  setupCard: (originUrl: string) => request("/pay/setup-card", { method: "POST", body: JSON.stringify({ origin_url: originUrl }) }),
+  setupCardStatus: (sessionId: string) => request(`/pay/setup-card/status/${sessionId}`),
+  chargeRecurring: (rid: string) => request(`/pay/richiesta/${rid}/charge-recurring`, { method: "POST" }),
   setPaymentMethod: (data: any) => request("/wallet/payment-method", { method: "PUT", body: JSON.stringify(data) }),
   setBankAccount: (data: any) => request("/wallet/bank-account", { method: "PUT", body: JSON.stringify(data) }),
   setCryptoWallet: (data: { token: string; name: string; address: string; network: string }) =>

@@ -1,0 +1,33 @@
+{
+  "summary": "Spec 3.1 split-payments tested end-to-end. Backend pytest suite (6/6 PASS): wallet(simulated) checkout->held debits client by full charge and sets pagamento_lavoro.stato=held with psp=simulato and provider_net returned; already_paid guard fires on second checkout; release credits provider wallet with provider_net and JOBBY keeps the fee (client_debit - provider_credit == jobby_fee); insufficient_wallet enforced; provider_not_onboarded_stripe / provider_not_onboarded_paypal enforced; admin refund on simulated held payment credits client back and sets stato=refunded; persona_lf lf_uses_voucher_not_psp guard verified (skipped only when no confirmed LF richiesta available). Frontend PaymentSection verified on mobile viewport (390x844) after email/password login (bstest@jobby.app / test1234): after confirming a Pulizie richiesta the 3 buttons render (pay-card / pay-paypal / pay-wallet); tapping pay-wallet transitions to 'Pagamento in garanzia' with the release-payment button visible; tapping release-payment transitions to the released state ('Compenso accreditato'). Stripe/PayPal redirect completion NOT attempted (per instructions).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "PaymentSection.tsx", "issue": "Uses shadow* style props (deprecated in RN 0.76+, should migrate to boxShadow). Reference: /app/frontend/src/theme.ts (shadow.card) — console warns on every screen."},
+      {"component": "Image resizeMode", "issue": "style.resizeMode is deprecated (use props.resizeMode). Console warns across app."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_payments_split_iter31.py",
+    "/app/test_reports/pytest/iter31_split_payments.xml"
+  ],
+  "action_items": [
+    "Optional: fix note in /app/memory/test_credentials.md — bstest@jobby.app maps to user_bstest01 (role=provider), NOT user_disptest01. Two separate accounts. The UI E2E worked because a fresh richiesta was created under the bstest user's id.",
+    "Optional cleanup: migrate deprecated shadow*/resizeMode style props across theme/components to silence RN warnings."
+  ],
+  "critical_code_review_comments": [
+    "payments_split._amounts uses r.prezzo_finale as charge, but the wizard/richieste engine stores prezzo_finale = prop.price (which equals breakdown.total_client = work + fee_client for impresa binario). Debit == 41.92, provider_net == 36.07, jobby_fee == 11.70 → JOBBY keeps 41.92 - 36.07 = 5.85 which equals fee_provider (half of jobby_fee), NOT the full jobby_fee. The other half (fee_client 5.85) is already collected via pagamento_fee.stato=charged at confirm time. So the requirement 'JOBBY keeps its full service fee' is satisfied only when the pagamento_fee half is also counted. Not a bug — just note that the split-payment endpoint only holds/releases the provider-side half; the client-side fee half is charged upstream at confirm.",
+    "payments_split.start_checkout does not verify r.stato ∈ {confermata,in_corso,completata}; it only checks provider_scelto is set. This could allow paying on a request that was later cancelled — consider stato guard.",
+    "release_simulated allows either client OR provider to release. Typically only the client should release (or auto-release on completion). Consider restricting to cliente_id (or trigger via /complete)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Created transient confirmed richieste req_a9206d007fbf (user_disptest01) and req_7a69bf801f5d (user_bstest01) plus several throwaway richieste inside pytest cases. Client wallet topped up with /api/wallet/add to keep tests idempotent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "For UI E2E of client-owned richieste, log in as bstest@jobby.app/test1234 (user_bstest01) and create the richiesta under that same user's token before navigating to /pulizie/{rid}. disp-test-token-777 (user_disptest01) is a separate bearer-only account and is NOT the same user as bstest@jobby.app.",
+  "rca_of_issue": "N/A — all specified behaviors work as expected."
+}

@@ -7,6 +7,7 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
+import PaymentSection from "@/src/components/PaymentSection";
 import { TimeField } from "@/src/components/DateTimeField";
 
 const STATE_LABEL: Record<string, string> = {
@@ -196,6 +197,8 @@ export default function BabysittingDetail() {
 
         {isClient && (r.stato === "pubblicata" || r.stato === "in_matching" || r.stato === "con_proposte") ? (
           <Button testID="cancel-req" label={t("cancel")} variant="secondary" onPress={() => act(() => api.bsCancelRichiesta(id), () => router.back())} style={{ marginTop: spacing.lg }} />) : null}
+        {isClient && r.provider_scelto && ["confermata", "in_corso", "completata"].includes(r.stato) ? (
+          <PaymentSection r={r} onDone={load} />) : null}
       </ScrollView>
     </View>
   );
