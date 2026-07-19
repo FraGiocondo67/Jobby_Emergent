@@ -25,7 +25,7 @@ async def list_businesses(category: str, lat: float = TREVISO["lat"], lng: float
             "verified": b.get("verified", False), "trust_score": b.get("trust_score", 0),
             "service_mode": b.get("service_mode", "both"), "distance_km": dist,
             "lat": b.get("lat"), "lng": b.get("lng"),
-            "price_list": b.get("price_list", []),
+            "price_list": b.get("price_list", []), "business_photos": b.get("business_photos", []),
             "approval_status": b.get("approval_status", "approved"),
         })
     result.sort(key=lambda x: x["distance_km"])
@@ -43,6 +43,7 @@ async def business_detail(business_id: str, user=Depends(get_current_user)):
         "verified": b.get("verified", False), "trust_score": b.get("trust_score", 0),
         "service_mode": b.get("service_mode", "both"), "address": b.get("address", ""),
         "price_list": b.get("price_list", []), "services": b.get("services", []),
+        "business_photos": b.get("business_photos", []),
         "approval_status": b.get("approval_status", "approved"),
     }
 
@@ -88,6 +89,21 @@ async def get_business_request(request_id: str, user=Depends(get_current_user)):
     if user["user_id"] not in (r["client_id"], r["business_id"]):
         raise HTTPException(status_code=403, detail="forbidden")
     return r
+
+
+@router.post("/business-requests/{request_id}/cancel")
+async def cancel_business_request(request_id: str, user=Depends(get_current_user)):
+    """Client cancels their own request while it is still pending (before shop confirmation)."""
+    r = await db.business_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="not_found")
+    if r["client_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if r["status"] != "pending":
+        raise HTTPException(status_code=400, detail="cannot_cancel")
+    await db.business_requests.update_one({"request_id": request_id},
+                                          {"$set": {"status": "cancelled", "updated_at": now_utc().isoformat()}})
+    return {"status": "cancelled"}
 
 
 @router.post("/business-requests/{request_id}/respond")

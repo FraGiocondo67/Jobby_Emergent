@@ -1,0 +1,44 @@
+{
+  "summary": "Iter15 tested form-builder + mission/biz-request cancel + business photos across backend + frontend + admin UI. Backend: 7/7 pytest passed (PUT /admin/categories/{cat}/questions ok, 404 on unknown; /api/categories reflects update; mission cancel ok + 400 second cancel + 403 other user; biz-request cancel ok + 400 second cancel; /businesses/detail/{id} and /businesses list both expose business_photos + price_list). Frontend richieste tab renders cancel-mission-{id} and cancel-biz-{id} testIDs on pending items — however tapping them on WEB preview does NOT cancel (statuses remain pending/matched) because Alert.alert on react-native-web ignores the destructive button callback. Business-request screen shows price_list correctly; biz-photo-* gallery not shown because Francesco Franzin has empty business_photos array (seed-data, not code). Admin UI /api/admin/ui has a CSS bug: fieldsModal and docModal are visible on page load because inline style display:flex overrides .hidden { display:none } (class specificity). Once the modal is hidden manually the whole form-builder flow works end-to-end (Connect -> Categories -> Fields on Driver -> Add field iter15_note -> Save -> reopen shows persisted field and row updates to '2 fields').",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "richieste tab cancel buttons (mobile-web)", "issue": "Tapping 'Annulla richiesta' triggers Alert.alert with buttons, but react-native-web's Alert.alert renders as a title-only window.alert and never invokes the destructive onPress callback -> cancelMission()/cancelBusinessRequest() is never called. Statuses stay pending/matched. Ref /app/frontend/app/(tabs)/richieste.tsx:77-84. Fix: replace Alert.alert with a cross-platform confirm modal, or Platform.OS==='web' branch using window.confirm().", "testID": "cancel-mission-{id}, cancel-biz-{id}", "priority": "HIGH"},
+      {"component": "Admin UI modals (fieldsModal, docModal)", "issue": "Both modals have class='hidden' AND inline style='display:flex'. Inline style wins over the CSS class -> both modals are visible over the login screen at page load and block the Connect button. Ref /app/backend/routers/admin_web.py:170 and :193. Fix: make .hidden { display:none !important } OR remove display:flex from inline style and add it in the shown-state via JS toggling class only.", "testID": "n/a", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Client cancels pending service/business request from Requests tab (web preview)", "issue": "UI button fires Alert.alert but callback is never executed on web; backend endpoints work fine when called directly. Users cannot cancel from the mobile web build.", "affected_testIDs": ["cancel-mission-{id}", "cancel-biz-{id}"]}
+    ],
+    "design_issues": [
+      {"screen": "business-request screen", "issues": ["Photo gallery (biz-photo-0..) is not rendered for user_2f996c8a010a because business_photos array is empty in seed data — verify seed or upload sample photos to exercise the gallery UI."]}
+    ],
+    "react_native_issues": [
+      {"component": "Alert.alert() with buttons on react-native-web", "issue": "RN Web ignores button/onPress args, so any destructive-confirm flow using Alert.alert is broken on web. Ref /app/frontend/app/(tabs)/richieste.tsx:77."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_form_builder_cancel_photos.py",
+    "/app/test_reports/pytest/iter15_results.xml"
+  ],
+  "action_items": [
+    "Fix admin-web CSS bug: modals visible on load. Change `.hidden{display:none}` to `.hidden{display:none!important}` in /app/backend/routers/admin_web.py (or remove inline display:flex and toggle via JS). This currently BLOCKS the whole admin form-builder flow for real users.",
+    "Fix client cancel flow on web: replace Alert.alert(...) with a cross-platform confirm (Platform.OS==='web' ? window.confirm() : Alert.alert()) or a custom modal. Location: /app/frontend/app/(tabs)/richieste.tsx cancelMission/cancelBiz handlers.",
+    "(Optional) Seed business_photos for user_2f996c8a010a so the biz-photo-* gallery is exercised end-to-end from the client business-request screen."
+  ],
+  "critical_code_review_comments": [
+    "admin_web.py: modal open/close relies on toggling .hidden, but inline styles override CSS class -> use !important or class-only styling.",
+    "richieste.tsx: business logic (confirm-then-mutate) relies on Alert.alert callbacks that are silently dropped on web."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter15_form_builder_cancel_photos.py (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "60% - forms/lists render + backend APIs work; cancel button + admin modals broken on web"},
+  "seed_data_creation": "Created 1 test mission and 1 test business_request for the demo client (both later left as-is; cancel button on web didn't cancel them, so main agent may want to clean them up after fix).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend flows for form-builder, mission cancel, biz-request cancel, and business_photos are green (see test_iter15_form_builder_cancel_photos.py). Two frontend blockers remain: (1) admin UI /api/admin/ui shows blank modals over the login due to CSS specificity (fix inline display:flex vs .hidden class); (2) client cancel buttons in Requests tab don't cancel on web because Alert.alert callbacks aren't fired by react-native-web. Retest both after main agent applies fixes: assert /admin/ui renders with no modal overlays until user clicks Fields/Docs, and assert tapping cancel-mission-*/cancel-biz-* updates status to 'cancelled' in the API response after confirmation.",
+  "rca_of_issue": "Bug1 (admin modal): The two overlay divs (#docModal and #fieldsModal) are declared with `class=\"hidden\"` for their default state, but also carry an inline style `display:flex` for their active/open layout. Because inline styles take precedence over class-based rules, `.hidden { display:none }` is ineffective and the modals are painted on load — this is what makes the Connect click 'fail' (it silently hits the modal's Save fields button because it also has class .primary). Repro: open /api/admin/ui in a fresh session, see the empty dialog centered on the page. Mitigation: `.hidden{display:none!important}` OR move display:flex into a separate `.show` class toggled by JS.\nBug2 (mobile cancel on web): react-native-web's Alert.alert implementation delegates to window.alert with only the title/message and drops the buttons array + their onPress handlers. The cancel handlers in richieste.tsx wrap the destructive action inside Alert.alert's 'destructive' button, so on web the destructive callback is never invoked. Repro: on web preview, tap 'Annulla richiesta' on a pending mission or biz-request; dismiss the browser alert; check /api/missions or /api/business-requests — status remains pending/matched. Mitigation: branch on Platform.OS==='web' to use window.confirm() or a custom in-app confirmation modal."
+}

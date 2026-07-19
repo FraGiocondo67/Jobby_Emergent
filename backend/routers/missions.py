@@ -156,6 +156,20 @@ async def decline_mission(mission_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@router.post("/missions/{mission_id}/cancel")
+async def cancel_mission(mission_id: str, user=Depends(get_current_user)):
+    """Client cancels their own service request before it is booked."""
+    m = await db.missions.find_one({"mission_id": mission_id}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="not_found")
+    if m["customer_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if m["status"] in ("booked", "cancelled"):
+        raise HTTPException(status_code=400, detail="cannot_cancel")
+    await db.missions.update_one({"mission_id": mission_id}, {"$set": {"status": "cancelled"}})
+    return {"status": "cancelled"}
+
+
 @router.get("/providers/{provider_id}/reviews")
 async def provider_reviews(provider_id: str, user=Depends(get_current_user)):
     return await db.reviews.find({"provider_id": provider_id}, {"_id": 0}).sort("created_at", -1).to_list(100)

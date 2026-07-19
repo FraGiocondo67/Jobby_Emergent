@@ -73,6 +73,19 @@ async def admin_set_category(cat_id: str, body: CategoryActiveIn, _=Depends(requ
     return {"cat_id": cat_id, "active": body.active}
 
 
+class QuestionsIn(BaseModel):
+    questions: list
+
+
+@router.put("/admin/categories/{cat_id}/questions")
+async def admin_set_questions(cat_id: str, body: QuestionsIn, _=Depends(require_admin)):
+    """Configure the request-form fields (questions) for a category from the backend."""
+    res = await db.categories.update_one({"cat_id": cat_id}, {"$set": {"questions": body.questions}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"cat_id": cat_id, "questions": body.questions}
+
+
 @router.post("/admin/trust/recalc")
 async def admin_trust_recalc(_=Depends(require_admin)):
     users = await db.users.find({}, {"_id": 0, "user_id": 1}).to_list(1000)

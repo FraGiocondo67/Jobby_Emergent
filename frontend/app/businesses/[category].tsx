@@ -10,6 +10,7 @@ import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Stars } from "@/src/components/UI";
 import RealMap from "@/src/components/RealMap";
+import { useDeviceLocation } from "@/src/hooks/use-device-location";
 
 const TREVISO = { lat: 45.6669, lng: 12.2433 };
 
@@ -22,8 +23,9 @@ export default function BusinessesScreen() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const lat = user?.lat || TREVISO.lat;
-  const lng = user?.lng || TREVISO.lng;
+  const { coords } = useDeviceLocation({ lat: user?.lat || TREVISO.lat, lng: user?.lng || TREVISO.lng });
+  const lat = coords.lat;
+  const lng = coords.lng;
 
   useEffect(() => {
     (async () => {

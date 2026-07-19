@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Alert } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
@@ -14,7 +14,7 @@ export default function RichiesteTab() {
 
 function StatusPill({ status }: { status: string }) {
   const { t } = useLang();
-  const map: Record<string, string> = { pending: colors.warning, matched: "#E07B39", confirmed: colors.blue, in_progress: colors.brand, completed: colors.success, booked: colors.brand, disputed: colors.error };
+  const map: Record<string, string> = { pending: colors.warning, matched: "#E07B39", confirmed: colors.blue, in_progress: colors.brand, completed: colors.success, booked: colors.brand, disputed: colors.error, cancelled: colors.muted, declined: colors.error };
   const c = map[status] || colors.muted;
   const label = (t as any)(`status_${status}`) || status;
   return <View style={[styles.pill, { backgroundColor: c + "22" }]}><Text style={[styles.pillText, { color: c }]}>{label}</Text></View>;
@@ -74,6 +74,15 @@ function CustomerRequests() {
     }
   };
 
+  const confirmCancel = (fn: () => Promise<void>) => {
+    Alert.alert(t("cancelRequest"), "", [
+      { text: t("cancel"), style: "cancel" },
+      { text: t("cancelRequest"), style: "destructive", onPress: () => { fn().catch(() => {}); } },
+    ]);
+  };
+  const doCancelMission = (id: string) => confirmCancel(async () => { await api.cancelMission(id); load(); });
+  const doCancelBiz = (id: string) => confirmCancel(async () => { await api.cancelBusinessRequest(id); load(); });
+
   const renderMission = (m: any) => (
     <Pressable key={`m-${m.mission_id}`} testID={`req-mission-${m.mission_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/mission/radar?id=${m.mission_id}`)}>
       <Text style={{ fontSize: 26 }}>🔎</Text>
@@ -82,6 +91,11 @@ function CustomerRequests() {
         <Text style={styles.cardSub}>{m.date} · {m.time} · {m.accepted?.length || 0} {t("accepted")}</Text>
         {m.budget ? <Text style={styles.budgetSub}>💰 {t("budgetLabel")}: €{Number(m.budget).toFixed(0)}</Text> : null}
         <View style={{ marginTop: 6 }}><StatusPill status={m.status} /></View>
+        {(m.status === "pending" || m.status === "matched") ? (
+          <Pressable testID={`cancel-mission-${m.mission_id}`} style={styles.cancelBtn} onPress={() => doCancelMission(m.mission_id)}>
+            <Text style={styles.cancelText}>✕ {t("cancelRequest")}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -97,6 +111,11 @@ function CustomerRequests() {
           <View style={{ marginTop: 6 }}><StatusPill status={r.status} /></View>
         </View>
       </View>
+      {r.status === "pending" ? (
+        <Pressable testID={`cancel-biz-${r.request_id}`} style={[styles.cancelBtn, { alignSelf: "flex-start" }]} onPress={() => doCancelBiz(r.request_id)}>
+          <Text style={styles.cancelText}>✕ {t("cancelRequest")}</Text>
+        </Pressable>
+      ) : null}
       {r.status === "confirmed" && r.response ? (
         <>
           <Text style={styles.bizInfo}>
@@ -221,6 +240,8 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface, textTransform: "capitalize" },
   cardSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 1 },
   budgetSub: { fontSize: fsize.sm, fontFamily: font.bold, color: colors.green, marginTop: 2 },
+  cancelBtn: { marginTop: spacing.sm, alignSelf: "flex-start", paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.error },
+  cancelText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.error },
   filterBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md, backgroundColor: colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm },
   filterChips: { flexDirection: "row", gap: spacing.sm, flex: 1 },
   chip: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },

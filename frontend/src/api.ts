@@ -79,6 +79,7 @@ export const api = {
   selectProvider: (id: string, provider_id: string) =>
     request(`/missions/${id}/select`, { method: "POST", body: JSON.stringify({ provider_id }) }),
   incomingMissions: () => request("/missions/incoming/list"),
+  cancelMission: (id: string) => request(`/missions/${id}/cancel`, { method: "POST" }),
   acceptMission: (id: string, price?: number) =>
     request(`/missions/${id}/accept`, { method: "POST", body: JSON.stringify({ price: price ?? null }) }),
   declineMission: (id: string) => request(`/missions/${id}/decline`, { method: "POST" }),
@@ -160,4 +161,5 @@ export const api = {
   getBusinessRequest: (id: string) => request(`/business-requests/${id}`),
   respondBusinessRequest: (id: string, data: { accept: boolean; eta?: string; mode?: string; delivery_cost?: number; price?: number; note?: string }) =>
     request(`/business-requests/${id}/respond`, { method: "POST", body: JSON.stringify(data) }),
+  cancelBusinessRequest: (id: string) => request(`/business-requests/${id}/cancel`, { method: "POST" }),
 };

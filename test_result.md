@@ -220,3 +220,18 @@
   - Backend: register/login/demo endpoints + validation; demo write guard on a few endpoints; onboarding/complete for each role; onboarding photo add/delete + document set (use a fresh registered account, NOT demo); admin documents endpoint.
   - Frontend (web): login screen shows Accedi/Registrati/Google/Prova la demo (Apple hidden on web = correct). Register a new email -> lands on /onboarding-flow role step. Pick 'client', fill address, finish -> lands on tabs. Demo button -> tabs with demo-banner; attempting a write (e.g., add funds / create request) shows the demo Alert and is blocked.
   Credentials: existing mario@test.it/secret123 (business, pending). Register fresh emails for onboarding tests. Admin token jobby-admin-7c2f9a. Storage key jobby_session_token (JSON.stringify the value on web).
+
+## agent_communication (2026-06 fork — Phase B2: photos + form-builder + cancel/lifecycle + GPS)
+-agent: "main"
+-message: |
+  Implemented (PayPal + payment-services deferred to next delivery, awaiting PayPal keys):
+  1) Business photos to clients: GET /api/businesses/detail/{id} and /api/businesses now return business_photos. business-request/[businessId].tsx shows a horizontal photo gallery (testID biz-photo-0..) + existing price list.
+  2) Admin form-builder: PUT /api/admin/categories/{cat_id}/questions {questions:[...]} (require_admin) replaces a category's request-form fields. Admin UI (/api/admin/ui Categories tab) has a 'Fields' button per category opening a visual editor (add/remove fields; id, type text|number|select, IT/EN labels, placeholder for text, min/max/default for number, options list for select) -> Save calls the PUT. Frontend request/[id].tsx already renders these dynamically.
+  3) Request cancellation + lifecycle: POST /api/missions/{id}/cancel (client only, before booked -> status cancelled; already-booked/cancelled -> 400) and POST /api/business-requests/{id}/cancel (client only, only while pending -> cancelled; else 400). Frontend richieste.tsx shows a 'Annulla richiesta' button (testID cancel-mission-{id} for pending/matched missions, cancel-biz-{id} for pending biz requests) with Alert confirm; 'cancelled' status pill added. Lifecycle unchanged: mission = request -> provider proposal(accept) -> client approval(select->booking); biz = request -> shop approval.
+  4) GPS real: new hook src/hooks/use-device-location.ts (real GPS via expo-location, fallback Treviso). Wired into map.tsx and businesses/[category].tsx (map center + nearby query use device GPS). Request forms keep existing 'Use my location' button.
+  Curl-verified: PUT questions (driver, 200), mission cancel (200 then 400), biz cancel (200), business detail returns business_photos.
+  TEST both (do NOT re-test Phase A/B1):
+  - Backend: PUT /api/admin/categories/{id}/questions (valid + 404 unknown cat); mission cancel (client demo-preview-token-123: create+cancel ok, re-cancel 400, cancel someone else's -> 403); business-request cancel (pending ok, non-pending 400); businesses/detail returns business_photos & price_list.
+  - Frontend (web, client demo-preview-token-123): Richieste tab -> a pending mission/biz request shows 'Annulla richiesta' button; tapping it and confirming removes/marks cancelled. Proximity flow -> a business with photos shows the photo gallery (biz-photo-0) on the business-request screen.
+  - Admin UI: /api/admin/ui (token jobby-admin-7c2f9a) -> Categories -> 'Fields' on a category opens editor; add a field, Save; reopening shows it persisted.
+  Credentials: client demo-preview-token-123; business user_2f996c8a010a; admin token jobby-admin-7c2f9a.

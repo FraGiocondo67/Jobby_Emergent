@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
@@ -90,6 +91,14 @@ export default function BusinessRequestScreen() {
           <Text style={styles.bizName}>{name}</Text>
           <Text style={styles.bizCat}>{label}</Text>
 
+          {detail?.business_photos?.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.md }} contentContainerStyle={{ gap: spacing.sm }}>
+              {detail.business_photos.map((p: string, i: number) => (
+                <Image key={i} source={{ uri: p }} style={styles.bizPhoto} contentFit="cover" testID={`biz-photo-${i}`} />
+              ))}
+            </ScrollView>
+          ) : null}
+
           {detail?.price_list?.length ? (
             <View style={styles.priceCard}>
               <Text style={styles.priceTitle}>{t("priceListTitle")}</Text>
@@ -142,6 +151,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: fsize.lg, fontFamily: font.regular, color: colors.onSurface },
   textarea: { minHeight: 100, textAlignVertical: "top" },
   priceCard: { backgroundColor: colors.purpleBg, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },
+  bizPhoto: { width: 130, height: 100, borderRadius: radius.md },
   priceTitle: { fontSize: fsize.base, fontFamily: font.bold, color: colors.purple, marginBottom: spacing.sm },
   priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
   priceName: { fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface, flex: 1 },

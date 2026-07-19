@@ -190,6 +190,86 @@ async function viewDocs(id){
   document.getElementById('docModal').classList.remove('hidden');
 }
 </script>
+<div id="fieldsModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:9">
+  <div style="background:#fff;border-radius:14px;max-width:620px;width:100%;max-height:88vh;overflow:auto;padding:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <b id="fldTitle" style="font-size:18px"></b>
+      <button class="ghost" onclick="document.getElementById('fieldsModal').classList.add('hidden')">✕</button>
+    </div>
+    <div class="muted" style="margin:6px 0 12px">Configure the request-form fields shown to clients.</div>
+    <div id="fldList"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="ghost" onclick="addField()">+ Add field</button>
+      <button class="primary" onclick="saveFields()">Save fields</button>
+    </div>
+  </div>
+</div>
+<style>
+  .fld{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px}
+  .fld input,.fld select,.fld textarea{width:100%;padding:7px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-top:4px}
+  .fld .g{display:flex;gap:8px}.fld .g>div{flex:1}
+  .fld label{font-size:11px;color:var(--muted);text-transform:uppercase}
+  .opt{display:flex;gap:6px;margin-top:4px}
+</style>
+<script>
+let EDIT_CAT=''; let EF=[];
+function editFields(id){
+  EDIT_CAT=id;
+  const c=(window.__CATS||[]).find(x=>x.cat_id===id);
+  document.getElementById('fldTitle').textContent=(c&&c.label.en)||id;
+  EF=((c&&c.questions)||[]).map(q=>({
+    id:q.id||'', type:q.type||'text',
+    li:(q.label&&q.label.it)||'', le:(q.label&&q.label.en)||'',
+    pi:(q.placeholder&&q.placeholder.it)||'', pe:(q.placeholder&&q.placeholder.en)||'',
+    min:q.min!=null?q.min:1, max:q.max!=null?q.max:10, def:q.default!=null?q.default:1,
+    opts:(q.options||[]).map(o=>({id:o.id||'',li:(o.label&&o.label.it)||'',le:(o.label&&o.label.en)||''}))
+  }));
+  renderFields();
+  document.getElementById('fieldsModal').classList.remove('hidden');
+}
+function renderFields(){
+  let h='';
+  EF.forEach((f,i)=>{
+    h+='<div class="fld"><div class="g"><div><label>Field id</label><input value="'+f.id+'" oninput="EF['+i+'].id=this.value"/></div>'+
+       '<div><label>Type</label><select onchange="EF['+i+'].type=this.value;renderFields()">'+
+       ['text','number','select'].map(t=>'<option value="'+t+'" '+(f.type===t?'selected':'')+'>'+t+'</option>').join('')+'</select></div></div>'+
+       '<div class="g"><div><label>Label IT</label><input value="'+f.li+'" oninput="EF['+i+'].li=this.value"/></div>'+
+       '<div><label>Label EN</label><input value="'+f.le+'" oninput="EF['+i+'].le=this.value"/></div></div>';
+    if(f.type==='text'){
+      h+='<div class="g"><div><label>Placeholder IT</label><input value="'+f.pi+'" oninput="EF['+i+'].pi=this.value"/></div>'+
+         '<div><label>Placeholder EN</label><input value="'+f.pe+'" oninput="EF['+i+'].pe=this.value"/></div></div>';
+    }
+    if(f.type==='number'){
+      h+='<div class="g"><div><label>Min</label><input type="number" value="'+f.min+'" oninput="EF['+i+'].min=this.value"/></div>'+
+         '<div><label>Max</label><input type="number" value="'+f.max+'" oninput="EF['+i+'].max=this.value"/></div>'+
+         '<div><label>Default</label><input type="number" value="'+f.def+'" oninput="EF['+i+'].def=this.value"/></div></div>';
+    }
+    if(f.type==='select'){
+      h+='<label style="margin-top:6px;display:block">Options (id · IT · EN)</label>';
+      f.opts.forEach((o,j)=>{h+='<div class="opt"><input placeholder="id" value="'+o.id+'" oninput="EF['+i+'].opts['+j+'].id=this.value"/>'+
+        '<input placeholder="IT" value="'+o.li+'" oninput="EF['+i+'].opts['+j+'].li=this.value"/>'+
+        '<input placeholder="EN" value="'+o.le+'" oninput="EF['+i+'].opts['+j+'].le=this.value"/>'+
+        '<button class="ghost" onclick="EF['+i+'].opts.splice('+j+',1);renderFields()">✕</button></div>';});
+      h+='<button class="ghost" style="margin-top:6px" onclick="EF['+i+'].opts.push({id:\\'\\',li:\\'\\',le:\\'\\'});renderFields()">+ option</button>';
+    }
+    h+='<div style="text-align:right;margin-top:8px"><button class="b-reject" onclick="EF.splice('+i+',1);renderFields()">Remove field</button></div></div>';
+  });
+  document.getElementById('fldList').innerHTML=h||'<div class="muted">No fields yet.</div>';
+}
+function addField(){EF.push({id:'',type:'text',li:'',le:'',pi:'',pe:'',min:1,max:10,def:1,opts:[]});renderFields();}
+async function saveFields(){
+  const qs=EF.filter(f=>f.id.trim()).map(f=>{
+    const q={id:f.id.trim(),label:{it:f.li,en:f.le},type:f.type};
+    if(f.type==='text'){q.placeholder={it:f.pi,en:f.pe};}
+    if(f.type==='number'){q.min=Number(f.min);q.max=Number(f.max);q.default=Number(f.def);}
+    if(f.type==='select'){q.options=f.opts.filter(o=>o.id.trim()).map(o=>({id:o.id.trim(),label:{it:o.li,en:o.le}}));}
+    return q;
+  });
+  await api('/admin/categories/'+EDIT_CAT+'/questions',{method:'PUT',body:JSON.stringify({questions:qs})});
+  document.getElementById('fieldsModal').classList.add('hidden');
+  loadCats();
+}
+</script>
 <script>
 let TOKEN='';
 let USERFILTER='all';
@@ -224,6 +304,7 @@ async function loadDash(){
 async function recalc(){const r=await api('/admin/trust/recalc',{method:'POST'});alert('Recalculated '+r.recalculated+' users');}
 async function loadCats(){
   const c=await api('/admin/categories');
+  window.__CATS=c;
   const groups={standard:'Standard Services',proximity:'Proximity Businesses',payment:'Payment Services'};
   let html='';
   for(const k in groups){
@@ -231,7 +312,8 @@ async function loadCats(){
     c.filter(x=>x.kind===k).forEach(x=>{
       const comm=(k!=='payment')?`<div class="comm">Commission %
         <input type="number" min="0" max="100" step="0.5" value="${x.commission_pct!=null?x.commission_pct:10}" id="comm-${x.cat_id}" onchange="setCommission('${x.cat_id}',this.value)"/></div>`:'';
-      html+=`<div class="row"><span class="em">${x.emoji||'🧩'}</span><div class="t"><b>${x.label.en}</b><div class="muted">${x.cat_id}</div>${comm}</div>
+      html+=`<div class="row"><span class="em">${x.emoji||'🧩'}</span><div class="t"><b>${x.label.en}</b><div class="muted">${x.cat_id} · ${(x.questions||[]).length} fields</div>${comm}</div>
+        <button class="ghost" onclick="editFields('${x.cat_id}')">Fields</button>
         <div class="sw ${x.active?'on':''}" onclick="toggleCat('${x.cat_id}',this)"></div></div>`;
     });
   }
