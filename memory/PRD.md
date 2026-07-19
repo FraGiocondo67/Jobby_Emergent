@@ -86,3 +86,10 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 ## Next Tasks
 - Add authorization checks + provider profile detail screen.
 - Consider Stripe/YOB Pay for the JOBBY service fee.
+
+## Implemented (2026-07-19 — Spec 7 ARTIGIANI, replaces Tuttofare)
+- **Artigiani category** fully wired & E2E-tested (25/25 backend green): two-stage flow — Stage 1 "paniere" (fixed-price interventions) and Stage 2 "chiamata-diagnosi" (paid diagnosis → in-app quote valid 7d, call-fee scomputo, extras approval, mandatory close with outcome, 30-day guarantee). 6 mestieri (idraulico/elettricista/caldaista/climatizzazione/giardiniere/tuttofare-su-Libretto), abilitazione DM 37/2008 + F-Gas verify.
+- Backend: `routers/artigiani.py`, `artigiani_config.py` (endpoints `/api/artigiani/*`, `/api/admin/artigiani/*`).
+- Frontend wired: Home tile → `/artigiani/configura`; Richieste tab client cards + provider incoming section; Profile provider "Listino artigiano" link; screens `app/artigiani/{configura,[id],listino}.tsx`.
+- Admin web (`admin_web.py`): new "Artigiani" tab (manual matching/invite) + abilitazione verify button in Onboarding.
+- Legacy `tuttofare` category set `active:false`; `artigiani` active.
