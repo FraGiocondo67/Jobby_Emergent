@@ -47,6 +47,10 @@ function ClientWallet() {
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>;
   const b = d?.borsellino || {}; const lim = d?.limiti || {}; const att = d?.attivita || {}; const fisc = d?.recupero_fiscale || {};
+  const pm: any = d?.impresa?.payment_method;
+  const pmLabel = (pm && typeof pm === "object")
+    ? `${pm.card_brand || "Carta"} •••• ${pm.card_last4 || ""}`.trim()
+    : (pm || d?.impresa?.paypal_email || t("wNoData"));
 
   return (
     <View style={styles.container}>
@@ -74,7 +78,7 @@ function ClientWallet() {
         ) : (
           <View style={[styles.card, shadow.card]}>
             <Text style={styles.blockTitle}>💳 {t("wImpresaTitle")}</Text>
-            <Text style={styles.rowSub}>{t("wPaymentMethod")}: {d?.impresa?.payment_method || d?.impresa?.paypal_email || t("wNoData")}</Text>
+            <Text style={styles.rowSub}>{t("wPaymentMethod")}: {pmLabel}</Text>
             <Pressable style={styles.linkRow} onPress={() => router.push("/wallet")}><Text style={styles.link}>{t("wReceipts")} →</Text></Pressable>
           </View>
         )}

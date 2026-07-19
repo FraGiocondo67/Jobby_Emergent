@@ -98,6 +98,16 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 6. Rifiniture Libretto: importo mancante + ricarica "un mese", avviso tempi F24, suggerimento Impresa per prenotazioni ravvicinate.
 7. Estendere tutte le regole ad Artigiani/Babysitting/Driver.
 
+## Implemented (2026-06 — Spec 5 Navigazione/Home/Dashboard)
+- **Tab bar 4 voci**: Home · Attività · Portafoglio · Profilo (tab Chat nascosta con href:null, rotta /chat ancora raggiungibile).
+- **Home due stati** (`/api/home/state`): nuovo=pagina conversione (promessa + entry "Pulizie e stiro" + segnali fiducia + griglia categorie); ricorrente=card della relazione (nome collaboratrice, prossima visita, 3 azioni riprenota/sposta/scrivi, flag problema) + "Altri servizi". Altre categorie sempre accessibili sotto.
+- **Portafoglio cliente 4 blocchi** (`/api/wallet/dashboard`): borsellino (caricato/impegnato/spendibile + ricariche in transito), limiti di legge (barra annua 10.000€, per-collaboratrice 2.500€ con peso 75% agevolate, utilizzi esterni via `/api/wallet/external-usage`, upsell all'80%), attività+documenti, recupero fiscale (stima deducibile). Impresa-only → metodo pagamento + ricevute.
+- **Dashboard provider 3 blocchi** (`/api/provider/dashboard`): guadagni con date accredito (INPS il 15 del mese dopo / trasferimento impresa), limiti personali (5.000€/2.500€/280h), storico+recensioni+affidabilità + toggle "Non disturbarmi" (`/api/provider/dnd`).
+- **Pulsante WhatsApp globale** ("Serve una mano?") su tutte le tab; numero configurabile da backend (`db.settings` key `support_whatsapp`, default +393481136876) via `GET /api/settings/support` + `POST /api/admin/settings/support`.
+- **Fix bug**: `/list/all` (+Richiedi servizio) ora instrada Babysitting/Driver/Artigiani ai nuovi configuratori.
+- Costanti limiti in `richieste_config.py`: LF_FAMILY_ANNUAL_EUR=10000, LF_COUPLE_CEILING_EUR=2500, LF_PROVIDER_ANNUAL_EUR=5000, LF_PROVIDER_HOURS=280, LF_AGEVOLATE_WEIGHT=0.75, LF_WARN_THRESHOLD=0.8.
+- Testato 9/9 backend + frontend (iter Spec 5). Seed demo: `bstest@jobby.app` ora ha 1 richiesta completata + 1 futura → Home ricorrente con card Giulia.
+
 ## Next Tasks
 - Add authorization checks + provider profile detail screen.
 - Consider Stripe/YOB Pay for the JOBBY service fee.
