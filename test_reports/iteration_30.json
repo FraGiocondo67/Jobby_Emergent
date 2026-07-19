@@ -1,0 +1,34 @@
+{
+  "summary": "Spec 4 (Cancellations / no-show / reviews / private client score / reliability) tested end-to-end. Backend: 17/17 pytest tests PASSED (admin config get/set/restore, cancel tiers free/fee_only/late with correct wallet deltas + strike, LF late & free with lf_borsellino freed, provider-cancel with full refund + risostituzione + admin alert, no-show too_early + after grace, review create/approve/reply/second-reply-400/delete, rate-client with flag filtering + private score persistence + reliability listing). Admin web 'Regole' tab works: SOGLIE editable, moderation queue, AFFIDABILITÀ list. Mobile client & provider Pulizie detail render all Spec4 controls (client-cancel-confirmed, client-noshow, provider-cancel, provider-noshow, submit-crate, reply-input). CRITICAL FRONTEND BUG: /app/frontend/app/pulizie/[id].tsx lines 219-220 have an orphan `<Pressable testID=\"cancel-richiesta\">` followed by a stray `) : null}` outside any conditional — this leaks raw text `) : null}` on-screen (both client and provider views) and shows a duplicate 'Annulla richiesta' button in every stato (confermata / in_corso / recensita / etc.).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "pulizie/[id].tsx (line 219-220)", "issue": "Orphan JSX: `<Pressable testID=\"cancel-richiesta\">…</Pressable>` is followed by a stray `) : null}` and is NOT wrapped in any conditional. Result: literal text `) : null}` is rendered on the screen AND the 'Annulla richiesta' button shows in every state (including confermata where 'Annulla prenotazione' is the correct action, and in provider view where a client-only cancel should not appear).", "testID": "cancel-richiesta", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "pulizie/[id] confermata client view", "issues": ["Duplicate cancel affordance: user sees both 'Annulla prenotazione' (Spec4, correct) and 'Annulla richiesta' (legacy, incorrect) — will confuse the user because they behave the same but only the Spec4 one shows the tier alert."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_spec4_iter30.py",
+    "/app/test_reports/pytest/iter30_spec4.xml"
+  ],
+  "action_items": [
+    "Fix /app/frontend/app/pulizie/[id].tsx lines 218-220: wrap the legacy `<Pressable testID=\"cancel-richiesta\">` in the proper conditional (e.g. `{isClient && ['pubblicata','in_matching','con_proposte','bozza'].includes(r.stato) ? (<Pressable …/>) : null}`), and remove the stray `) : null}`. This eliminates the visible raw text `) : null}` and the duplicate button on confirmed / provider views."
+  ],
+  "critical_code_review_comments": [
+    "Backend spec4 router is clean and generic (works over db.richieste). Deltas are correctly computed (fee+labor free, labor-only fee_only, labor − pct*labor as client refund + pct*labor as provider indennizzo in late).",
+    "Reviews GET /providers/{id}/reviews correctly returns published (moderato AND !hidden) only, with is_new / badge / average=null while <3 published; verified via full flow (created → not visible → admin approve → visible)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_spec4_iter30.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "80% (Spec4 controls render correctly, but 1 orphan-JSX bug leaks raw text and duplicate cancel button)"},
+  "seed_data_creation": "Tests create pulizie richieste (impresa + persona_lf) with disp-test-token-777 client and req-prov-token / lf-prov-token providers, use MongoDB direct writes to shift data_ora across tier boundaries, and are self-contained (no persistent seed left beyond a few TEST_iter30-labelled richieste and reliability_events rows).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_spec4_iter30.py (pytest, 17 tests). Run with `python3 -m pytest backend/tests/test_spec4_iter30.py -v`. The mobile viewport used for UI is 390x844; the web app stores auth as JSON-stringified session token in localStorage key `jobby_session_token`. To render the pulizie detail screen without OAuth, inject: `localStorage.setItem('jobby_session_token', JSON.stringify('<bearer>'))`. Test bearer tokens: client=disp-test-token-777, impresa provider=req-prov-token, lf provider=lf-prov-token, provider-with-pulizie-listino-not=prov-test-token-888 (Giulia has no pulizie_listino so cannot be used as impresa provider).",
+  "rca_of_issue": "The orphan JSX at pulizie/[id].tsx L219-220 is a merge/edit artefact: the developer added the Spec4 client-cancel-confirmed / client-noshow inside the confermata block (L153-154) but forgot to remove the pre-existing legacy `cancel-richiesta` Pressable that used to be gated by a conditional. The closing `) : null}` from the removed opening ternary was left behind and renders as a text node. React Native's Text-in-JSX rules DO error on unwrapped strings — but here `) : null}` is INSIDE a `<ScrollView>` on web (RNW), where a stray text child is emitted as-is instead of throwing. Fix is a 3-line JSX cleanup (see action_items)."
+}

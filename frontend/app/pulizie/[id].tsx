@@ -33,6 +33,11 @@ export default function RichiestaDetail() {
   const [varPrice, setVarPrice] = useState("");
   const [propMsg, setPropMsg] = useState("");
   const [reasons, setReasons] = useState<any[]>([]);
+  // Spec 4 — provider client-rating + reply
+  const [cRating, setCRating] = useState(5);
+  const [cFlags, setCFlags] = useState<string[]>([]);
+  const [cNote, setCNote] = useState("");
+  const [reply, setReply] = useState("");
 
   const load = useCallback(async () => {
     try { const d = await api.getRichiesta(id as string); setR(d);
@@ -57,6 +62,21 @@ export default function RichiestaDetail() {
   };
   const topup = async () => { setBusy(true); try { await api.lfTopup(100); setBors(await api.lfBorsellino()); Alert.alert(t("lfTopupDone")); } catch {} finally { setBusy(false); } };
   const act = async (fn: () => Promise<any>) => { setBusy(true); try { await fn(); await load(); } catch { Alert.alert(t("error")); } finally { setBusy(false); } };
+
+  const doCancel = async () => {
+    let msg = t("cancelRequest");
+    try {
+      const p = await api.cancelPolicy(id as string);
+      const tierTxt = p.tier === "free" ? t("s4TierFree") : p.tier === "fee_only" ? t("s4TierFeeOnly") : p.tier === "lf_late" ? t("s4TierLfLate") : t("s4TierLate");
+      msg = `${tierTxt}${p.free_until ? `\n\n${t("s4FreeUntil")} ${p.free_until}` : ""}`;
+    } catch {}
+    Alert.alert(t("s4CancelTitle"), msg, [
+      { text: t("cancel") || "Annulla", style: "cancel" },
+      { text: "OK", style: "destructive", onPress: () => act(() => api.cancelRichiesta(id as string, "")) },
+    ]);
+  };
+  const doNoShow = (against: "client" | "provider") => act(async () => { await api.reportNoShow(id as string, against); Alert.alert(t("s4NoShow"), t("s4NoShowReported")); });
+  const toggleFlag = (f: string) => setCFlags((p) => p.includes(f) ? p.filter((x) => x !== f) : [...p, f]);
 
   const openPropose = async () => { try { const m = await api.pulizieConfig(); setReasons(m.variation_reasons || []); } catch {} setVarReason(null); setVarPrice(""); setPropMsg(""); setPropModal(true); };
   const sendPropose = async (withVar: boolean) => {
@@ -130,6 +150,8 @@ export default function RichiestaDetail() {
             <Text style={styles.propPrice}>€{(r.prezzo_finale || 0).toFixed(2)}</Text>
             {r.stato === "confermata" ? <Button testID="start-btn" label={t("startService")} loading={busy} onPress={() => act(() => api.startRichiesta(id as string))} style={{ marginTop: spacing.sm }} /> : null}
             <Button testID="complete-btn" label={t("complete")} variant="secondary" loading={busy} onPress={() => act(() => api.completeRichiesta(id as string))} style={{ marginTop: spacing.sm }} />
+            <Pressable testID="client-cancel-confirmed" style={styles.cancelBtn} onPress={doCancel} disabled={busy}><Text style={styles.cancelText}>✕ {t("s4CancelTitle")}</Text></Pressable>
+            <Pressable testID="client-noshow" style={styles.linkBtn} onPress={() => doNoShow("provider")} disabled={busy}><Text style={styles.linkBtnText}>⚠️ {t("s4NoShow")}</Text></Pressable>
           </View>
         ) : null}
 
@@ -163,8 +185,38 @@ export default function RichiestaDetail() {
           </View>
         ) : null}
 
-        {isClient && ["pubblicata", "in_matching", "con_proposte"].includes(r.stato) ? (
-          <Pressable testID="cancel-richiesta" style={styles.cancelBtn} onPress={() => act(() => api.cancelRichiesta(id as string))} disabled={busy}><Text style={styles.cancelText}>✕ {t("cancelRequest")}</Text></Pressable>
+        {/* Spec 4 — provider actions on confirmed/completed */}
+        {!isClient && r.provider_scelto ? (
+          <View style={[styles.card, shadow.card]}>
+            {["confermata", "in_corso"].includes(r.stato) ? (
+              <>
+                <Pressable testID="provider-noshow" style={styles.linkBtn} onPress={() => doNoShow("client")} disabled={busy}><Text style={styles.linkBtnText}>⚠️ {t("s4NoShow")}</Text></Pressable>
+                <Pressable testID="provider-cancel" style={styles.cancelBtn} onPress={() => Alert.alert(t("s4ProviderCancel"), "", [{ text: t("cancel") || "Annulla", style: "cancel" }, { text: "OK", style: "destructive", onPress: () => act(() => api.providerCancel(id as string, "")) }])} disabled={busy}><Text style={styles.cancelText}>✕ {t("s4ProviderCancel")}</Text></Pressable>
+              </>
+            ) : null}
+            {["completata", "recensita"].includes(r.stato) && !r.valutazione_cliente ? (
+              <>
+                <Text style={styles.sectionLabel}>{t("s4RateClient")}</Text>
+                <View style={styles.stars}>{[1, 2, 3, 4, 5].map((i) => (
+                  <Pressable key={i} testID={`crate-${i}`} onPress={() => setCRating(i)} hitSlop={6}><Ionicons name={i <= cRating ? "star" : "star-outline"} size={28} color={colors.warning} /></Pressable>))}</View>
+                {[["condizioni_diverse", t("s4FlagConditions")], ["richieste_fuori_accordo", t("s4FlagOutside")], ["comportamento_irrispettoso", t("s4FlagDisrespect")]].map(([id2, label]) => (
+                  <Pressable key={id2} testID={`cflag-${id2}`} style={styles.flagRow} onPress={() => toggleFlag(id2)}>
+                    <Ionicons name={cFlags.includes(id2) ? "checkbox" : "square-outline"} size={20} color={colors.brand} /><Text style={styles.flagTxt}>{label}</Text>
+                  </Pressable>))}
+                <TextInput testID="cnote-input" style={styles.input} value={cNote} onChangeText={setCNote} placeholder="..." placeholderTextColor={colors.muted} multiline />
+                <Button testID="submit-crate" label={t("s4RateClient")} loading={busy} onPress={() => act(() => api.rateClient(id as string, cRating, cFlags, cNote))} />
+              </>
+            ) : null}
+            {r.stato === "recensita" && r.recensione && !r.recensione.reply ? (
+              <>
+                <Text style={styles.sectionLabel}>{t("s4ReplyReview")}</Text>
+                <TextInput testID="reply-input" style={styles.input} value={reply} onChangeText={setReply} placeholder={t("s4Reply")} placeholderTextColor={colors.muted} multiline />
+                <Button testID="submit-reply" label={t("s4Send")} loading={busy} onPress={() => act(() => api.replyReview(id as string, reply))} />
+              </>
+            ) : null}
+          </View>
+        ) : null}
+          <Pressable testID="cancel-richiesta" style={styles.cancelBtn} onPress={doCancel} disabled={busy}><Text style={styles.cancelText}>✕ {t("cancelRequest")}</Text></Pressable>
         ) : null}
       </ScrollView>
 
@@ -223,6 +275,10 @@ const styles = StyleSheet.create({
   declineLink: { alignSelf: "center", marginTop: spacing.md }, declineText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.error },
   cancelBtn: { alignSelf: "center", marginTop: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.error },
   cancelText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.error },
+  linkBtn: { alignSelf: "center", marginTop: spacing.sm, paddingVertical: spacing.xs },
+  linkBtnText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.warning },
+  flagRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: spacing.sm },
+  flagTxt: { flex: 1, fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface },
   rowOpt: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, marginBottom: spacing.sm },
   optOn: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
   optText: { fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface },

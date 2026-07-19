@@ -129,13 +129,25 @@ export const api = {
   createRichiesta: (data: any) => request("/pulizie/richieste", { method: "POST", body: JSON.stringify(data) }),
   myRichieste: () => request("/pulizie/richieste"),
   getRichiesta: (id: string) => request(`/pulizie/richieste/${id}`),
-  cancelRichiesta: (id: string) => request(`/pulizie/richieste/${id}/cancel`, { method: "POST" }),
+  cancelRichiesta: (id: string, reason: string = "") => request(`/richieste/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   confirmRichiesta: (id: string, provider_id: string) =>
     request(`/pulizie/richieste/${id}/confirm`, { method: "POST", body: JSON.stringify({ provider_id }) }),
   startRichiesta: (id: string) => request(`/pulizie/richieste/${id}/start`, { method: "POST" }),
   completeRichiesta: (id: string) => request(`/pulizie/richieste/${id}/complete`, { method: "POST" }),
   reviewRichiesta: (id: string, rating: number, comment: string) =>
-    request(`/pulizie/richieste/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
+    request(`/richieste/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
+  // Spec 4 — generic engine (all categories)
+  cancelPolicy: (id: string) => request(`/richieste/${id}/cancel-policy`),
+  providerCancel: (id: string, reason: string = "") => request(`/richieste/${id}/provider-cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  reportNoShow: (id: string, against: "client" | "provider") => request(`/richieste/${id}/no-show`, { method: "POST", body: JSON.stringify({ against }) }),
+  reportDelay: (id: string, minutes: number) => request(`/richieste/${id}/report-delay`, { method: "POST", body: JSON.stringify({ minutes }) }),
+  pauseRecurrence: (id: string) => request(`/richieste/${id}/pause`, { method: "POST" }),
+  resumeRecurrence: (id: string) => request(`/richieste/${id}/resume`, { method: "POST" }),
+  deleteReview: (id: string) => request(`/richieste/${id}/review`, { method: "DELETE" }),
+  replyReview: (id: string, reply: string) => request(`/richieste/${id}/review/reply`, { method: "POST", body: JSON.stringify({ reply }) }),
+  providerReviews: (providerId: string) => request(`/providers/${providerId}/reviews`),
+  rateClient: (id: string, rating: number, flags: string[], note: string) => request(`/richieste/${id}/rate-client`, { method: "POST", body: JSON.stringify({ rating, flags, note }) }),
+  getClientRating: (id: string) => request(`/richieste/${id}/client-rating`),
   pulizieIncoming: () => request("/pulizie/incoming"),
   proposeRichiesta: (id: string, data: { accept: boolean; variation_reason?: string | null; variation_price?: number | null; message?: string }) =>
     request(`/pulizie/richieste/${id}/propose`, { method: "POST", body: JSON.stringify(data) }),

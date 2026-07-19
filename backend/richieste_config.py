@@ -79,6 +79,24 @@ LF_PROVIDER_HOURS = 280.0        # tetto ore annue del lavoratore
 LF_AGEVOLATE_WEIGHT = 0.75       # peso compensi categorie agevolate (studente<25/pensionato/disoccupato)
 LF_WARN_THRESHOLD = 0.8          # soglia avvisi preventivi (80%)
 
+# --- Spec 4: cancellazioni, no-show, recensioni (tutte configurabili da admin) ---
+SPEC4_DEFAULTS = {
+    "cancel_free_hours": 48,        # >= : rimborso pieno
+    "cancel_fee_only_hours": 24,    # tra fee_only e free: perde solo la fee
+    "cancel_late_labor_pct": 50,    # < fee_only: perde fee + questa % del lavoro (all'impresa)
+    "lf_free_hours": 48,            # Libretto: gratis fino a queste ore (poi strike + perde fee)
+    "noshow_grace_min": 15,         # minuti dopo l'orario per poter segnalare no-show
+    "client_strike_window_days": 180,
+    "client_strike_threshold": 3,   # eventi (cancel<24h + no-show) che attivano alert admin
+    "review_window_days": 14,
+    "review_reminder_days": 2,
+    "recurring_review_cooldown_days": 30,
+    "new_provider_reviews": 3,      # sotto questo numero: badge "Nuovo su JOBBY"
+}
+
+# fascia oraria -> ora indicativa di inizio (per stimare le ore al servizio)
+FASCIA_START_HOUR = {"mattina": 9, "pomeriggio": 15, "sera": 19, "immediato": 0, "serale": 19, "festivo": 9}
+
 
 def recommended_hours(mq_band: str, tipo: str) -> int:
     return ORE_TABLE.get(mq_band, ORE_TABLE["80_120"]).get(tipo, 3)

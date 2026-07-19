@@ -164,6 +164,7 @@ ADMIN_HTML = """<!DOCTYPE html>
       <div class="tab" data-t="babysitting" onclick="go('babysitting')">Babysitting</div>
       <div class="tab" data-t="driver" onclick="go('driver')">Driver</div>
       <div class="tab" data-t="artigiani" onclick="go('artigiani')">Artigiani</div>
+      <div class="tab" data-t="spec4" onclick="go('spec4')">Regole</div>
       <div class="tab" data-t="onboarding" onclick="go('onboarding')">Onboarding</div>
     </div>
 
@@ -176,6 +177,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <div id="babysitting" class="hidden"></div>
     <div id="driver" class="hidden"></div>
     <div id="artigiani" class="hidden"></div>
+    <div id="spec4" class="hidden"></div>
     <div id="onboarding" class="hidden"></div>
   </div>
 </div>
@@ -301,10 +303,10 @@ async function connect(){
   catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
 }
 function go(t){
-  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','driver','artigiani','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
+  ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','driver','artigiani','spec4','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.t===t));
   document.getElementById(t).classList.remove('hidden');
-  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='driver')loadDriver(); if(t==='artigiani')loadArtigiani(); if(t==='onboarding')loadOnboarding();
+  if(t==='dashboard')loadDash(); if(t==='categories')loadCats(); if(t==='users')loadUsers(); if(t==='bookings')loadBookings(); if(t==='disputes')loadDisputes(); if(t==='pulizie')loadPulizie(); if(t==='babysitting')loadBabysitting(); if(t==='driver')loadDriver(); if(t==='artigiani')loadArtigiani(); if(t==='spec4')loadSpec4(); if(t==='onboarding')loadOnboarding();
 }
 async function loadDash(){
   const s=await api('/admin/stats');
@@ -516,6 +518,28 @@ async function inviteDriver(rid){
   await api('/admin/driver/richieste/'+rid+'/invite',{method:'POST',body:JSON.stringify({provider_ids:ids})});
   loadDriver();
 }
+async function loadSpec4(){
+  const cfg=await api('/admin/spec4/config');
+  const mod=await api('/admin/spec4/moderation');
+  const rel=await api('/admin/spec4/reliability');
+  let html='<div class="sec">Soglie configurabili</div><div class="row" style="flex-wrap:wrap;gap:10px">';
+  const fields=[['cancel_free_hours','Ore rimborso pieno'],['cancel_fee_only_hours','Ore solo-fee'],['cancel_late_labor_pct','% lavoro indennizzo'],['lf_free_hours','Libretto ore gratis'],['client_strike_threshold','Strike soglia'],['client_strike_window_days','Finestra strike (gg)'],['review_window_days','Finestra recensione (gg)'],['new_provider_reviews','Recensioni badge "Nuovo"']];
+  fields.forEach(f=>{html+=`<label style="font-size:13px;color:var(--muted)">${f[1]}<br><input id="s4_${f[0]}" type="number" value="${cfg[f[0]]}" style="width:120px;padding:6px;border:1px solid var(--line);border-radius:8px"/></label>`;});
+  html+=`</div><button class="b-approve" style="margin-top:10px" onclick="saveSpec4()">Salva soglie</button>`;
+  html+='<div class="sec" style="margin-top:18px">Recensioni da moderare ('+mod.length+')</div>';
+  if(!mod.length){html+='<div class="muted">Nessuna recensione in coda.</div>';}
+  mod.forEach(m=>{const rv=m.recensione||{};html+=`<div class="row"><div class="t"><b>${'★'.repeat(rv.rating||0)}</b> <span class="muted">${(m.cliente_nome||'')} → ${(m.provider_nome||'')} · ${m.categoria||''}</span><div>${(rv.comment||'').replace(/</g,'&lt;')}</div></div><button class="b-approve" onclick="moderate('${m.richiesta_id}','approve')">Pubblica</button> <button class="b-reject" onclick="moderate('${m.richiesta_id}','hide')">Nascondi</button></div>`;});
+  html+='<div class="sec" style="margin-top:18px">Affidabilità</div>';
+  if(!rel.length){html+='<div class="muted">Nessun evento.</div>';}
+  rel.forEach(u=>{html+=`<div class="row"><div class="t"><b>${u.name||u.user_id}</b> <span class="pill">${u.role}</span><div class="muted">Strike cliente: <b style="color:${u.over_threshold?'#DE4B3F':'inherit'}">${u.client_strikes}</b>${u.over_threshold?' ⚠️':''} · Eventi provider: ${u.provider_events} · Punteggio privato: ${u.private_avg!=null?u.private_avg+' ('+u.private_count+')':'—'}</div></div></div>`;});
+  document.getElementById('spec4').innerHTML=html;
+}
+async function saveSpec4(){
+  const body={};['cancel_free_hours','cancel_fee_only_hours','cancel_late_labor_pct','lf_free_hours','client_strike_threshold','client_strike_window_days','review_window_days','new_provider_reviews'].forEach(k=>{body[k]=Number(document.getElementById('s4_'+k).value);});
+  await api('/admin/spec4/config',{method:'POST',body:JSON.stringify(body)});
+  alert('Soglie salvate'); loadSpec4();
+}
+async function moderate(rid,action){ await api('/admin/spec4/moderation/'+rid,{method:'POST',body:JSON.stringify({action})}); loadSpec4(); }
 async function loadArtigiani(){
   const list=await api('/admin/artigiani/richieste');
   if(!list.length){document.getElementById('artigiani').innerHTML='<div class="muted" style="padding:20px">No open artigiani requests.</div>';return;}
