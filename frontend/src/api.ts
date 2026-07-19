@@ -102,6 +102,11 @@ export const api = {
   topupStatus: (sessionId: string) => request(`/wallet/topup/status/${sessionId}`),
   payBooking: (bookingId: string, originUrl: string) =>
     request(`/bookings/${bookingId}/pay`, { method: "POST", body: JSON.stringify({ origin_url: originUrl }) }),
+  createPaypalOrder: (bookingId: string, originUrl: string) =>
+    request(`/bookings/${bookingId}/paypal/create`, { method: "POST", body: JSON.stringify({ origin_url: originUrl }) }),
+  capturePaypal: (orderId: string) => request(`/paypal/capture/${orderId}`, { method: "POST" }),
+  payoutProvider: (bookingId: string) => request(`/bookings/${bookingId}/payout`, { method: "POST" }),
+  setPaypalEmail: (email: string) => request("/wallet/paypal-email", { method: "PUT", body: JSON.stringify({ email }) }),
   paymentStatus: (sessionId: string) => request(`/payments/status/${sessionId}`),
   setPaymentMethod: (data: any) => request("/wallet/payment-method", { method: "PUT", body: JSON.stringify(data) }),
   setBankAccount: (data: any) => request("/wallet/bank-account", { method: "PUT", body: JSON.stringify(data) }),

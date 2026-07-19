@@ -14,7 +14,7 @@ async def get_wallet(user=Depends(get_current_user)):
     txs = await db.transactions.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {"balance": round(user.get("wallet_balance", 0), 2), "transactions": txs,
             "payment_method": user.get("payment_method"), "bank_account": user.get("bank_account"),
-            "crypto_wallets": user.get("crypto_wallets", []), "mock": True}
+            "crypto_wallets": user.get("crypto_wallets", []), "paypal_email": user.get("paypal_email", ""), "mock": True}
 
 
 @router.post("/wallet/add")

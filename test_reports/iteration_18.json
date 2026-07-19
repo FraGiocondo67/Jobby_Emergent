@@ -1,0 +1,37 @@
+{
+  "summary": "PayPal SANDBOX integration validated. 12/12 pytest cases pass. PUT /api/wallet/paypal-email accepts valid email (200 + persisted in GET /api/wallet) and rejects 'notanemail' with 400 invalid_email; unauthenticated returns 401. POST /api/bookings/{id}/paypal/create: unknown id -> 404 booking_not_found; UNPAID booking owned by demo-preview-token-123 -> 200 with real order_id (PayPal shape) + approval url on www.sandbox.paypal.com; same booking with biz-test-token-999 -> 403 forbidden. POST /api/bookings/{id}/payout: called by non-provider (client) -> 403 forbidden; called by unrelated user (biz) -> 403 forbidden; called by actual provider on UNPAID booking -> 400 not_paid (verified after seeding a provider session with paypal_email); unknown id -> 404. Sanity: GET /api/categories and GET /api/bookings still 200. Buyer approval + capture and full payout success intentionally NOT tested (no sandbox buyer available, per request).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_paypal_integration.py",
+    "/app/test_reports/pytest/iter18_paypal.xml"
+  ],
+  "action_items": [
+    "Consider capturing an order via a manual sandbox buyer approval when possible, to exercise POST /api/paypal/capture/{order_id} (currently only creation + permission branches were validated).",
+    "Optional: add server-side email regex/validator for paypal-email (currently only '@' check) — e.g. reject 'a@' or '@b'."
+  ],
+  "critical_code_review_comments": [
+    "payments_paypal.set_paypal_email: validation is '@' in email only — accepts '@' alone, 'a@' or '@b'. Consider stricter validation (pydantic EmailStr or regex).",
+    "payments_paypal.create_paypal_order: currency is hard-coded 'EUR' — matches JOBBY's Italy scope; fine for MVP but note if multi-currency comes later.",
+    "payments_paypal.capture_paypal_order: no auth check that the caller is the booking customer (any authenticated user with a valid order_id could trigger a capture attempt). Consider verifying tx['user_id'] == user['user_id'] before calling PayPal capture.",
+    "payments_paypal.payout_provider: correct guards (not owner -> 403, not paid -> 400, already paid out -> 400, no paypal_email -> 400). Good.",
+    "PAYPAL_CLIENT_ID/PAYPAL_SECRET read at import time via os.environ.get(..., '') — silently empties if unset. Consider raising at startup if PayPal router is registered but creds missing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_paypal_integration.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "n/a (backend-only request)"},
+  "seed_data_creation": "Temporary user_sessions doc created for provider prov_85f40cbec39e (session_token 'TEST_prov_token_bec39e', expires_at=+1d) to test payout not_paid branch. Doc is deleted in test teardown. Also set paypal_email on that provider's users doc for test purposes (persists — safe/no side effects on business logic).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "PayPal sandbox creds are live in /app/backend/.env (PAYPAL_CLIENT_ID/SECRET/BASE). Real orders are created against api-m.sandbox.paypal.com and approve URLs are on www.sandbox.paypal.com. To fully exercise capture and payout, a PayPal sandbox buyer login is required. The demo-preview account now has paypal_email='x@paypal.com'. Test file: /app/backend/tests/test_paypal_integration.py — reusable for regressions.",
+  "rca_of_issue": "N/A — no bugs found. All 4 requested paths (paypal-email set + validate, create order 200/403/404, payout 403/400/404, sanity) behave exactly as specified."
+}

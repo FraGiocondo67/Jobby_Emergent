@@ -39,6 +39,8 @@ export default function PaymentsSettings() {
   const [bankOpen, setBankOpen] = useState(false);
   const [card, setCard] = useState({ card_holder: "", card_last4: "", expiry: "", cvv: "" });
   const [iban, setIban] = useState({ account_holder: "", iban: "" });
+  const [paypalEmail, setPaypalEmail] = useState("");
+  const [paypalOpen, setPaypalOpen] = useState(false);
   // add-crypto form
   const [cwOpen, setCwOpen] = useState(false);
   const [cwToken, setCwToken] = useState<string | null>(null);
@@ -49,9 +51,13 @@ export default function PaymentsSettings() {
   const isProvider = user?.role === "provider" || user?.role === "business";
 
   const load = useCallback(async () => {
-    try { const w = await api.wallet(); setPm(w.payment_method); setBank(w.bank_account); setWallets(w.crypto_wallets || []); } catch {}
+    try { const w = await api.wallet(); setPm(w.payment_method); setBank(w.bank_account); setWallets(w.crypto_wallets || []); setPaypalEmail(w.paypal_email || ""); } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const savePaypal = async () => {
+    try { const r = await api.setPaypalEmail(paypalEmail.trim()); setPaypalEmail(r.paypal_email); setPaypalOpen(false); Haptics.selectionAsync().catch(() => {}); } catch {}
+  };
 
   const saveCard = async () => {
     const r = await api.setPaymentMethod({ ...card, card_brand: "visa", card_last4: card.card_last4.slice(-4) });
@@ -121,6 +127,20 @@ export default function PaymentsSettings() {
                 <TextInput testID="bank-holder" style={styles.input} placeholder="Account holder" placeholderTextColor={colors.muted} value={iban.account_holder} onChangeText={(v) => setIban({ ...iban, account_holder: v })} />
                 <TextInput testID="bank-iban" style={styles.input} placeholder="IBAN" placeholderTextColor={colors.muted} autoCapitalize="characters" value={iban.iban} onChangeText={(v) => setIban({ ...iban, iban: v })} />
                 <Pressable testID="save-bank" style={styles.saveBtn} onPress={saveBank}><Text style={styles.saveText}>{t("save")}</Text></Pressable>
+              </View>
+            ) : null}
+
+            {/* PayPal payout email */}
+            <Text style={styles.section}>{t("paypalEmailLabel")}</Text>
+            <Pressable style={[styles.setupRow, shadow.card]} testID="paypal-row" onPress={() => setPaypalOpen((v) => !v)}>
+              <Ionicons name="logo-paypal" size={22} color="#0070BA" />
+              <Text style={styles.setupText}>{paypalEmail || t("notSet")}</Text>
+              <Text style={styles.setupAction}>{paypalEmail ? t("save") : t("addBank")}</Text>
+            </Pressable>
+            {paypalOpen ? (
+              <View style={styles.form}>
+                <TextInput testID="paypal-email" style={styles.input} placeholder="you@paypal.com" placeholderTextColor={colors.muted} keyboardType="email-address" autoCapitalize="none" value={paypalEmail} onChangeText={setPaypalEmail} />
+                <Pressable testID="save-paypal" style={styles.saveBtn} onPress={savePaypal}><Text style={styles.saveText}>{t("save")}</Text></Pressable>
               </View>
             ) : null}
 

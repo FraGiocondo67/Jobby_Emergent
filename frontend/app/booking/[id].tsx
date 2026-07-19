@@ -13,7 +13,7 @@ import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 
 export default function BookingDetail() {
-  const { id, new: isNew, session_id } = useLocalSearchParams<{ id: string; new?: string; session_id?: string }>();
+  const { id, new: isNew, session_id, token } = useLocalSearchParams<{ id: string; new?: string; session_id?: string; token?: string }>();
   const { user } = useAuth();
   const { t } = useLang();
   const router = useRouter();
@@ -50,6 +50,57 @@ export default function BookingDetail() {
 
   // Handle return from Stripe (web redirect adds ?session_id=...)
   useEffect(() => { if (session_id) pollPayment(session_id as string); }, [session_id, pollPayment]);
+
+  const capturePaypal = useCallback(async (orderId: string) => {
+    setPaying(true);
+    try {
+      const s = await api.capturePaypal(orderId);
+      if (s.paid) {
+        await load();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        Alert.alert(t("paymentDone"), `€${(s.amount || 0).toFixed(2)}`);
+      }
+    } catch {}
+    setPaying(false);
+  }, [load, t]);
+
+  // Handle return from PayPal (web redirect adds ?token=<order_id>)
+  useEffect(() => { if (token) capturePaypal(token as string); }, [token, capturePaypal]);
+
+  const payPaypal = async () => {
+    setPaying(true);
+    Haptics.selectionAsync().catch(() => {});
+    try {
+      const origin = Platform.OS === "web" && typeof window !== "undefined"
+        ? window.location.origin
+        : (process.env.EXPO_PUBLIC_BACKEND_URL || "");
+      const { url, order_id, already_paid } = await api.createPaypalOrder(id as string, origin);
+      if (already_paid) { await load(); setPaying(false); return; }
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = url;
+      } else {
+        await WebBrowser.openBrowserAsync(url);
+        await capturePaypal(order_id);
+      }
+    } catch {
+      Alert.alert(t("error") || "Error", t("topupError"));
+      setPaying(false);
+    }
+  };
+
+  const withdraw = async () => {
+    setBusy(true);
+    try {
+      await api.payoutProvider(id as string);
+      await load();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Alert.alert(t("payoutDone"));
+    } catch (e: any) {
+      if (String(e?.message || "").includes("no_paypal_email")) Alert.alert(t("noPaypalEmailMsg"));
+      else Alert.alert(t("error"));
+    }
+    setBusy(false);
+  };
 
   const pay = async () => {
     setPaying(true);
@@ -154,8 +205,21 @@ export default function BookingDetail() {
           ) : (
             <>
               <Button testID="pay-button" label={`${t("payNow")} · €${b.total.toFixed(2)}`} icon="card" loading={paying} onPress={pay} />
+              <Button testID="paypal-button" label={t("payWithPaypal")} icon="logo-paypal" variant="secondary" loading={paying} onPress={payPaypal} style={{ marginTop: spacing.sm }} />
               <Text style={styles.stripeNote}>💳 {t("securedByStripe")}</Text>
             </>
+          )
+        ) : null}
+
+        {/* Provider payout (withdraw earnings to PayPal) */}
+        {isProvider && b.payment_status === "paid" && b.status === "completed" ? (
+          b.payout_status === "paid" ? (
+            <View style={styles.paidBanner} testID="payout-banner">
+              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+              <Text style={styles.paidText}>{t("payoutWithdrawn")} · €{b.labor_cost.toFixed(2)}</Text>
+            </View>
+          ) : (
+            <Button testID="payout-button" label={`${t("withdrawPaypal")} · €${b.labor_cost.toFixed(2)}`} icon="logo-paypal" loading={busy} onPress={withdraw} />
           )
         ) : null}
 

@@ -254,3 +254,19 @@
   Curl-verified: options (10 ops/14 billers), create beneficiary, topup wallet (benefit 0.4), abroad wallet (benefit 2.5), insufficient_funds 400, history all=2 topup=1.
   TEST both (do NOT retest Phase A/B1/B2). Client demo-preview-token-123 (client), storage key jobby_session_token JSON.stringify. NOTE: demo user demo@jobby.app is read-only (blocked) — use demo-preview-token-123 which is a normal client. Admin token jobby-admin-7c2f9a.
   Frontend flows: /pay hub -> topup: pick operator + phone + amount + wallet -> Pay -> success -> lands on history; bill similarly; abroad: add a beneficiary via svc-add-ben then select + amount + pay; history filter chips filter list. PayPal NOT built yet (awaiting keys) — do not test PayPal.
+
+## agent_communication (2026-06 fork — PayPal real integration, SANDBOX)
+-agent: "main"
+-message: |
+  PayPal integrated (SANDBOX — keys provided authenticate only against api-m.sandbox.paypal.com; live keys pending). routers/payments_paypal.py:
+  - PUT /api/wallet/paypal-email {email} -> stores provider payout email (400 invalid_email).
+  - POST /api/bookings/{id}/paypal/create {origin_url} -> creates PayPal v2 order for booking.total (EUR), returns {order_id, url(approval)}; 404 booking_not_found, 403 forbidden (non-owner), already_paid short-circuit.
+  - POST /api/paypal/capture/{order_id} -> captures order, marks booking paid (idempotent via credited flag), records transaction.
+  - POST /api/bookings/{id}/payout -> provider withdraws labor_cost to their paypal_email via PayPal Payouts; 400 not_paid / already_paid_out / no_paypal_email, 403 non-provider.
+  Frontend: booking/[id].tsx has 'Paga con PayPal' (paypal-button) beside Stripe, handles web return via ?token=<order_id> -> capture, and provider 'Ritira su PayPal' (payout-button) when booking paid+completed + payout-banner when done. payments-settings.tsx has PayPal email field (paypal-row/paypal-email/save-paypal). wallet GET returns paypal_email.
+  Curl-verified: OAuth token OK (sandbox), set paypal-email OK, order create returns real sandbox approval URL + order_id (booking bkg_77489dbd2535). Capture & payout require a PayPal sandbox BUYER login -> cannot be automated in preview.
+  TEST backend only (do NOT retest other phases): validate error/permission paths WITHOUT completing a real PayPal approval:
+  - PUT /api/wallet/paypal-email valid + invalid_email (Bearer demo-preview-token-123).
+  - POST /api/bookings/{id}/paypal/create: 404 for unknown booking; 403 when a different user (biz-test-token-999) tries to pay a booking owned by demo-preview-token-123; success returns order_id+url for an unpaid booking owned by the client.
+  - POST /api/bookings/{id}/payout: 400 not_paid for an unpaid booking (provider bearer); 403 when a non-provider calls it. (Do NOT expect a real payout to succeed.)
+  Credentials: client demo-preview-token-123; other user biz-test-token-999; admin jobby-admin-7c2f9a.
