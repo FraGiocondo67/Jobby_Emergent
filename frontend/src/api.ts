@@ -102,6 +102,16 @@ export const api = {
   payouts: () => request("/wallet/payouts"),
   payEscrow: (bookingId: string) => request(`/bookings/${bookingId}/pay-escrow`, { method: "POST" }),
   cancelBooking: (bookingId: string) => request(`/bookings/${bookingId}/cancel`, { method: "POST" }),
+  // disputes
+  disputeReasonCodes: () => request("/disputes/reason-codes"),
+  createDispute: (data: { booking_id: string; reason_code: string; description: string }) =>
+    request("/disputes", { method: "POST", body: JSON.stringify(data) }),
+  disputes: () => request("/disputes"),
+  getDispute: (id: string) => request(`/disputes/${id}`),
+  disputeMessage: (id: string, text: string) => request(`/disputes/${id}/message`, { method: "POST", body: JSON.stringify({ text }) }),
+  disputeRespond: (id: string, data: { accept: boolean; refund_pct?: number; message?: string }) =>
+    request(`/disputes/${id}/respond`, { method: "POST", body: JSON.stringify(data) }),
+  disputeEscalate: (id: string) => request(`/disputes/${id}/escalate`, { method: "POST" }),
   topupCheckout: (packageId: string, originUrl: string) =>
     request("/wallet/topup/checkout", { method: "POST", body: JSON.stringify({ package_id: packageId, origin_url: originUrl }) }),
   topupStatus: (sessionId: string) => request(`/wallet/topup/status/${sessionId}`),
