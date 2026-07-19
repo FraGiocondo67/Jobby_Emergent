@@ -98,5 +98,7 @@ async def seed_categories():
     await db.categories.update_many(
         {"kind": {"$in": ["standard", "proximity"]}, "commission_pct": {"$exists": False}},
         {"$set": {"commission_pct": 10.0}})
-    # Migration: "tuttofare" is deprecated and replaced by "artigiani" → keep it inactive.
-    await db.categories.update_one({"cat_id": "tuttofare"}, {"$set": {"active": False}})
+    # Migration: deprecated/hidden standard categories must stay inactive on fresh DBs
+    # (sarta & petsitting retired; tuttofare replaced by artigiani) — mirrors Preview state.
+    await db.categories.update_many({"cat_id": {"$in": ["tuttofare", "sarta", "petsitting"]}},
+                                    {"$set": {"active": False}})
