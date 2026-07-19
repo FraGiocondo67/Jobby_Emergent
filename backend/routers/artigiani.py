@@ -297,7 +297,7 @@ async def incoming(user=Depends(get_current_user)):
             if pr is not None and r.get("urgente"):
                 pr = round(pr * (1 + float(lst.get("urgenze_pct", 0)) / 100.0), 2)
         else:
-            dist = haversine(r.get("lat", 0), r.get("lng", 0), user.get("lat", 0), user.get("lng", 0))
+            dist = round(haversine(r.get("lat", 0), r.get("lng", 0), user.get("lat", 0), user.get("lng", 0)), 1)
             pr = compute_chiamata_fee(lst, dist, r.get("urgente", False))
         r["my_price"] = pr
         r["my_proposal"] = next((p for p in r.get("proposte", []) if p.get("provider_id") == user["user_id"]), None)
@@ -330,7 +330,7 @@ async def propose(rid: str, body: ProposeIn, user=Depends(get_current_user)):
         if r.get("urgente"):
             prezzo = round(prezzo * (1 + float(lst.get("urgenze_pct", 0)) / 100.0), 2)
     else:
-        dist = haversine(r.get("lat", 0), r.get("lng", 0), user.get("lat", 0), user.get("lng", 0))
+        dist = round(haversine(r.get("lat", 0), r.get("lng", 0), user.get("lat", 0), user.get("lng", 0)), 1)
         prezzo = compute_chiamata_fee(lst, dist, r.get("urgente", False))
     proposal = {
         "provider_id": user["user_id"], "provider_nome": user.get("business_name") or user.get("name", ""),
