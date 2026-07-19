@@ -83,6 +83,21 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Push notifications for new missions/acceptances (on user request; needs build).
 - Expand categories: babysitting, dogsitting, tutoring.
 
+## Implemented (2026-06 — Spec 3 Pagamenti, avvio)
+- **Fix bug**: la HOME "+ Richiedi servizio" → `/list/all` ora instrada Babysitting/Driver/Artigiani ai NUOVI configuratori (prima cadevano nel vecchio `/request/<cat>`).
+- **Regola fee 50/50 (Impresa)**: `price_breakdown` corretto — cliente paga lavoro + metà fee; provider netto = lavoro − metà fee; JOBBY tiene la fee intera. `confirm()` registra `pagamento_fee.importo=fee_client` (+`jobby_fee_total`) e `pagamento_lavoro.importo=provider_net` (+`fee_provider`).
+- **Libretto**: fee 100% a carico del cliente (`total_client=lf_nominale+jobby_fee`), invariato. Testato 20/20 (iter28).
+- Chiavi Stripe (STRIPE_API_KEY, STRIPE_CONNECT_SECRET_KEY) e PayPal (PAYPAL_CLIENT_ID/SECRET/BASE) già presenti in `backend/.env`.
+
+## Spec 3 — Backlog pagamenti (da fare, in ordine deciso dall'utente)
+1. Addebito REALE alla conferma: Stripe Connect destination charge (application_fee = fee intera, transfer_data.amount = provider_net) + PayPal Orders v2 con platform_fees. SetupIntent off_session per ricorrenti. [tutte le categorie]
+2. Rimborsi automatici: cancellazione cliente ≥48h → rimborso integrale; cancellazione provider → rimborso + risostituzione + evento su profilo (reverse_transfer + refund_application_fee).
+3. Garanzia primo servizio (nuovo cliente, segnalazione ≤48h, gestione admin, rimborso min. fee).
+4. Contestazione ≤48h: Impresa congelamento pre-trasferimento; Libretto sospensione comunicazione INPS.
+5. Motore ricorrenti: 1ª visita alla conferma, successive addebito 48h prima + notifica + gestione fallimenti (sospensione a 24h).
+6. Rifiniture Libretto: importo mancante + ricarica "un mese", avviso tempi F24, suggerimento Impresa per prenotazioni ravvicinate.
+7. Estendere tutte le regole ad Artigiani/Babysitting/Driver.
+
 ## Next Tasks
 - Add authorization checks + provider profile detail screen.
 - Consider Stripe/YOB Pay for the JOBBY service fee.
