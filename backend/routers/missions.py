@@ -126,7 +126,8 @@ async def select_provider(mission_id: str, body: SelectIn, user=Depends(get_curr
         "provider_picture": accept.get("picture", ""), "category": m["category"], "service_type": m["service_type"],
         "address": m["address"], "date": m["date"], "time": m["time"], "duration_hours": m["duration_hours"],
         "labor_cost": labor, "jobby_fee": jobby_fee, "commission_pct": commission_pct, "total": round(labor + jobby_fee, 2),
-        "status": "confirmed", "payment_status": "unpaid", "check_in_on_time": False, "reviewed": False, "client_rated": False,
+        "status": "confirmed", "payment_status": "unpaid", "escrow_status": "none", "escrow_amount": round(labor + jobby_fee, 2),
+        "check_in_on_time": False, "reviewed": False, "client_rated": False,
         "created_at": now_utc().isoformat()})
     await db.missions.update_one({"mission_id": mission_id}, {"$set": {"status": "booked", "chosen_provider_id": body.provider_id}})
     return await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})

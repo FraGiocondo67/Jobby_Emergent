@@ -5,7 +5,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import * as WebBrowser from "expo-web-browser";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
@@ -13,7 +12,7 @@ import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 
 export default function BookingDetail() {
-  const { id, new: isNew, session_id, token } = useLocalSearchParams<{ id: string; new?: string; session_id?: string; token?: string }>();
+  const { id, new: isNew } = useLocalSearchParams<{ id: string; new?: string }>();
   const { user } = useAuth();
   const { t } = useLang();
   const router = useRouter();
@@ -30,97 +29,31 @@ export default function BookingDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  const pollPayment = useCallback(async (sid: string) => {
-    setPaying(true);
-    for (let i = 0; i < 6; i++) {
-      try {
-        const s = await api.paymentStatus(sid);
-        if (s.paid) {
-          await load();
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-          Alert.alert(t("paymentDone"), `€${(s.amount || 0).toFixed(2)}`);
-          break;
-        }
-        if (s.status === "expired") break;
-      } catch {}
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-    setPaying(false);
-  }, [load, t]);
-
-  // Handle return from Stripe (web redirect adds ?session_id=...)
-  useEffect(() => { if (session_id) pollPayment(session_id as string); }, [session_id, pollPayment]);
-
-  const capturePaypal = useCallback(async (orderId: string) => {
-    setPaying(true);
-    try {
-      const s = await api.capturePaypal(orderId);
-      if (s.paid) {
-        await load();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        Alert.alert(t("paymentDone"), `€${(s.amount || 0).toFixed(2)}`);
-      }
-    } catch {}
-    setPaying(false);
-  }, [load, t]);
-
-  // Handle return from PayPal (web redirect adds ?token=<order_id>)
-  useEffect(() => { if (token) capturePaypal(token as string); }, [token, capturePaypal]);
-
-  const payPaypal = async () => {
+  const payEscrowNow = async () => {
     setPaying(true);
     Haptics.selectionAsync().catch(() => {});
     try {
-      const origin = Platform.OS === "web" && typeof window !== "undefined"
-        ? window.location.origin
-        : (process.env.EXPO_PUBLIC_BACKEND_URL || "");
-      const { url, order_id, already_paid } = await api.createPaypalOrder(id as string, origin);
-      if (already_paid) { await load(); setPaying(false); return; }
-      if (Platform.OS === "web" && typeof window !== "undefined") {
-        window.location.href = url;
-      } else {
-        await WebBrowser.openBrowserAsync(url);
-        await capturePaypal(order_id);
-      }
-    } catch {
-      Alert.alert(t("error") || "Error", t("topupError"));
-      setPaying(false);
-    }
-  };
-
-  const withdraw = async () => {
-    setBusy(true);
-    try {
-      await api.payoutProvider(id as string);
+      await api.payEscrow(id as string);
       await load();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      Alert.alert(t("payoutDone"));
+      Alert.alert(t("escrowHeldLabel"));
     } catch (e: any) {
-      if (String(e?.message || "").includes("no_paypal_email")) Alert.alert(t("noPaypalEmailMsg"));
-      else Alert.alert(t("error"));
-    }
-    setBusy(false);
+      if (String(e?.message || "").includes("insufficient_funds")) {
+        Alert.alert(t("insufficientDeposit"), "", [
+          { text: t("cancel"), style: "cancel" },
+          { text: t("depositWallet"), onPress: () => router.push("/wallet") },
+        ]);
+      } else Alert.alert(t("error"));
+    } finally { setPaying(false); }
   };
 
-  const pay = async () => {
-    setPaying(true);
-    Haptics.selectionAsync().catch(() => {});
+  const cancelBookingNow = async () => {
+    setBusy(true);
     try {
-      const origin = Platform.OS === "web" && typeof window !== "undefined"
-        ? window.location.origin
-        : (process.env.EXPO_PUBLIC_BACKEND_URL || "");
-      const { url, session_id: sid, already_paid } = await api.payBooking(id as string, origin);
-      if (already_paid) { await load(); setPaying(false); return; }
-      if (Platform.OS === "web" && typeof window !== "undefined") {
-        window.location.href = url;
-      } else {
-        await WebBrowser.openBrowserAsync(url);
-        await pollPayment(sid);
-      }
-    } catch {
-      Alert.alert(t("error") || "Error", t("topupError"));
-      setPaying(false);
-    }
+      await api.cancelBooking(id as string);
+      await load();
+      Alert.alert(t("status_cancelled"));
+    } catch { Alert.alert(t("error")); } finally { setBusy(false); }
   };
 
   const complete = async () => {
@@ -195,32 +128,27 @@ export default function BookingDetail() {
           </View>
         </View>
 
-        {/* Payment (client) */}
+        {/* Payment (client) — block estimated amount in escrow from wallet */}
         {!isProvider ? (
-          b.payment_status === "paid" ? (
+          b.escrow_status === "held" || b.payment_status === "paid" ? (
             <View style={styles.paidBanner} testID="paid-banner">
-              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-              <Text style={styles.paidText}>{t("paymentDone")} · €{b.total.toFixed(2)}</Text>
+              <Ionicons name="lock-closed" size={18} color={colors.success} />
+              <Text style={styles.paidText}>{t("escrowHeldLabel")} · €{b.total.toFixed(2)}</Text>
             </View>
-          ) : (
+          ) : b.status === "cancelled" || b.escrow_status === "refunded" ? null : (
             <>
-              <Button testID="pay-button" label={`${t("payNow")} · €${b.total.toFixed(2)}`} icon="card" loading={paying} onPress={pay} />
-              <Button testID="paypal-button" label={t("payWithPaypal")} icon="logo-paypal" variant="secondary" loading={paying} onPress={payPaypal} style={{ marginTop: spacing.sm }} />
-              <Text style={styles.stripeNote}>💳 {t("securedByStripe")}</Text>
+              <Button testID="escrow-button" label={`${t("blockInEscrow")} · €${b.total.toFixed(2)}`} icon="lock-closed" loading={paying} onPress={payEscrowNow} />
+              <Text style={styles.stripeNote}>🔒 {t("escrowInfo")}</Text>
             </>
           )
         ) : null}
 
-        {/* Provider payout (withdraw earnings to PayPal) */}
-        {isProvider && b.payment_status === "paid" && b.status === "completed" ? (
-          b.payout_status === "paid" ? (
-            <View style={styles.paidBanner} testID="payout-banner">
-              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-              <Text style={styles.paidText}>{t("payoutWithdrawn")} · €{b.labor_cost.toFixed(2)}</Text>
-            </View>
-          ) : (
-            <Button testID="payout-button" label={`${t("withdrawPaypal")} · €${b.labor_cost.toFixed(2)}`} icon="logo-paypal" loading={busy} onPress={withdraw} />
-          )
+        {/* Provider earnings note (funds land in the wallet, withdraw from there) */}
+        {isProvider && b.escrow_status === "released" ? (
+          <View style={styles.paidBanner} testID="earning-banner">
+            <Ionicons name="wallet" size={18} color={colors.success} />
+            <Text style={styles.paidText}>€{b.labor_cost.toFixed(2)} → {t("wallet")}</Text>
+          </View>
         ) : null}
 
         {b.status === "confirmed" && isProvider ? (
@@ -262,6 +190,11 @@ export default function BookingDetail() {
             <Text style={styles.reviewedText}>{t("done")}</Text>
           </View>
         ) : null}
+        {!isProvider && (b.status === "confirmed" || b.status === "in_progress") ? (
+          <Pressable testID="cancel-booking-button" style={styles.cancelBookingBtn} onPress={cancelBookingNow} disabled={busy}>
+            <Text style={styles.cancelBookingText}>✕ {t("cancelRequest")}{b.escrow_status === "held" ? ` · ${t("refund")}` : ""}</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -296,4 +229,6 @@ const styles = StyleSheet.create({
   paidBanner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, backgroundColor: "#E8F0EA", borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
   paidText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.success },
   stripeNote: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: spacing.sm, textAlign: "center" },
+  cancelBookingBtn: { marginTop: spacing.lg, alignSelf: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.error },
+  cancelBookingText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.error },
 });

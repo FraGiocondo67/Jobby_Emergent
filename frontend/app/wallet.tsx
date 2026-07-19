@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator, Alert, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,15 +21,50 @@ export default function Wallet() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ session_id?: string }>();
   const [balance, setBalance] = useState(0);
+  const [available, setAvailable] = useState(0);
+  const [pending, setPending] = useState(0);
+  const [holds, setHolds] = useState<any[]>([]);
+  const [hasBank, setHasBank] = useState(false);
+  const [hasCrypto, setHasCrypto] = useState(false);
+  const [wMethod, setWMethod] = useState<"bank" | "crypto" | "yobpay">("bank");
+  const [wAmount, setWAmount] = useState("");
   const [txs, setTxs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
-    try { const w = await api.wallet(); setBalance(w.balance); setTxs(w.transactions); } catch {}
+    try {
+      const w = await api.wallet();
+      setBalance(w.total_balance ?? w.balance);
+      setAvailable(w.available_balance ?? w.balance);
+      setPending(w.pending_balance ?? 0);
+      setHolds(w.holds || []);
+      setHasBank(!!w.bank_account);
+      setHasCrypto((w.crypto_wallets || []).length > 0);
+      setTxs(w.transactions);
+    } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const withdraw = async () => {
+    const amt = Number(wAmount);
+    if (!amt || amt <= 0) { Alert.alert(t("amountLabel")); return; }
+    setBusy(true);
+    try {
+      await api.withdraw({ method: wMethod, amount: amt });
+      setWAmount("");
+      await load();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Alert.alert(t("withdrawDone"));
+    } catch (e: any) {
+      const m = String(e?.message || "");
+      if (m.includes("insufficient_available")) Alert.alert(t("insufficientFundsMsg"));
+      else if (m.includes("no_bank_account")) Alert.alert(t("methodBank"), t("notSet"));
+      else if (m.includes("no_crypto_wallet")) Alert.alert(t("methodCrypto"), t("notSet"));
+      else Alert.alert(t("error"));
+    } finally { setBusy(false); }
+  };
 
   const pollStatus = useCallback(async (sessionId: string) => {
     setChecking(true);
@@ -83,9 +118,35 @@ export default function Wallet() {
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
-          <Text style={styles.heroLabel}>{t("balance")}</Text>
+          <Text style={styles.heroLabel}>{t("totalBalance")}</Text>
           <Text style={styles.heroValue}>€{balance.toFixed(2)}</Text>
+          <View style={styles.splitRow}>
+            <View style={styles.splitCol}>
+              <Text style={styles.splitLabel}>{t("availableBalance")}</Text>
+              <Text style={styles.splitValue} testID="wallet-available">€{available.toFixed(2)}</Text>
+            </View>
+            <View style={styles.splitDivider} />
+            <View style={styles.splitCol}>
+              <Text style={styles.splitLabel}>🔒 {t("blockedBalance")}</Text>
+              <Text style={styles.splitValue} testID="wallet-pending">€{pending.toFixed(2)}</Text>
+            </View>
+          </View>
         </View>
+
+        {holds.length ? (
+          <>
+            <Text style={styles.section}>{t("pendingReleaseLabel")}</Text>
+            {holds.map((h) => (
+              <View key={h.hold_id} style={[styles.txRow, shadow.card]} testID={`hold-${h.hold_id}`}>
+                <Text style={{ fontSize: 22 }}>⏳</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.txLabel}>€{h.amount.toFixed(2)}</Text>
+                  <Text style={styles.txDate}>{t("releaseOn")} {new Date(h.release_at).toLocaleDateString()}</Text>
+                </View>
+              </View>
+            ))}
+          </>
+        ) : null}
 
         <Text style={styles.section}>{t("addFunds")}</Text>
         {checking ? (
@@ -99,6 +160,23 @@ export default function Wallet() {
           ))}
         </View>
         <Text style={styles.stripeNote}>💳 {t("securedByStripe")}</Text>
+
+        <Text style={styles.section}>{t("withdraw")}</Text>
+        <View style={styles.methodRow}>
+          {([["bank", "methodBank", "business-outline"], ["crypto", "methodCrypto", "logo-bitcoin"], ["yobpay", "methodYobpay", "card-outline"]] as const).map(([m, key, icon]) => (
+            <Pressable key={m} testID={`wm-${m}`} style={[styles.methodBtn, wMethod === m && styles.methodOn]} onPress={() => setWMethod(m)}>
+              <Ionicons name={icon} size={18} color={wMethod === m ? "#fff" : colors.onSurface} />
+              <Text style={[styles.methodText, wMethod === m && { color: "#fff" }]}>{t(key)}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <View style={styles.withdrawRow}>
+          <TextInput testID="withdraw-amount" style={styles.wInput} value={wAmount} onChangeText={setWAmount} keyboardType="numeric" placeholder="€ 0.00" placeholderTextColor={colors.muted} />
+          <Pressable testID="withdraw-btn" style={styles.wBtn} disabled={busy} onPress={withdraw}>
+            <Text style={styles.wBtnText}>{t("withdraw")}</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.stripeNote}>{wMethod === "yobpay" ? t("localNote") : `${t("availableBalance")}: €${available.toFixed(2)}`}</Text>
 
         <Text style={styles.section}>{t("transactions")}</Text>
         {txs.length === 0 ? (
@@ -130,6 +208,19 @@ const styles = StyleSheet.create({
   hero: { backgroundColor: colors.brand, borderRadius: radius.lg, padding: spacing.xl, alignItems: "center" },
   heroLabel: { color: "rgba(255,255,255,0.85)", fontSize: fsize.base, fontFamily: font.regular },
   heroValue: { color: "#fff", fontSize: 44, fontFamily: font.bold, marginTop: 4 },
+  splitRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.md, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: radius.md, paddingVertical: spacing.sm },
+  splitCol: { flex: 1, alignItems: "center" },
+  splitDivider: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.3)" },
+  splitLabel: { color: "rgba(255,255,255,0.85)", fontSize: fsize.sm, fontFamily: font.regular },
+  splitValue: { color: "#fff", fontSize: fsize.xl, fontFamily: font.bold, marginTop: 2 },
+  methodRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
+  methodBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  methodOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  methodText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurface },
+  withdrawRow: { flexDirection: "row", gap: spacing.sm },
+  wInput: { flex: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: fsize.lg, fontFamily: font.regular, color: colors.onSurface },
+  wBtn: { backgroundColor: colors.brand, borderRadius: radius.md, paddingHorizontal: spacing.lg, alignItems: "center", justifyContent: "center" },
+  wBtnText: { color: "#fff", fontSize: fsize.lg, fontFamily: font.bold },
   mockBadge: { marginTop: spacing.sm, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: spacing.md, paddingVertical: 3, borderRadius: radius.pill },
   mockText: { color: "#fff", fontSize: fsize.sm, fontFamily: font.medium },
   checking: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },

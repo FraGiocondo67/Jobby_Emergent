@@ -4,8 +4,33 @@ from core import db, now_utc, new_id
 from deps import get_current_user
 from models import ReviewIn, ClientRatingIn, DisputeIn
 from trust import recalc_provider_trust, recalc_client_trust, log_trust_event, PROVIDER_WEIGHTS, CLIENT_WEIGHTS
+from escrow import release_escrow, refund_escrow
 
 router = APIRouter()
+
+
+@router.post("/bookings/{booking_id}/pay-escrow")
+async def pay_escrow(booking_id: str, user=Depends(get_current_user)):
+    """Client blocks the estimated total in escrow (from available wallet balance)."""
+    b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Not found")
+    if b["customer_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if b.get("escrow_status") == "held" or b.get("payment_status") == "paid":
+        return {"already_paid": True, "booking": b}
+    amount = round(float(b["total"]), 2)
+    available = round(user.get("wallet_balance", 0), 2)
+    if amount > available:
+        raise HTTPException(status_code=400, detail="insufficient_funds")
+    await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"wallet_balance": -amount}})
+    await db.transactions.insert_one({"tx_id": new_id("tx"), "user_id": user["user_id"], "type": "escrow_hold",
+                                      "label": f"Importo bloccato in garanzia €{amount:.2f}", "amount": -amount,
+                                      "booking_id": booking_id, "status": "held", "created_at": now_utc().isoformat()})
+    await db.bookings.update_one({"booking_id": booking_id},
+                                 {"$set": {"escrow_status": "held", "escrow_amount": amount, "payment_status": "paid",
+                                           "escrow_held_at": now_utc().isoformat()}})
+    return {"paid": True, "booking": await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})}
 
 
 @router.get("/bookings")
@@ -44,10 +69,30 @@ async def complete_booking(booking_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Not found")
     if not _member(b, user):
         raise HTTPException(status_code=403, detail="forbidden")
-    await db.bookings.update_one({"booking_id": booking_id}, {"$set": {"status": "completed"}})
+    await db.bookings.update_one({"booking_id": booking_id}, {"$set": {"status": "completed", "completed_at": now_utc().isoformat()}})
     b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
+    # Release the held escrow to the provider (client confirmation of execution).
+    if b.get("escrow_status") == "held":
+        await release_escrow(b)
+        b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
     await recalc_provider_trust(b["provider_id"])
     return b
+
+
+@router.post("/bookings/{booking_id}/cancel")
+async def cancel_booking(booking_id: str, user=Depends(get_current_user)):
+    """Client cancels a booking before completion; any held escrow is refunded."""
+    b = await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Not found")
+    if b["customer_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if b["status"] in ("completed", "cancelled"):
+        raise HTTPException(status_code=400, detail="cannot_cancel")
+    if b.get("escrow_status") == "held":
+        await refund_escrow(b)
+    await db.bookings.update_one({"booking_id": booking_id}, {"$set": {"status": "cancelled"}})
+    return await db.bookings.find_one({"booking_id": booking_id}, {"_id": 0})
 
 
 @router.post("/bookings/{booking_id}/review")
@@ -101,6 +146,9 @@ async def dispute_booking(booking_id: str, body: DisputeIn, user=Depends(get_cur
                                   "against": against, "reason": body.reason, "status": "open",
                                   "created_at": now_utc().isoformat()})
     await db.bookings.update_one({"booking_id": booking_id}, {"$set": {"status": "disputed"}})
+    # A dispute by the client on a held escrow refunds the blocked amount.
+    if against == "provider" and b.get("escrow_status") == "held":
+        await refund_escrow(b)
     ps = await recalc_provider_trust(b["provider_id"])
     cs = await recalc_client_trust(b["customer_id"])
     await log_trust_event("trust_events", b["provider_id"], "dispute", ps, {"booking_id": booking_id})

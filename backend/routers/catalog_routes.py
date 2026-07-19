@@ -77,6 +77,24 @@ class QuestionsIn(BaseModel):
     questions: list
 
 
+class HoldDaysIn(BaseModel):
+    days: int
+
+
+@router.get("/admin/settings/hold-days")
+async def admin_get_hold_days(_=Depends(require_admin)):
+    s = await db.settings.find_one({"key": "provider_hold_days"}, {"_id": 0})
+    return {"days": int(s["value"]) if s else 2}
+
+
+@router.post("/admin/settings/hold-days")
+async def admin_set_hold_days(body: HoldDaysIn, _=Depends(require_admin)):
+    if body.days < 0 or body.days > 30:
+        raise HTTPException(status_code=400, detail="invalid_days")
+    await db.settings.update_one({"key": "provider_hold_days"}, {"$set": {"value": int(body.days)}}, upsert=True)
+    return {"days": int(body.days)}
+
+
 @router.put("/admin/categories/{cat_id}/questions")
 async def admin_set_questions(cat_id: str, body: QuestionsIn, _=Depends(require_admin)):
     """Configure the request-form fields (questions) for a category from the backend."""

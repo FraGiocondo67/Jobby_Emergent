@@ -1,0 +1,36 @@
+{
+  "summary": "Escrow-from-wallet + 3-balance wallet fully validated. Backend: 13/13 pytest passed covering wallet shape, pay-escrow happy path/already_paid/insufficient_funds/403 permission, complete->release with provider pending_balance + wallet_hold entry (matures after 2 days) verified directly in MongoDB, cancel->refund restores client available, cannot_cancel on completed, withdraw yobpay success + insufficient_available + no_bank_account + invalid_method, GET /wallet/payouts, and admin hold-days set/get/invalid_days/reset-to-2. Frontend (mobile web, storage key jobby_session_token JSON-stringified): /wallet renders Saldo totale with wallet-available and wallet-pending testIDs, wm-bank/wm-crypto/wm-yobpay method buttons and withdraw-amount + withdraw-btn work — a €2 yobpay withdraw dropped available €34.50→€32.50 and appeared in Movimenti as 'Prelievo yobpay €2.00'. Booking detail escrow: seeded a fresh unpaid booking, escrow-button 'Blocca in garanzia · €10.50' visible; tapping locked funds, paid-banner appeared showing 'Importo in garanzia · €10.50' with Segna come completata + refund-cancel options. Provider was generic (role=provider) and got labor 27.0 credited to pending_balance with wallet_holds entry (release_at = now + 2 days) — matches spec.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "wallet.tsx", "issues": ["'Pagamenti sicuri con Stripe' text still shown under Aggiungi fondi even though per-booking Stripe pay was removed — cosmetic, per-booking escrow now uses wallet only; Stripe still valid for wallet top-up so this is accurate but consider clarifying."]}
+    ],
+    "react_native_issues": [
+      {"component": "shadow.card style", "issue": "Repeated console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' emitted across wallet + booking screens (RN 0.76+). Reference: /app/frontend/src/theme (shadow.card usage in wallet.tsx:140,186 and booking/[id].tsx:104,121,148)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_escrow_wallet.py",
+    "/app/test_reports/pytest/iter19_escrow.xml"
+  ],
+  "action_items": [
+    "Migrate shadow* style props to boxShadow in /app/frontend/src/theme (shadow.card) to silence RN deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "escrow.mature_holds is called on GET /api/wallet only — good lazy pattern; but withdraw also calls mature_holds before checking available (wallet.py:34), which is correct. No blocking issues found.",
+    "pay-escrow treats payment_status=='paid' from any prior flow as already_paid (bookings.py:20). This is safe with current flow since old Stripe/PayPal booking payments are removed; note it means a legacy 'paid but escrow None' booking cannot be re-locked in escrow (matches expected behavior).",
+    "refund_escrow uses escrow_amount || total (escrow.py:78) — correct fallback."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% (all critical flows verified)"},
+  "seed_data_creation": "Temporarily inserted booking bkg_test_dd392f1570 (total 10.5, provider Sara Conti) via mongo to exercise the /wallet insufficient path and /booking/[id] escrow-button UI. Deleted after test. Admin hold-days confirmed reset to 2.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Escrow-from-wallet is live; per-booking Stripe/PayPal removed from UI. Only wallet top-up still uses Stripe checkout. Withdrawals bank/crypto/yobpay all simulated (payouts recorded). Provider pending->available maturation is lazy on GET /api/wallet. Admin token X-Admin-Token: jobby-admin-7c2f9a. Reusable pytest at /app/backend/tests/test_iter19_escrow_wallet.py.",
+  "rca_of_issue": "N/A — no bugs found."
+}

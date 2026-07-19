@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from core import db, now_utc, new_id
 from deps import get_current_user
-from models import WalletIn, PaymentIn, PaymentMethodIn, BankAccountIn, CryptoWalletIn
+from models import WalletIn, PaymentIn, PaymentMethodIn, BankAccountIn, CryptoWalletIn, WithdrawIn
+from escrow import mature_holds
 
 router = APIRouter()
 
@@ -11,10 +12,58 @@ ALLOWED_TOKENS = {"USDT_TRC", "USDT_ETH", "USDC_ETH", "XRP", "BTC"}
 
 @router.get("/wallet")
 async def get_wallet(user=Depends(get_current_user)):
+    await mature_holds(user["user_id"])
+    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
     txs = await db.transactions.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    return {"balance": round(user.get("wallet_balance", 0), 2), "transactions": txs,
-            "payment_method": user.get("payment_method"), "bank_account": user.get("bank_account"),
-            "crypto_wallets": user.get("crypto_wallets", []), "paypal_email": user.get("paypal_email", ""), "mock": True}
+    holds = await db.wallet_holds.find({"user_id": user["user_id"], "status": "pending"}, {"_id": 0}).sort("release_at", 1).to_list(100)
+    available = round(u.get("wallet_balance", 0), 2)
+    pending = round(u.get("pending_balance", 0), 2)
+    return {"balance": available, "available_balance": available, "pending_balance": pending,
+            "total_balance": round(available + pending, 2), "holds": holds, "transactions": txs,
+            "payment_method": u.get("payment_method"), "bank_account": u.get("bank_account"),
+            "crypto_wallets": u.get("crypto_wallets", []), "paypal_email": u.get("paypal_email", ""), "mock": True}
+
+
+@router.post("/wallet/withdraw")
+async def withdraw_funds(body: WithdrawIn, user=Depends(get_current_user)):
+    if body.method not in ("bank", "crypto", "yobpay"):
+        raise HTTPException(status_code=400, detail="invalid_method")
+    amount = round(float(body.amount), 2)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="invalid_amount")
+    await mature_holds(user["user_id"])
+    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    available = round(u.get("wallet_balance", 0), 2)
+    if amount > available:
+        raise HTTPException(status_code=400, detail="insufficient_available")
+    # Validate the chosen destination exists.
+    dest = ""
+    if body.method == "bank":
+        if not u.get("bank_account"):
+            raise HTTPException(status_code=400, detail="no_bank_account")
+        dest = u["bank_account"].get("iban", "IBAN")
+    elif body.method == "crypto":
+        w = next((c for c in u.get("crypto_wallets", []) if c.get("wallet_id") == body.target_id), None) if body.target_id else (u.get("crypto_wallets") or [None])[0]
+        if not w:
+            raise HTTPException(status_code=400, detail="no_crypto_wallet")
+        dest = f"{w.get('token','')} · {w.get('address','')[:10]}…"
+    else:  # yobpay (structure only — real API wired later)
+        dest = "YOB PAY card"
+    new_balance = round(available - amount, 2)
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"wallet_balance": new_balance}})
+    payout = {"payout_id": new_id("pyt"), "user_id": user["user_id"], "method": body.method, "destination": dest,
+              "amount": amount, "status": "processing" if body.method == "yobpay" else "sent",
+              "created_at": now_utc().isoformat()}
+    await db.payouts.insert_one(payout)
+    await db.transactions.insert_one({"tx_id": new_id("tx"), "user_id": user["user_id"], "type": "withdrawal",
+                                      "label": f"Prelievo {body.method} €{amount:.2f}", "amount": -amount,
+                                      "status": payout["status"], "created_at": now_utc().isoformat()})
+    return {"balance": new_balance, "payout": {k: v for k, v in payout.items() if k != "_id"}}
+
+
+@router.get("/wallet/payouts")
+async def list_payouts(user=Depends(get_current_user)):
+    return await db.payouts.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
 
 
 @router.post("/wallet/add")

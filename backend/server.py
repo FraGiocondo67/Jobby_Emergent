@@ -61,6 +61,8 @@ async def startup():
     await seed_categories()
     # Existing users (pre-onboarding feature) should not be forced through onboarding.
     await db.users.update_many({"onboarding_completed": {"$exists": False}}, {"$set": {"onboarding_completed": True}})
+    # Wallet: ensure the blocked/pending balance field exists.
+    await db.users.update_many({"pending_balance": {"$exists": False}}, {"$set": {"pending_balance": 0.0}})
     if await db.users.count_documents({"is_bot": True}) == 0:
         for i, (name, services, rate, rating, reviews, lat, lng) in enumerate(BOT_PROVIDERS):
             await db.users.insert_one({

@@ -41,6 +41,12 @@ class ImageIn(BaseModel):
     image: str
 
 
+class WithdrawIn(BaseModel):
+    method: str  # "bank" | "crypto" | "yobpay"
+    amount: float
+    target_id: Optional[str] = None
+
+
 class BeneficiaryIn(BaseModel):
     name: str
     type: str  # "abroad" | "local"

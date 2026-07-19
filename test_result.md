@@ -270,3 +270,19 @@
   - POST /api/bookings/{id}/paypal/create: 404 for unknown booking; 403 when a different user (biz-test-token-999) tries to pay a booking owned by demo-preview-token-123; success returns order_id+url for an unpaid booking owned by the client.
   - POST /api/bookings/{id}/payout: 400 not_paid for an unpaid booking (provider bearer); 403 when a non-provider calls it. (Do NOT expect a real payout to succeed.)
   Credentials: client demo-preview-token-123; other user biz-test-token-999; admin jobby-admin-7c2f9a.
+
+## agent_communication (2026-06 fork — Escrow + Wallet 3-balance + Withdraw)
+-agent: "main"
+-message: |
+  Implemented escrow-based booking payments + 3-balance wallet + withdrawals:
+  WALLET: wallet_balance = AVAILABLE, pending_balance = BLOCKED. GET /api/wallet returns available_balance, pending_balance, total_balance, holds[], transactions, bank/crypto/paypal. Lazy maturation: matured wallet_holds (release_at<=now) auto-move from pending->available on wallet read.
+  ESCROW (escrow.py): booking has escrow_status none|held|released|refunded + escrow_amount.
+  - POST /api/bookings/{id}/pay-escrow (client): blocks booking.total from AVAILABLE wallet (400 insufficient_funds if not enough; 403 non-owner). Sets escrow_status=held, payment_status=paid, deducts client available.
+  - POST /api/bookings/{id}/complete: on client/member confirmation, releases held escrow -> provider gets labor_cost; if provider.role==business -> credited to AVAILABLE immediately; else (generic provider) -> credited to PENDING + a wallet_hold with release_at=now+hold_days (default 2, admin-configurable). Platform keeps jobby_fee.
+  - POST /api/bookings/{id}/cancel (client, before completion) -> refunds held escrow to client available, status cancelled.
+  - Dispute against provider on held escrow -> refunds client.
+  WITHDRAW: POST /api/wallet/withdraw {method:bank|crypto|yobpay, amount, target_id?} deducts AVAILABLE (400 insufficient_available / no_bank_account / no_crypto_wallet / invalid_method), records payout (yobpay=processing structure-only, bank/crypto=sent simulated) + transaction. GET /api/wallet/payouts lists them.
+  ADMIN: GET/POST /api/admin/settings/hold-days {days} (0..30).
+  Frontend: wallet.tsx shows Totale/Disponibile/Bloccato + pending holds (release date) + withdraw section (wm-bank/wm-crypto/wm-yobpay, withdraw-amount, withdraw-btn). booking/[id].tsx client 'Blocca in garanzia' (escrow-button) -> pay-escrow; insufficient -> alert offering Deposit->/wallet; escrow held shows paid-banner; client cancel-booking-button refunds; provider sees earning-banner (funds -> wallet). payments-settings.tsx has PayPal email field.
+  Curl-verified end-to-end: insufficient(400)->add funds->pay-escrow held (client avail down)->complete->provider PENDING 25 + hold release_at +2d; forced-mature moved pending->available; admin hold-days set/get; withdraw yobpay ok + insufficient 400 + no_bank_account.
+  TEST both (do NOT retest earlier phases). Client demo-preview-token-123 (client), storage key jobby_session_token JSON.stringify. Admin token jobby-admin-7c2f9a. To test a fresh escrow cycle, find an UNPAID booking owned by the client (GET /api/bookings) with escrow_status none/absent; ensure client has enough available (POST /api/wallet/add) then pay-escrow -> complete -> verify provider pending/available and client transactions. Also test wallet withdraw (yobpay works without bank) and the wallet screen 3 balances render + withdraw flow on web.

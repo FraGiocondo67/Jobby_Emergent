@@ -97,6 +97,11 @@ export const api = {
   // wallet
   wallet: () => request("/wallet"),
   addFunds: (amount: number) => request("/wallet/add", { method: "POST", body: JSON.stringify({ amount }) }),
+  withdraw: (data: { method: string; amount: number; target_id?: string }) =>
+    request("/wallet/withdraw", { method: "POST", body: JSON.stringify(data) }),
+  payouts: () => request("/wallet/payouts"),
+  payEscrow: (bookingId: string) => request(`/bookings/${bookingId}/pay-escrow`, { method: "POST" }),
+  cancelBooking: (bookingId: string) => request(`/bookings/${bookingId}/cancel`, { method: "POST" }),
   topupCheckout: (packageId: string, originUrl: string) =>
     request("/wallet/topup/checkout", { method: "POST", body: JSON.stringify({ package_id: packageId, origin_url: originUrl }) }),
   topupStatus: (sessionId: string) => request(`/wallet/topup/status/${sessionId}`),
