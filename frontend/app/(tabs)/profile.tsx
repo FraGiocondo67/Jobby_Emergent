@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -34,12 +34,37 @@ export default function ProfileTab() {
   }, []);
   useFocusEffect(useCallback(() => { loadTrust(); }, [loadTrust]));
 
+  const owned: string[] = (user?.roles && user.roles.length ? user.roles : [user?.role || "client"]);
+  const canActivate = (roleId: string) => {
+    if (owned.includes(roleId)) return false;
+    if (owned.length >= 2) return false;
+    if (roleId === "provider" && owned.includes("business")) return false;
+    if (roleId === "business" && owned.includes("provider")) return false;
+    return true;
+  };
+
   const switchRole = async (roleId: string) => {
     if (roleId === user?.role) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    const updated = await api.updateProfile({ role: roleId, online: roleId !== "client" });
+    const updated = await api.switchRole(roleId);
     setUser(updated);
     router.replace("/(tabs)");
+  };
+
+  const activateRole = (roleId: string) => {
+    if (roleId === "client") {
+      Alert.alert(t("activateProfileTitle"), t("activateClientMsg"), [
+        { text: t("cancel"), style: "cancel" },
+        { text: t("continue"), onPress: async () => {
+          try { const u = await api.completeOnboarding({ role: "client" }); setUser(u); router.replace("/(tabs)"); } catch {}
+        } },
+      ]);
+      return;
+    }
+    Alert.alert(t("activateProfileTitle"), t("activateProfileMsg"), [
+      { text: t("cancel"), style: "cancel" },
+      { text: t("continue"), onPress: () => router.push("/provider-onboarding") },
+    ]);
   };
 
   const onLogout = async () => { await logout(); router.replace("/onboarding"); };
@@ -72,7 +97,7 @@ export default function ProfileTab() {
         {/* Role selector */}
         <Text style={styles.sectionLabel}>{t("selectRole")}</Text>
         <View style={styles.roleRow}>
-          {ROLES.map((r) => {
+          {ROLES.filter((r) => owned.includes(r.id)).map((r) => {
             const active = user?.role === r.id;
             return (
               <Pressable key={r.id} testID={`role-${r.id}`} style={[styles.roleChip, active && styles.roleChipActive]} onPress={() => switchRole(r.id)}>
@@ -82,6 +107,13 @@ export default function ProfileTab() {
             );
           })}
         </View>
+        {ROLES.filter((r) => canActivate(r.id)).map((r) => (
+          <Pressable key={`act-${r.id}`} testID={`activate-${r.id}`} style={styles.activateRow} onPress={() => activateRole(r.id)}>
+            <Ionicons name="add-circle-outline" size={20} color={colors.brand} />
+            <Text style={styles.activateText}>{t("activateProfileBtn")} {t(r.labelKey as any)}</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+        ))}
 
         {/* Verification */}
         <Pressable testID="verification-row" style={[styles.listRow, shadow.card]} onPress={() => router.push("/verification")}>
@@ -257,6 +289,8 @@ const styles = StyleSheet.create({
   roleRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
   roleChip: { flex: 1, alignItems: "center", gap: 6, paddingVertical: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   roleChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  activateRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  activateText: { flex: 1, fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface },
   roleText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurfaceTertiary },
   listRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
   rowIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },

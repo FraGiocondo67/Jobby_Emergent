@@ -85,6 +85,7 @@ export const api = {
   loginDemo: () => request("/auth/demo", { method: "POST" }),
   me: () => request("/auth/me"),
   logout: () => request("/auth/logout", { method: "POST" }),
+  switchRole: (role: string) => request("/profile/switch-role", { method: "POST", body: JSON.stringify({ role }) }),
   updateProfile: (data: any) => request("/profile", { method: "PUT", body: JSON.stringify(data) }),
   // onboarding
   completeOnboarding: (data: any) => request("/onboarding/complete", { method: "POST", body: JSON.stringify(data) }),

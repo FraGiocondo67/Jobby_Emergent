@@ -161,6 +161,13 @@ async def set_profile(body: ProfileIn, user=Depends(get_current_user)):
     if not _is_adult(body.dob):
         raise HTTPException(status_code=400, detail="minor_not_allowed")
     role = "business" if body.profile_type == "impresa" else "provider"
+    # #8 — vincolo multi-ruolo: max 2 profili e mai provider+business insieme.
+    owned = set(user.get("roles") or [user.get("role") or "client"])
+    if role not in owned:
+        if len(owned) >= 2:
+            raise HTTPException(status_code=400, detail="max_two_roles")
+        if (role == "provider" and "business" in owned) or (role == "business" and "provider" in owned):
+            raise HTTPException(status_code=400, detail="role_conflict")
     upd = {"role": role, "provider_profile_type": body.profile_type, "dob": body.dob}
     for k in ("name", "business_name", "vat_number", "codice_fiscale", "address", "iban", "bio", "condizione_soggettiva"):
         v = getattr(body, k)
@@ -170,7 +177,7 @@ async def set_profile(body: ProfileIn, user=Depends(get_current_user)):
         upd["lat"] = body.lat
     if body.lng is not None:
         upd["lng"] = body.lng
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": upd})
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": upd, "$addToSet": {"roles": role}})
     return {"ok": True, "role": role}
 
 

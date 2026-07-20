@@ -23,7 +23,7 @@ DEMO_EMAIL = "demo@jobby.app"
 def default_user_doc(user_id, email, name, picture="", onboarding_completed=False):
     return {
         "user_id": user_id, "email": email, "name": name, "picture": picture,
-        "role": "client", "language": "it", "bio": "", "business_name": "",
+        "role": "client", "roles": ["client"], "language": "it", "bio": "", "business_name": "",
         "hourly_rate": 13.0, "radius_km": 10.0, "services": [], "online": False, "service_mode": "both",
         "rating": 0.0, "reviews_count": 0, "verified": False, "verification_status": "unverified",
         "wallet_balance": 0.0, "bonus_credit": 0.0, "bonus_granted": False, "email_verified": True,

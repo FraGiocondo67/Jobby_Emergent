@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 
 from core import db
 from deps import get_current_user
@@ -52,6 +53,13 @@ async def complete_onboarding(body: OnboardingIn, user=Depends(get_current_user)
     role = body.role
     if role not in ("client", "provider", "business"):
         raise HTTPException(status_code=400, detail="invalid_role")
+    # #8 — vincolo multi-ruolo: max 2 profili e mai provider+business insieme.
+    owned = set(user.get("roles") or [user.get("role") or "client"])
+    if role not in owned:
+        if len(owned) >= 2:
+            raise HTTPException(status_code=400, detail="max_two_roles")
+        if (role == "provider" and "business" in owned) or (role == "business" and "provider" in owned):
+            raise HTTPException(status_code=400, detail="role_conflict")
     upd = {"role": role, "onboarding_completed": True}
     if body.name:
         upd["name"] = body.name
@@ -77,7 +85,22 @@ async def complete_onboarding(body: OnboardingIn, user=Depends(get_current_user)
             upd["vat_number"] = body.vat_number
     # Clients are auto-approved; providers/businesses require admin approval unless previously approved.
     upd["approval_status"] = "approved" if (role == "client" or user.get("provider_approved")) else "pending"
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": upd})
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": upd, "$addToSet": {"roles": role}})
     if role in ("provider", "business"):
         await recalc_provider_trust(user["user_id"])
+    return await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+
+
+class SwitchRoleIn(BaseModel):
+    role: str
+
+
+@router.post("/profile/switch-role")
+async def switch_role(body: SwitchRoleIn, user=Depends(get_current_user)):
+    """#8 — passa tra i profili POSSEDUTI (non attiva profili nuovi)."""
+    roles = user.get("roles") or [user.get("role") or "client"]
+    if body.role not in roles:
+        raise HTTPException(status_code=400, detail="role_not_owned")
+    await db.users.update_one({"user_id": user["user_id"]},
+                              {"$set": {"role": body.role, "online": body.role != "client"}})
     return await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})

@@ -59,6 +59,16 @@ function ClientWallet() {
         showsVerticalScrollIndicator={false}>
         <Text style={styles.h1}>{t("walletTitle")}</Text>
 
+        {(user?.bonus_credit || 0) > 0 ? (
+          <View style={[styles.bonusCard, shadow.card]}>
+            <Ionicons name="gift" size={22} color="#fff" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bonusLbl}>{t("bonusCredit")}</Text>
+              <Text style={styles.bonusVal}>€{(user?.bonus_credit || 0).toFixed(2)}</Text>
+            </View>
+          </View>
+        ) : null}
+
         {/* Block 1 — Borsellino / Impresa */}
         {d?.show_borsellino ? (
           <View style={[styles.card, shadow.card]}>
@@ -232,6 +242,9 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   h1: { fontSize: fsize["2xl"] || 24, fontFamily: font.bold, color: colors.onSurface, marginBottom: spacing.md },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.xl, borderWidth: 1, borderColor: colors.border },
+  bonusCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brand, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
+  bonusLbl: { fontSize: fsize.sm, fontFamily: font.medium, color: "#fff", opacity: 0.9 },
+  bonusVal: { fontSize: fsize["2xl"] || 24, fontFamily: font.bold, color: "#fff" },
   blockTitle: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface, marginBottom: spacing.sm },
   numRow: { flexDirection: "row", justifyContent: "space-between", marginTop: spacing.sm },
   numCol: { flex: 1, alignItems: "center" },
