@@ -24,6 +24,7 @@ export default function PortafoglioTab() {
 
 // ------------------ CLIENT ------------------
 function ClientWallet() {
+  const { user } = useAuth();
   const { t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
