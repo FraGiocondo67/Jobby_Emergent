@@ -276,7 +276,7 @@ function ProviderHome() {
         {opps.length > 0 ? (
           <>
             <Text style={styles.sectionTitle}>🔔 {t("newOpportunities")}</Text>
-            {opps.map((r) => (
+            {[...opps].sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""))).slice(0, 6).map((r) => (
               <Pressable key={`${r.__cat}-${oppId(r)}`} testID={`opp-${oppId(r)}`} style={[styles.missionCard, shadow.card]} onPress={() => router.push(SOURCES[r.__cat].route(oppId(r)) as any)}>
                 <View style={styles.missionRow}>
                   <View style={{ flex: 1 }}>
@@ -294,6 +294,12 @@ function ProviderHome() {
                 </View>
               </Pressable>
             ))}
+            {opps.length > 6 ? (
+              <Pressable testID="opp-see-all" style={styles.seeAllBtn} onPress={() => router.push("/(tabs)/richieste")}>
+                <Text style={styles.seeAllText}>{t("seeAllActivity")} ({opps.length})</Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.brand} />
+              </Pressable>
+            ) : null}
           </>
         ) : null}
 
@@ -522,6 +528,8 @@ const styles = StyleSheet.create({
   mapTitle: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.blue },
   mapSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.blue, opacity: 0.8, marginTop: 1 },
   sectionTitle: { fontSize: fsize["2xl"], fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.xl, marginBottom: spacing.md },
+  seeAllBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: spacing.md },
+  seeAllText: { fontSize: fsize.base, fontFamily: font.bold, color: colors.brand },
   heroCard: { backgroundColor: colors.brand, borderRadius: radius.lg, padding: spacing.xl, marginTop: spacing.md },
   heroPromise: { fontSize: fsize["2xl"], fontFamily: font.bold, color: "#fff", lineHeight: 30 },
   entryCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.brand, padding: spacing.lg, marginTop: spacing.md },

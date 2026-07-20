@@ -34,6 +34,23 @@ async def fee_pct() -> float:
         return D.DEFAULT_FEE_PCT
 
 
+async def _credit_provider(rid: str, provider_id: str, totale: float):
+    """Accredita il netto (dopo fee JOBBY) sul wallet del provider al saldo corsa.
+    Idempotente: usa pagamento.credited."""
+    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+    if not r or (r.get("pagamento") or {}).get("credited"):
+        return
+    fee = await fee_pct()
+    net = round(float(totale) * (1 - fee / 100.0), 2)
+    await db.users.update_one({"user_id": provider_id}, {"$inc": {"wallet_balance": net}})
+    await db.transactions.insert_one({
+        "tx_id": new_id("tx"), "user_id": provider_id, "type": "earning", "status": "available",
+        "amount": net, "label": f"Corsa completata €{net:.2f} (netto)",
+        "richiesta_id": rid, "created_at": now_utc().isoformat()})
+    await db.richieste.update_one({"richiesta_id": rid},
+                                  {"$set": {"pagamento.net_provider": net, "pagamento.credited": True}})
+
+
 def _parse(dt: str) -> Optional[datetime]:
     try:
         d = datetime.fromisoformat(dt.replace("Z", "+00:00"))
@@ -253,6 +270,7 @@ class RichiestaIn(BaseModel):
     special: List[str] = []
     ritorno: Optional[dict] = None    # {pickup_at}
     note: str = ""
+    target_provider_id: str = ""      # richiesta diretta a un driver specifico
 
 
 @router.post("/driver/richieste")
@@ -285,7 +303,31 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
         "recensione": None, "created_at": now_utc().isoformat(), "updated_at": now_utc().isoformat(),
         "scade_at": (now_utc() + timedelta(hours=D.PROPOSAL_WINDOW_HOURS)).isoformat(),
     }
+    # ---- Auto-matching: invita i driver compatibili nel raggio (+ eventuale diretta) ----
+    invited: list = []
+    seen = set()
+    if body.target_provider_id:
+        tp = await db.users.find_one({"user_id": body.target_provider_id}, {"_id": 0})
+        if tp and "driver" in (tp.get("services") or []):
+            invited.append({"provider_id": tp["user_id"], "status": "invited", "direct": True})
+            seen.add(tp["user_id"])
+    try:
+        provs = await compatible_drivers(body.tipo, body.classe, body.partenza.lat, body.partenza.lng)
+    except Exception:
+        provs = []
+    for p in provs[:25]:
+        pid = p["provider"]["user_id"]
+        if pid in seen:
+            continue
+        seen.add(pid)
+        invited.append({"provider_id": pid, "status": "invited"})
+    if invited:
+        doc["provider_invitati"] = invited
+        doc["stato"] = "in_matching"
     await db.richieste.insert_one(doc)
+    for inv in invited:
+        await push_notification(inv["provider_id"], "driver_invito", "🚘 Nuova richiesta corsa",
+                                f"{body.partenza.label} → {body.destinazione.label}", "driver", rid)
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
@@ -554,6 +596,8 @@ async def complete(rid: str, body: CompleteIn, user=Depends(get_current_user)):
     await push_notification(r["cliente_id"], "driver_completata", "Corsa completata",
                             (f"Importo tassametro: €{totale:.2f}. Salda in app." if is_taxi else "Grazie! Lascia una recensione."),
                             "driver", rid)
+    if not is_taxi:
+        await _credit_provider(rid, user["user_id"], totale)
     return {"stato": "completata", "importo_totale": totale}
 
 
@@ -566,6 +610,7 @@ async def pay_taxi(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="nothing_to_settle")
     await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"pagamento.stato": "settled",
                                                                     "pagamento.settled_at": now_utc().isoformat()}})
+    await _credit_provider(rid, r["provider_scelto"], r.get("importo_totale", 0))
     return {"stato": "settled", "importo": r.get("importo_totale")}
 
 

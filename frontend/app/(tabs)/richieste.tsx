@@ -34,7 +34,7 @@ function CustomerRequests() {
   const [drvReqs, setDrvReqs] = useState<any[]>([]);
   const [artReqs, setArtReqs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "completed">("active");
   const [sortDir, setSortDir] = useState<"newest" | "oldest">("newest");
 
   const load = useCallback(async () => {

@@ -16,7 +16,7 @@ export default function DriverConfigura() {
   const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ tipo?: string }>();
+  const params = useLocalSearchParams<{ tipo?: string; provider?: string; providerName?: string }>();
   const [meta, setMeta] = useState<any>(null);
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -102,6 +102,7 @@ export default function DriverConfigura() {
         passeggero_nome: whoElse ? pName : "", passeggero_tel: whoElse ? pPhone : "",
         minore: minor, minore_consenso: minorConsent, special,
         ritorno: withReturn ? { pickup_at: `${date}T${returnTime}:00` } : null, note,
+        target_provider_id: params.provider || "",
       });
       router.replace(`/driver/${r.richiesta_id}?new=1`);
     } catch { setLoading(false); }

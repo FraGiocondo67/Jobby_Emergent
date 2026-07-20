@@ -158,10 +158,45 @@ async def dispute_booking(booking_id: str, body: DisputeIn, user=Depends(get_cur
 
 @router.get("/earnings")
 async def earnings(user=Depends(get_current_user)):
-    bs = await db.bookings.find({"provider_id": user["user_id"]}, {"_id": 0}).to_list(500)
-    return {"total_earned": round(sum(b["labor_cost"] for b in bs), 2), "jobs_count": len(bs),
-            "completed_count": len([b for b in bs if b["status"] == "completed"]),
-            "pending": round(sum(b["labor_cost"] for b in bs if b["status"] != "completed"), 2)}
+    uid = user["user_id"]
+    bs = await db.bookings.find({"provider_id": uid}, {"_id": 0}).to_list(500)
+    rq = await db.richieste.find({"provider_scelto": uid}, {"_id": 0}).to_list(1000)
+
+    def rnet(r):
+        pl = r.get("pagamento_lavoro") or r.get("pagamento") or {}
+        v = pl.get("net_provider") or pl.get("importo") or pl.get("provider_net")
+        if v:
+            return round(float(v), 2)
+        p = r.get("prezzo_finale") or r.get("importo_totale") or 0
+        return round(float(p), 2)
+
+    DONE = ("completata", "recensita")
+    ACTIVE = ("confermata", "in_corso")
+    PAID = ("released", "settled")
+    total_earned = 0.0
+    pending = 0.0
+    jobs_count = 0
+    completed_count = 0
+    for r in rq:
+        jobs_count += 1
+        pl = (r.get("pagamento_lavoro") or r.get("pagamento") or {})
+        if r["stato"] in DONE:
+            completed_count += 1
+            if pl.get("stato") in PAID or pl.get("credited"):
+                total_earned += rnet(r)
+            else:
+                pending += rnet(r)
+        elif r["stato"] in ACTIVE:
+            pending += rnet(r)
+    for b in bs:
+        jobs_count += 1
+        if b.get("status") == "completed":
+            completed_count += 1
+            total_earned += b.get("labor_cost", 0)
+        else:
+            pending += b.get("labor_cost", 0)
+    return {"total_earned": round(total_earned, 2), "jobs_count": jobs_count,
+            "completed_count": completed_count, "pending": round(pending, 2)}
 
 
 @router.get("/trust")

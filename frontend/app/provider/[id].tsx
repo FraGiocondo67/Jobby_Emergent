@@ -58,7 +58,9 @@ export default function ProviderDetail() {
       router.push(`/business-request/${id}?category=${cat}&name=${encodeURIComponent(title)}&label=${encodeURIComponent(catLabel(cat))}`);
     } else {
       const cat = (p.services || []).find((s: string) => CFG_ROUTE[s]) || p.services?.[0];
-      router.push((CFG_ROUTE[cat] || `/request/${cat}?type=service`) as any);
+      const base = CFG_ROUTE[cat] || `/request/${cat}?type=service`;
+      const sep = base.includes("?") ? "&" : "?";
+      router.push(`${base}${sep}provider=${id}&providerName=${encodeURIComponent(title)}` as any);
     }
   };
 
