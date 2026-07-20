@@ -111,7 +111,7 @@ export default function MapScreen() {
         <View style={styles.radiusRow}>
           <Text style={styles.radiusLabel}>📍 {t("searchRadius")}: <Text style={{ fontFamily: font.bold, color: colors.brand }}>{radiusKm} km</Text></Text>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.sm }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll} contentContainerStyle={{ gap: spacing.sm, paddingVertical: 2 }}>
           {RADII.map((r) => (
             <Pressable key={r} testID={`radius-${r}`} onPress={() => setRadiusKm(r)} style={[styles.rChip, radiusKm === r && styles.rChipOn]}>
               <Text style={[styles.rChipText, radiusKm === r && { color: "#fff" }]}>{r} km</Text>
@@ -119,7 +119,8 @@ export default function MapScreen() {
           ))}
         </ScrollView>
         {/* Category filter */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}>
+        <Text style={styles.filterLabel}>🏷️ {t("category")}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll} contentContainerStyle={{ gap: spacing.sm, paddingVertical: 2 }}>
           <Pressable testID="cat-all" onPress={() => setCategory(null)} style={[styles.catChip, !category && styles.catChipOn]}>
             <Text style={[styles.catChipText, !category && { color: "#fff" }]}>🔎 {t("allCategories")}</Text>
           </Pressable>
@@ -129,7 +130,7 @@ export default function MapScreen() {
             </Pressable>
           ))}
         </ScrollView>
-        <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ marginTop: spacing.sm }} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} showsVerticalScrollIndicator={false}>
           {!loading && providers.length === 0 && businesses.length === 0 ? (
             <View style={styles.empty} testID="map-empty">
               <Text style={{ fontSize: 44 }}>🗺️</Text>
@@ -190,14 +191,16 @@ const styles = StyleSheet.create({
   tabProvidersOn: { backgroundColor: colors.blue },
   tabBusinessesOn: { backgroundColor: colors.purple },
   tabText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurface },
-  legend: { position: "absolute", left: spacing.lg, bottom: spacing.lg, backgroundColor: "rgba(255,255,255,0.94)", borderRadius: radius.md, padding: spacing.sm, gap: 4, ...shadow.card },
+  legend: { position: "absolute", left: spacing.lg, bottom: spacing.lg + 34, backgroundColor: "rgba(255,255,255,0.94)", borderRadius: radius.md, padding: spacing.sm, gap: 4, ...shadow.card },
   legendRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.onSurface },
-  sheet: { flex: 1, backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28, padding: spacing.lg },
+  sheet: { flex: 1, backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderStrong, alignSelf: "center", marginBottom: spacing.md },
   radiusRow: { marginBottom: spacing.sm },
   radiusLabel: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface },
+  hScroll: { flexGrow: 0, marginBottom: spacing.sm },
+  filterLabel: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface, marginBottom: spacing.sm },
   rChip: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   rChipOn: { backgroundColor: colors.brand, borderColor: colors.brand },
   rChipText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurfaceTertiary },

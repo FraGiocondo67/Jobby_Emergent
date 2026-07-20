@@ -17,6 +17,16 @@ const CFG_ROUTE: Record<string, string> = {
   artigiani: "/artigiani/configura",
 };
 
+// I codici servizio dei provider (cleaning/ironing/…) vanno normalizzati
+// alla categoria del configuratore attuale.
+const SERVICE_TO_CAT: Record<string, string> = {
+  pulizie: "pulizie", cleaning: "pulizie", ironing: "pulizie", stiro: "pulizie",
+  babysitting: "babysitting", childcare: "babysitting",
+  driver: "driver", mobilita: "driver", ncc: "driver", taxi: "driver",
+  artigiani: "artigiani", tecnico: "artigiani", handyman: "artigiani",
+};
+const toCat = (s: string) => SERVICE_TO_CAT[s] || s;
+
 export default function ProviderDetail() {
   const { id, cat: preCat } = useLocalSearchParams<{ id: string; cat?: string }>();
   const { t, lang } = useLang();
@@ -52,11 +62,14 @@ export default function ProviderDetail() {
   const title = p.business_name || p.name;
   const catLabel = (c: string) => cats[c]?.[lang] || c;
 
-  // Categorie configurabili offerte dal provider (standard: pulizie/babysitting/driver/artigiani)
-  const cfgServices = (p.services || []).filter((s: string) => CFG_ROUTE[s]);
+  // Categorie configurabili offerte dal provider, normalizzate (cleaning→pulizie…)
+  const cfgServices: string[] = Array.from(new Set(
+    (p.services || []).map((s: string) => toCat(s)).filter((c: string) => CFG_ROUTE[c])
+  ));
 
   const openConfig = (cat: string) => {
-    const base = CFG_ROUTE[cat] || `/request/${cat}?type=service`;
+    const c = toCat(cat);
+    const base = CFG_ROUTE[c] || `/request/${c}?type=service`;
     const sep = base.includes("?") ? "&" : "?";
     router.push(`${base}${sep}provider=${id}&providerName=${encodeURIComponent(title)}` as any);
   };
@@ -68,15 +81,15 @@ export default function ProviderDetail() {
       router.push(`/business-request/${id}?category=${cat}&name=${encodeURIComponent(title)}&label=${encodeURIComponent(catLabel(cat))}`);
       return;
     }
+    const wanted = preCat ? toCat(preCat) : "";
     // 1) categoria arrivata dalla mappa (filtro attivo) se offerta dal provider
-    if (preCat && cfgServices.includes(preCat)) { openConfig(preCat); return; }
+    if (wanted && cfgServices.includes(wanted)) { openConfig(wanted); return; }
     // 2) un solo servizio configurabile → apri direttamente
     if (cfgServices.length === 1) { openConfig(cfgServices[0]); return; }
     // 3) più servizi → chiedi quale
     if (cfgServices.length > 1) { setPickOpen(true); return; }
     // fallback
-    const cat = p.services?.[0];
-    openConfig(cat);
+    openConfig(p.services?.[0] || "");
   };
 
   return (
