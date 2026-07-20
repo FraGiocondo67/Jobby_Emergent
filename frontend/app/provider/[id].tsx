@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -18,7 +18,7 @@ const CFG_ROUTE: Record<string, string> = {
 };
 
 export default function ProviderDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, cat: preCat } = useLocalSearchParams<{ id: string; cat?: string }>();
   const { t, lang } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -27,6 +27,7 @@ export default function ProviderDetail() {
   const [products, setProducts] = useState<any[]>([]);
   const [cats, setCats] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
+  const [pickOpen, setPickOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -51,17 +52,31 @@ export default function ProviderDetail() {
   const title = p.business_name || p.name;
   const catLabel = (c: string) => cats[c]?.[lang] || c;
 
+  // Categorie configurabili offerte dal provider (standard: pulizie/babysitting/driver/artigiani)
+  const cfgServices = (p.services || []).filter((s: string) => CFG_ROUTE[s]);
+
+  const openConfig = (cat: string) => {
+    const base = CFG_ROUTE[cat] || `/request/${cat}?type=service`;
+    const sep = base.includes("?") ? "&" : "?";
+    router.push(`${base}${sep}provider=${id}&providerName=${encodeURIComponent(title)}` as any);
+  };
+
   const request = () => {
     if (isBusiness) {
       // Prefer a category that actually has products, else the first service.
       const cat = products[0]?.category || p.services?.[0] || "";
       router.push(`/business-request/${id}?category=${cat}&name=${encodeURIComponent(title)}&label=${encodeURIComponent(catLabel(cat))}`);
-    } else {
-      const cat = (p.services || []).find((s: string) => CFG_ROUTE[s]) || p.services?.[0];
-      const base = CFG_ROUTE[cat] || `/request/${cat}?type=service`;
-      const sep = base.includes("?") ? "&" : "?";
-      router.push(`${base}${sep}provider=${id}&providerName=${encodeURIComponent(title)}` as any);
+      return;
     }
+    // 1) categoria arrivata dalla mappa (filtro attivo) se offerta dal provider
+    if (preCat && cfgServices.includes(preCat)) { openConfig(preCat); return; }
+    // 2) un solo servizio configurabile → apri direttamente
+    if (cfgServices.length === 1) { openConfig(cfgServices[0]); return; }
+    // 3) più servizi → chiedi quale
+    if (cfgServices.length > 1) { setPickOpen(true); return; }
+    // fallback
+    const cat = p.services?.[0];
+    openConfig(cat);
   };
 
   return (
@@ -150,6 +165,20 @@ export default function ProviderDetail() {
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
         <Button testID="prov-request" label={isBusiness ? t("viewAndOrder") : t("requestService")} icon={isBusiness ? "cart" : "add"} onPress={request} />
       </View>
+
+      <Modal visible={pickOpen} transparent animationType="fade" onRequestClose={() => setPickOpen(false)}>
+        <Pressable style={styles.pickBackdrop} onPress={() => setPickOpen(false)}>
+          <Pressable style={styles.pickSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.pickTitle}>{t("chooseService")}</Text>
+            {cfgServices.map((s: string) => (
+              <Pressable key={s} testID={`pick-${s}`} style={styles.pickRow} onPress={() => { setPickOpen(false); openConfig(s); }}>
+                <Text style={styles.pickRowText}>{catLabel(s)}</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -190,4 +219,9 @@ const styles = StyleSheet.create({
   reviewText: { fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface, marginTop: 6 },
   reviewReply: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.brand, marginTop: 4, fontStyle: "italic" },
   footer: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: colors.divider },
+  pickBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  pickSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: spacing.xl },
+  pickTitle: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface, marginBottom: spacing.md },
+  pickRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  pickRowText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface, textTransform: "capitalize" },
 });

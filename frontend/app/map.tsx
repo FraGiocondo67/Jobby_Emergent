@@ -142,7 +142,7 @@ export default function MapScreen() {
             <>
               <Text style={styles.section}>👤 {t("providersOnlineTitle")} ({providers.length})</Text>
               {providers.map((p) => (
-                <Pressable key={p.user_id} style={[styles.card, shadow.card]} testID={`map-provider-${p.user_id}`} onPress={() => router.push(`/provider/${p.user_id}`)}>
+                <Pressable key={p.user_id} style={[styles.card, shadow.card]} testID={`map-provider-${p.user_id}`} onPress={() => router.push(`/provider/${p.user_id}${category ? `?cat=${category}` : ""}` as any)}>
                   {p.picture ? <Image source={{ uri: p.picture }} style={styles.avatar} contentFit="cover" /> : <View style={[styles.avatar, styles.avFallback, { backgroundColor: colors.blue }]}><Text style={styles.avInit}>{p.name[0]}</Text></View>}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{p.name}</Text>
