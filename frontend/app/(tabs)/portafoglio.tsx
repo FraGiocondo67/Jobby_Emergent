@@ -66,6 +66,10 @@ function ClientWallet() {
             <View style={{ flex: 1 }}>
               <Text style={styles.bonusLbl}>{t("bonusCredit")}</Text>
               <Text style={styles.bonusVal}>€{(user?.bonus_credit || 0).toFixed(2)}</Text>
+              <View style={styles.bonusNote}>
+                <Ionicons name="information-circle" size={14} color="#fff" />
+                <Text style={styles.bonusNoteText}>{t("bonusInAppOnly")}</Text>
+              </View>
             </View>
           </View>
         ) : null}
@@ -246,6 +250,8 @@ const styles = StyleSheet.create({
   bonusCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brand, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
   bonusLbl: { fontSize: fsize.sm, fontFamily: font.medium, color: "#fff", opacity: 0.9 },
   bonusVal: { fontSize: fsize["2xl"] || 24, fontFamily: font.bold, color: "#fff" },
+  bonusNote: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, backgroundColor: "rgba(255,255,255,0.18)", alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
+  bonusNoteText: { fontSize: 11, fontFamily: font.medium, color: "#fff" },
   blockTitle: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface, marginBottom: spacing.sm },
   numRow: { flexDirection: "row", justifyContent: "space-between", marginTop: spacing.sm },
   numCol: { flex: 1, alignItems: "center" },

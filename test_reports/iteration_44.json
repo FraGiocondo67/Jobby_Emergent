@@ -1,0 +1,30 @@
+{
+  "summary": "Batch D (Wallet & Admin refinements) fully verified. Backend: 10/10 pytest cases pass — admin can grant MULTIPLE bonuses for the same user cumulatively (no more 'bonus_already_granted' 400), each with its own description; each grant appended to users.bonus_grants and a transactions row of type=bonus + spendable_only=true is created; /api/admin/users returns 'roles' array on every user; new /api/admin/users/{id}/detail returns full structure (roles, wallet_balance, pending_balance, bonus_credit, flows{topups,bonus,spent}, transactions, as_client, as_provider, bonus_grants), returns 404 for unknown user_id, and requires X-Admin-Token. Frontend: after login as bstest@jobby.app and switching account to client role, /portafoglio (ClientWallet) correctly renders the green Bonus card with €25.00 and the note 'Spendable in-app only · not withdrawable' (bonusInAppOnly key), matching the requested #2 UX.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter44_admin_wallet_batch_d.py",
+    "/app/test_reports/pytest/iter44_batch_d.xml"
+  ],
+  "action_items": [
+    "No action required for Batch D. All 4 backend requirements and the client-wallet UX note render correctly."
+  ],
+  "critical_code_review_comments": [
+    "admin_grant_bonus in /app/backend/routers/admin_web.py: response returns bonus_credit computed from stale u.bonus_credit + amount (u was fetched before $inc). Re-fetching the doc or returning the updated result would be more robust for concurrent grants, but not a correctness issue in current tests.",
+    "The client wallet bonus card is rendered only when user.role === 'client'. Users with role=provider but bonus_credit > 0 do not see the note (they see ProviderDashboard). This matches the current spec but note the switch-role UX: Alert.alert used in profile.tsx for 'Activate profile Client' does not open on React-Native-Web, so activating client role from the browser preview requires backend API (POST /api/onboarding/complete) — real iOS/Android app is unaffected."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter44_admin_wallet_batch_d.py (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "seed_data_creation": "Granted 2 additional bonus transactions on user_disptest01 (€5.00 'TEST_iter44 first', €3.00 'TEST_iter44 second'). Also called /api/onboarding/complete for bstest@jobby.app to add client role so the wallet bonus UI could be exercised — the account now has roles=[provider,client], current role=client, bonus_credit=25.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "bstest@jobby.app now has roles=[provider,client] and current role=client with bonus_credit=25. If needing to test provider dashboards again, switch role back via POST /api/profile/switch-role with role=provider. Alert.alert('Activate profile Client') is a no-op on react-native-web; use API to change role for headless testing.",
+  "rca_of_issue": "N/A — this iteration is a feature verification pass, not a bug hunt. All Batch D features work as specified."
+}

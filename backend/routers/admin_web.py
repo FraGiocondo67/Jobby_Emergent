@@ -48,6 +48,7 @@ async def admin_users(_=Depends(require_admin)):
         "rating": u.get("rating", 0), "wallet_balance": u.get("wallet_balance", 0),
         "bonus_credit": u.get("bonus_credit", 0), "bonus_granted": u.get("bonus_granted", False),
         "is_bot": u.get("is_bot", False), "services": u.get("services", []),
+        "roles": u.get("roles", []),
         "online": u.get("online", False), "phone": u.get("phone", ""), "address": u.get("address", ""),
         "business_name": u.get("business_name", ""), "vat_number": u.get("vat_number", ""),
         "created_at": u.get("created_at", ""), "last_login": u.get("last_login", ""),
@@ -85,27 +86,70 @@ async def admin_set_user_status(user_id: str, body: UserStatusIn, _=Depends(requ
 
 class BonusIn(BaseModel):
     amount: float = 50.0
+    description: str = ""
 
 
 @router.post("/admin/users/{user_id}/bonus")
 async def admin_grant_bonus(user_id: str, body: BonusIn, _=Depends(require_admin)):
-    """#5 — Credito Bonus campagna adesione. Spendibile in-app (non prelevabile),
-    assegnabile UNA sola volta per utente. Default €50, modificabile."""
+    """Credito Bonus spendibile in-app (non prelevabile). Erogabile PIÙ volte,
+    ciascuna con una descrizione/motivazione. Ogni erogazione registra una
+    transazione e viene tracciata in users.bonus_grants."""
     u = await db.users.find_one({"user_id": user_id})
     if not u:
         raise HTTPException(status_code=404, detail="not_found")
-    if u.get("bonus_granted"):
-        raise HTTPException(status_code=400, detail="bonus_already_granted")
     amount = round(float(body.amount), 2)
     if amount <= 0:
         raise HTTPException(status_code=400, detail="invalid_amount")
+    desc = (body.description or "").strip() or "Credito Bonus JOBBY"
+    grant = {"amount": amount, "description": desc, "at": now_utc().isoformat()}
     await db.users.update_one({"user_id": user_id},
-                              {"$inc": {"bonus_credit": amount}, "$set": {"bonus_granted": True}})
+                              {"$inc": {"bonus_credit": amount}, "$set": {"bonus_granted": True},
+                               "$push": {"bonus_grants": grant}})
     await db.transactions.insert_one({
         "tx_id": new_id("tx"), "user_id": user_id, "type": "bonus", "status": "available",
-        "amount": amount, "label": f"Credito Bonus JOBBY €{amount:.2f} (campagna adesione)",
+        "amount": amount, "label": f"Bonus: {desc} (€{amount:.2f})",
         "spendable_only": True, "created_at": now_utc().isoformat()})
-    return {"user_id": user_id, "bonus_credit": round(float(u.get("bonus_credit", 0)) + amount, 2), "granted": True}
+    return {"user_id": user_id, "bonus_credit": round(float(u.get("bonus_credit", 0)) + amount, 2),
+            "granted": True, "description": desc}
+
+
+@router.get("/admin/users/{user_id}/detail")
+async def admin_user_detail(user_id: str, _=Depends(require_admin)):
+    """Dettaglio completo utente: anagrafica, ruoli, wallet, flussi finanziari
+    (transazioni) e attività (richieste come cliente / lavori come provider)."""
+    u = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not u:
+        raise HTTPException(status_code=404, detail="not_found")
+    tx = await db.transactions.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(80)
+    as_client = await db.richieste.find({"cliente_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(60)
+    as_provider = await db.richieste.find({"provider_scelto": user_id}, {"_id": 0}).sort("created_at", -1).to_list(60)
+    SC = {"PULIZIA": "pulizie", "BABYSITTING": "babysitting", "DRIVER": "driver", "ARTIGIANI": "artigiani"}
+
+    def slim(r):
+        return {"richiesta_id": r.get("richiesta_id"), "cat": SC.get(r.get("servizio"), r.get("servizio")),
+                "stato": r.get("stato"), "prezzo": r.get("prezzo_finale") or r.get("importo_totale"),
+                "data": (r.get("data_ora") or r.get("pickup_at") or r.get("created_at") or "")[:16].replace("T", " ")}
+
+    topups = round(sum(t.get("amount", 0) for t in tx if t.get("type") == "topup" and t.get("status") == "paid"), 2)
+    bonus_tot = round(sum(t.get("amount", 0) for t in tx if t.get("type") == "bonus"), 2)
+    spent = round(sum(t.get("amount", 0) for t in tx if t.get("type") in ("payment", "held", "order") and t.get("amount", 0) > 0), 2)
+    return {
+        "user_id": user_id, "name": u.get("name"), "email": u.get("email"),
+        "phone": u.get("phone", ""), "address": u.get("address", ""),
+        "role": u.get("role"), "roles": u.get("roles", []), "services": u.get("services", []),
+        "approval_status": u.get("approval_status", "approved"),
+        "business_name": u.get("business_name", ""), "vat_number": u.get("vat_number", ""),
+        "wallet_balance": round(float(u.get("wallet_balance", 0)), 2),
+        "pending_balance": round(float(u.get("pending_balance", 0)), 2),
+        "bonus_credit": round(float(u.get("bonus_credit", 0)), 2),
+        "lf_borsellino": round(float(u.get("lf_borsellino", 0)), 2),
+        "bonus_grants": u.get("bonus_grants", []),
+        "flows": {"topups": topups, "bonus": bonus_tot, "spent": spent},
+        "transactions": tx,
+        "as_client": [slim(r) for r in as_client],
+        "as_provider": [slim(r) for r in as_provider],
+        "created_at": u.get("created_at", ""), "last_login": u.get("last_login", ""),
+    }
 
 
 @router.get("/admin/bookings")
@@ -381,19 +425,21 @@ async function loadUsers(){
     const needs=(x.role==='provider'||x.role==='business');
     const actions=needs?`<div class="act">
       ${x.role==='business'?`<button class="ghost" onclick="viewDocs('${x.user_id}')">Docs</button>`:''}
+      <button class="ghost" onclick="viewDetail('${x.user_id}')">Dettaglio</button>
       ${st!=='approved'?`<button class="b-approve" onclick="setStatus('${x.user_id}','approved')">Approve</button>`:''}
       ${st!=='suspended'?`<button class="b-suspend" onclick="setStatus('${x.user_id}','suspended')">Suspend</button>`:''}
       ${st!=='rejected'?`<button class="b-reject" onclick="setStatus('${x.user_id}','rejected')">Reject</button>`:''}
-    </div>`:'<span class="muted">auto</span>';
+    </div>`:`<div class="act"><button class="ghost" onclick="viewDetail('${x.user_id}')">Dettaglio</button></div>`;
+    const rolesTxt=(x.roles&&x.roles.length)?x.roles.map(r=>r===x.role?`<b>${r}</b>`:r).join(' / '):x.role;
     return `<tr>
       <td>${x.business_name||x.name||''}${x.is_bot?' 🤖':''}<div class="muted">${x.email||''}${x.phone?' · '+x.phone:''}</div>${needs&&(x.services&&x.services.length)?`<div class="muted">🧩 Attività: ${x.services.join(', ')}</div>`:(needs?`<div class="muted" style="color:#DE4B3F">⚠️ Nessuna attività selezionata</div>`:'')}<div class="muted">📅 Attivo dal: ${fmtDate(x.created_at)} · 🕑 Ultimo login: ${fmtDate(x.last_login)}</div></td>
-      <td><span class="pill" style="background:#eee">${x.role}</span></td>
+      <td><span class="pill" style="background:#eee">${rolesTxt}</span><div class="muted">attuale: ${x.role}</div></td>
       <td><span class="pill p-${st}">${st}</span></td>
       <td>${x.role==='client'?(x.client_trust_score||0):(x.trust_score||0)}</td>
       <td>€${(x.wallet_balance||0).toFixed(2)}</td>
-      <td>€${(x.bonus_credit||0).toFixed(2)}${x.bonus_granted?` <span class="muted">(dato)</span>`:` <button class="b-approve" onclick="grantBonus('${x.user_id}')">+ Bonus</button>`}</td>
+      <td>€${(x.bonus_credit||0).toFixed(2)} <button class="b-approve" onclick="grantBonus('${x.user_id}')">+ Bonus</button></td>
       <td>${actions}</td></tr>`;}).join('');
-  document.getElementById('users').innerHTML=bar+'<table><tr><th>User</th><th>Role</th><th>Status</th><th>Trust</th><th>Wallet</th><th>Bonus</th><th>Actions</th></tr>'+rows+'</table>';
+  document.getElementById('users').innerHTML=bar+'<table><tr><th>User</th><th>Ruoli</th><th>Status</th><th>Trust</th><th>Wallet</th><th>Bonus</th><th>Actions</th></tr>'+rows+'</table>';
 }
 function setUF(f){USERFILTER=f;loadUsers();}
 async function grantBonus(id){
@@ -401,8 +447,27 @@ async function grantBonus(id){
   if(v===null)return;
   const amount=parseFloat(v);
   if(isNaN(amount)||amount<=0){alert('Importo non valido');return;}
-  try{const r=await api('/admin/users/'+id+'/bonus',{method:'POST',body:JSON.stringify({amount})});alert('Bonus €'+amount.toFixed(2)+' assegnato. Credito bonus: €'+r.bonus_credit.toFixed(2));loadUsers();}
-  catch(e){alert(String(e.message)==='400'?'Bonus già assegnato a questo utente':'Errore');}
+  const desc=prompt('Descrizione / motivazione del bonus:','Credito Bonus JOBBY');
+  if(desc===null)return;
+  try{const r=await api('/admin/users/'+id+'/bonus',{method:'POST',body:JSON.stringify({amount,description:desc})});alert('Bonus €'+amount.toFixed(2)+' assegnato ('+r.description+'). Credito bonus totale: €'+r.bonus_credit.toFixed(2));loadUsers();}
+  catch(e){alert('Errore: '+String(e.message));}
+}
+async function viewDetail(id){
+  const d=await api('/admin/users/'+id+'/detail');
+  document.getElementById('docTitle').textContent=(d.business_name||d.name||'Utente');
+  const roles=(d.roles&&d.roles.length)?d.roles.join(' / '):d.role;
+  let h='<div class="muted" style="margin:6px 0">Email: <b>'+(d.email||'—')+'</b> · Tel: '+(d.phone||'—')+'<br>Ruoli: <b>'+roles+'</b> (attuale: '+d.role+')'+(d.vat_number?'<br>P.IVA: '+d.vat_number:'')+(d.services&&d.services.length?'<br>Attività: '+d.services.join(', '):'')+'</div>';
+  h+='<div class="sec">Wallet</div><div class="muted">Disponibile: <b>€'+d.wallet_balance.toFixed(2)+'</b> · In garanzia: €'+d.pending_balance.toFixed(2)+' · Bonus (in-app): <b>€'+d.bonus_credit.toFixed(2)+'</b>'+(d.lf_borsellino?' · Borsellino LF: €'+d.lf_borsellino.toFixed(2):'')+'</div>';
+  h+='<div class="muted">Flussi: ricariche €'+d.flows.topups.toFixed(2)+' · bonus €'+d.flows.bonus.toFixed(2)+' · speso €'+d.flows.spent.toFixed(2)+'</div>';
+  if((d.bonus_grants||[]).length){h+='<div class="sec">Bonus erogati</div>'+d.bonus_grants.map(g=>'<div class="muted">€'+(g.amount||0).toFixed(2)+' — '+(g.description||'')+' <span style="opacity:.6">('+fmtDate(g.at)+')</span></div>').join('');}
+  h+='<div class="sec">Transazioni recenti</div>';
+  h+=(d.transactions||[]).length?('<table><tr><th>Tipo</th><th>Importo</th><th>Stato</th><th>Descrizione</th><th>Data</th></tr>'+d.transactions.slice(0,40).map(t=>'<tr><td>'+(t.type||'')+'</td><td>€'+(t.amount||0).toFixed(2)+'</td><td>'+(t.status||'')+'</td><td class="muted">'+(t.label||'')+'</td><td class="muted">'+fmtDate(t.created_at)+'</td></tr>').join('')+'</table>'):'<div class="muted">Nessuna transazione</div>';
+  h+='<div class="sec">Richieste come cliente ('+d.as_client.length+')</div>';
+  h+=d.as_client.length?('<table><tr><th>Cat.</th><th>Stato</th><th>€</th><th>Quando</th></tr>'+d.as_client.map(r=>'<tr><td>'+r.cat+'</td><td>'+r.stato+'</td><td>'+(r.prezzo?('€'+Number(r.prezzo).toFixed(2)):'—')+'</td><td class="muted">'+r.data+'</td></tr>').join('')+'</table>'):'<div class="muted">Nessuna</div>';
+  h+='<div class="sec">Lavori come provider ('+d.as_provider.length+')</div>';
+  h+=d.as_provider.length?('<table><tr><th>Cat.</th><th>Stato</th><th>€</th><th>Quando</th></tr>'+d.as_provider.map(r=>'<tr><td>'+r.cat+'</td><td>'+r.stato+'</td><td>'+(r.prezzo?('€'+Number(r.prezzo).toFixed(2)):'—')+'</td><td class="muted">'+r.data+'</td></tr>').join('')+'</table>'):'<div class="muted">Nessuno</div>';
+  document.getElementById('docBody').innerHTML=h;
+  document.getElementById('docModal').classList.remove('hidden');
 }
 async function setStatus(id,status){
   if(status!=='approved'&&!confirm('Set user to '+status+'?'))return;
