@@ -8,7 +8,7 @@ shared-ride tracking, 4h/30min cancellation schema, per-class onboarding.
 """
 import math
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 import requests
@@ -36,7 +36,10 @@ async def fee_pct() -> float:
 
 def _parse(dt: str) -> Optional[datetime]:
     try:
-        return datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        d = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        return d
     except Exception:
         return None
 
