@@ -635,6 +635,8 @@ export const strings = {
     whichActivitiesProSub: "Seleziona i servizi che vuoi offrire ai clienti.",
     whichActivitiesBizSub: "Seleziona le categorie della tua attività (prossimità e/o servizi).",
     selectAtLeastOne: "Seleziona almeno un'attività",
+    exploreMapTitle: "Cerca attorno a te", exploreMapSub: "Esplora la mappa: provider e attività vicino a te",
+    searchRadius: "Raggio di ricerca", allCategories: "Tutte", active: "Attivo", inactive: "Non attivo",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -1270,6 +1272,8 @@ export const strings = {
     whichActivitiesProSub: "Select the services you want to offer to clients.",
     whichActivitiesBizSub: "Select your business categories (proximity and/or services).",
     selectAtLeastOne: "Select at least one activity",
+    exploreMapTitle: "Search around you", exploreMapSub: "Explore the map: providers and businesses near you",
+    searchRadius: "Search radius", allCategories: "All", active: "Active", inactive: "Inactive",
   },
 };
 

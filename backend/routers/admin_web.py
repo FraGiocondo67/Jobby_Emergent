@@ -50,7 +50,7 @@ async def admin_users(_=Depends(require_admin)):
         "is_bot": u.get("is_bot", False), "services": u.get("services", []),
         "online": u.get("online", False), "phone": u.get("phone", ""), "address": u.get("address", ""),
         "business_name": u.get("business_name", ""), "vat_number": u.get("vat_number", ""),
-        "created_at": u.get("created_at", ""),
+        "created_at": u.get("created_at", ""), "last_login": u.get("last_login", ""),
     } for u in users]
 
 
@@ -370,6 +370,7 @@ async function setCommission(id,val){
   catch(e){alert('Invalid commission');}
 }
 async function toggleCat(id,el){const desired=!el.classList.contains('on');const r=await api('/admin/categories/'+id+'/set',{method:'POST',body:JSON.stringify({active:desired})});el.classList.toggle('on',r.active);}
+function fmtDate(s){if(!s)return '—';try{const d=new Date(s);if(isNaN(d))return '—';return d.toLocaleDateString('it-IT')+' '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});}catch(e){return '—';}}
 async function loadUsers(){
   const u=await api('/admin/users');
   const filtered=u.filter(x=>USERFILTER==='all'?true:USERFILTER==='pending'?(x.approval_status==='pending'&&x.role!=='client'):x.role===USERFILTER);
@@ -385,7 +386,7 @@ async function loadUsers(){
       ${st!=='rejected'?`<button class="b-reject" onclick="setStatus('${x.user_id}','rejected')">Reject</button>`:''}
     </div>`:'<span class="muted">auto</span>';
     return `<tr>
-      <td>${x.business_name||x.name||''}${x.is_bot?' 🤖':''}<div class="muted">${x.email||''}${x.phone?' · '+x.phone:''}</div>${needs&&(x.services&&x.services.length)?`<div class="muted">🧩 Attività: ${x.services.join(', ')}</div>`:(needs?`<div class="muted" style="color:#DE4B3F">⚠️ Nessuna attività selezionata</div>`:'')}</td>
+      <td>${x.business_name||x.name||''}${x.is_bot?' 🤖':''}<div class="muted">${x.email||''}${x.phone?' · '+x.phone:''}</div>${needs&&(x.services&&x.services.length)?`<div class="muted">🧩 Attività: ${x.services.join(', ')}</div>`:(needs?`<div class="muted" style="color:#DE4B3F">⚠️ Nessuna attività selezionata</div>`:'')}<div class="muted">📅 Attivo dal: ${fmtDate(x.created_at)} · 🕑 Ultimo login: ${fmtDate(x.last_login)}</div></td>
       <td><span class="pill" style="background:#eee">${x.role}</span></td>
       <td><span class="pill p-${st}">${st}</span></td>
       <td>${x.role==='client'?(x.client_trust_score||0):(x.trust_score||0)}</td>

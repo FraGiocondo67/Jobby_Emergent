@@ -93,8 +93,8 @@ export const api = {
   addBusinessPhoto: (image: string) => request("/onboarding/business/photo", { method: "POST", body: JSON.stringify({ image }) }),
   deleteBusinessPhoto: (index: number) => request(`/onboarding/business/photo/${index}`, { method: "DELETE" }),
   setBusinessDocument: (image: string) => request("/onboarding/business/document", { method: "POST", body: JSON.stringify({ image }) }),
-  providersNearby: (lat: number, lng: number, category?: string) =>
-    request(`/providers/nearby?lat=${lat}&lng=${lng}${category ? `&category=${category}` : ""}`),
+  providersNearby: (lat: number, lng: number, category?: string, radius?: number) =>
+    request(`/providers/nearby?lat=${lat}&lng=${lng}${category ? `&category=${category}` : ""}${radius != null ? `&radius=${radius}` : ""}`),
   createMission: (data: any) => request("/missions", { method: "POST", body: JSON.stringify(data) }),
   getMission: (id: string) => request(`/missions/${id}`),
   myMissions: () => request("/missions"),
@@ -299,6 +299,10 @@ export const api = {
     request(`/listino/order/${rid}/respond`, { method: "POST", body: JSON.stringify(data) }),
   completeOrder: (rid: string) => request(`/listino/order/${rid}/complete`, { method: "POST" }),
   cancelOrder: (rid: string) => request(`/listino/order/${rid}/cancel`, { method: "POST" }),
+
+  // geocoding (OpenStreetMap)
+  geocode: (query: string) => request("/geocode", { method: "POST", body: JSON.stringify({ query }) }),
+  reverseGeocode: (lat: number, lng: number) => request("/reverse-geocode", { method: "POST", body: JSON.stringify({ lat, lng }) }),
 
   // babysitting (Spec 6)
   bsConfig: () => request("/babysitting/config"),

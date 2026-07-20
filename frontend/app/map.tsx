@@ -29,25 +29,47 @@ function TrustChip({ score }: { score: number }) {
   return <Text style={styles.trust}>🛡️ {t("trustScore")} {Math.round(score)}</Text>;
 }
 
+function ActivePill({ online }: { online: boolean }) {
+  const { t } = useLang();
+  return (
+    <View style={[styles.statusPill, { backgroundColor: online ? "#E4F4E8" : "#F0F0F0" }]}>
+      <View style={[styles.statusDot, { backgroundColor: online ? colors.success : colors.muted }]} />
+      <Text style={[styles.statusText, { color: online ? colors.success : colors.muted }]}>{online ? t("active") : t("inactive")}</Text>
+    </View>
+  );
+}
+
 export default function MapScreen() {
   const { user } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [all, setAll] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showProviders, setShowProviders] = useState(true);
   const [showBusinesses, setShowBusinesses] = useState(true);
+  const [radiusKm, setRadiusKm] = useState<number>(user?.radius_km || 10);
+  const [category, setCategory] = useState<string | null>(null);
+  const [cats, setCats] = useState<any[]>([]);
+
+  const RADII = [2, 5, 10, 20, 50];
 
   const fallbackCenter = { lat: user?.lat || TREVISO.lat, lng: user?.lng || TREVISO.lng };
   const { coords: center } = useDeviceLocation(fallbackCenter);
 
   useEffect(() => {
     (async () => {
-      try { setAll(await api.providersNearby(center.lat, center.lng)); } catch {}
+      try { const c = await api.categories(); setCats([...(c.standard || []), ...(c.proximity || [])]); } catch {}
+    })();
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    (async () => {
+      try { setAll(await api.providersNearby(center.lat, center.lng, category || undefined, radiusKm)); } catch {}
       finally { setLoading(false); }
     })();
-  }, [center.lat, center.lng]);
+  }, [center.lat, center.lng, category, radiusKm]);
 
   const providers = useMemo(() => all.filter((p) => p.role === "provider"), [all]);
   const businesses = useMemo(() => all.filter((p) => p.role === "business"), [all]);
@@ -61,8 +83,8 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={{ height: "44%" }}>
-        <RealMap center={center} markers={markers} height="100%" />
+      <View style={{ height: "40%" }}>
+        <RealMap center={center} markers={markers} radiusKm={radiusKm} height="100%" />
         <Pressable testID="map-back" style={[styles.backBtn, { top: insets.top + spacing.sm }]} onPress={() => router.back()} hitSlop={12}>
           <Ionicons name="arrow-back" size={22} color={colors.onSurface} />
         </Pressable>
@@ -85,6 +107,28 @@ export default function MapScreen() {
 
       <View style={styles.sheet}>
         <View style={styles.handle} />
+        {/* Radius selector */}
+        <View style={styles.radiusRow}>
+          <Text style={styles.radiusLabel}>📍 {t("searchRadius")}: <Text style={{ fontFamily: font.bold, color: colors.brand }}>{radiusKm} km</Text></Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.sm }}>
+          {RADII.map((r) => (
+            <Pressable key={r} testID={`radius-${r}`} onPress={() => setRadiusKm(r)} style={[styles.rChip, radiusKm === r && styles.rChipOn]}>
+              <Text style={[styles.rChipText, radiusKm === r && { color: "#fff" }]}>{r} km</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        {/* Category filter */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}>
+          <Pressable testID="cat-all" onPress={() => setCategory(null)} style={[styles.catChip, !category && styles.catChipOn]}>
+            <Text style={[styles.catChipText, !category && { color: "#fff" }]}>🔎 {t("allCategories")}</Text>
+          </Pressable>
+          {cats.map((c) => (
+            <Pressable key={c.cat_id} testID={`cat-${c.cat_id}`} onPress={() => setCategory(c.cat_id)} style={[styles.catChip, category === c.cat_id && styles.catChipOn]}>
+              <Text style={[styles.catChipText, category === c.cat_id && { color: "#fff" }]}>{c.emoji} {c.label[lang]}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
         <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} showsVerticalScrollIndicator={false}>
           {!loading && providers.length === 0 && businesses.length === 0 ? (
             <View style={styles.empty} testID="map-empty">
@@ -103,7 +147,7 @@ export default function MapScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{p.name}</Text>
                     <Text style={styles.sub}>{(p.services || []).join(" · ")}</Text>
-                    <View style={styles.metaRow}><Stars rating={p.rating} size={12} /><Text style={styles.meta}>{p.rating.toFixed(1)}</Text><TrustChip score={p.trust_score} /></View>
+                    <View style={styles.metaRow}><Stars rating={p.rating} size={12} /><Text style={styles.meta}>{p.rating.toFixed(1)}</Text><TrustChip score={p.trust_score} /><ActivePill online={p.online} /></View>
                     {p.approval_status !== "approved" ? <PendingBadge /> : null}
                   </View>
                   <Text style={styles.rate}>€{p.hourly_rate.toFixed(0)}{t("perHour")}</Text>
@@ -121,7 +165,7 @@ export default function MapScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{b.business_name || b.name}</Text>
                     <Text style={styles.sub}>{(b.services || []).join(" · ")} · {b.distance_km} km</Text>
-                    <View style={styles.metaRow}><Stars rating={b.rating} size={12} /><Text style={styles.meta}>{b.rating.toFixed(1)}</Text><TrustChip score={b.trust_score} /></View>
+                    <View style={styles.metaRow}><Stars rating={b.rating} size={12} /><Text style={styles.meta}>{b.rating.toFixed(1)}</Text><TrustChip score={b.trust_score} /><ActivePill online={b.online} /></View>
                     {b.approval_status !== "approved" ? <PendingBadge /> : null}
                   </View>
                 </View>
@@ -148,6 +192,17 @@ const styles = StyleSheet.create({
   legendText: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.onSurface },
   sheet: { flex: 1, backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28, padding: spacing.lg },
   handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderStrong, alignSelf: "center", marginBottom: spacing.md },
+  radiusRow: { marginBottom: spacing.sm },
+  radiusLabel: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface },
+  rChip: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  rChipOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  rChipText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurfaceTertiary },
+  catChip: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  catChipOn: { backgroundColor: colors.purple, borderColor: colors.purple },
+  catChipText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.onSurfaceTertiary },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusText: { fontSize: fsize.sm, fontFamily: font.medium },
   section: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.md, marginBottom: spacing.sm },
   card: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
   avatar: { width: 48, height: 48, borderRadius: 24 },

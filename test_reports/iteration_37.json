@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend-only regression covering (1) device-language default + persistence on onboarding screen, (2) new Home 'explore-map' card for CLIENT role, (3) /map with radius chips 2/5/10/20/50 + category filter + Stars/TrustChip/ActivePill on every card, (4) business-request geocoding fields and successful order placement, (5) regression on the Fase 3 order flow. Login page renders in ENGLISH by default (browser locale en-US) with IT/EN toggle at the top-right; switching to IT shows 'Accedi'/'Bentornato' and PERSISTS across full reload. Injecting session token disp-test-token-777 lands on the CLIENT Home which shows the 'Search around you' explore-map card; tapping it opens /map. On /map the radius chips reload results (radius 2 → 2 cards, radius 50 → 3 cards; strictly increasing). Every provider/business card renders Stars rating, Trust Score chip and Active pill (only 'Active' present because backend /providers/nearby now returns online-only, per product decision). Category filter cat-pulizie narrows to 2 cards and cat-all restores full list. Business-request screen for Francesco Franzin (user_2f996c8a010a, category=lavanderia) shows testIDs breq-address + breq-location; placing an order (+1 Lavaggio camicia) with a manually typed address succeeded (server-side geocoded) and the success screen 'Order sent! Amount held in escrow' rendered. No red screens, no uncaught errors, only benign shadow*/pointerEvents web deprecation warnings.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Email/password login bstest@jobby.app / test1234",
+        "issue": "Logging in with these credentials lands on the PROVIDER Home (title 'Missions', online toggle, 'Incoming requests', no explore-map card). Per test_credentials.md and the review request, this account should be role=client. Only the injected client token (disp-test-token-777) actually reached the client Home with the explore-map card. Not blocking (the review allows OR-fallback via injection), but the client email account role appears mis-seeded/toggled.",
+        "affected_testIDs": ["auth-submit", "explore-map"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* deprecation (web)", "issue": "Console warning '\"shadow*\" style props are deprecated. Use \"boxShadow\"' fires on multiple screens. Explicitly accepted by product note, but should be migrated eventually."},
+      {"component": "props.pointerEvents", "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' fires from the client Home floating action wrapper (index.tsx floatWrap style block already uses pointerEvents in the style prop – runtime still complains, likely from another wrapper). Reference: /app/frontend/app/(tabs)/index.tsx:191."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_37.json"],
+  "action_items": [
+    "Verify why bstest@jobby.app / test1234 renders the provider Home instead of the client Home (role in DB may have flipped to provider after previous sprints). Either re-seed to client or update /app/memory/test_credentials.md to reflect actual role.",
+    "(Nice-to-have) Track down the residual pointerEvents deprecation warning and migrate shadow* to boxShadow for web build hygiene."
+  ],
+  "critical_code_review_comments": [
+    "map.tsx correctly wires api.providersNearby(lat,lng,category,radius) with a useEffect dependency on [center.lat, center.lng, category, radiusKm] – reloads happen as expected.",
+    "business-request/[businessId].tsx resolveCoords() only overrides coords when geocode succeeds and !fallback – good; falls back to previous coords otherwise so the order still succeeds even if geocoding fails.",
+    "LanguageContext.tsx defaults to device locale (it→it, everything else→en) and is overridden by persisted 'jobby_lang' key – matches product decision."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (frontend-only)", "frontend": "100%" },
+  "seed_data_creation": "None – used existing seeded Francesco Franzin catalog and disp-test-token-777 client wallet.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Prefer session-token injection (localStorage 'jobby_session_token' = JSON.stringify('disp-test-token-777')) to reach the CLIENT Home reliably; the bstest email account currently boots the provider Home. Map screen returns 3 online near Treviso within 50 km (2 within 2 km). API /providers/nearby now returns online-only, so 'Inactive' pills will not appear on /map in current data.",
+  "rca_of_issue": "n/a – all requested features verified working."
+}

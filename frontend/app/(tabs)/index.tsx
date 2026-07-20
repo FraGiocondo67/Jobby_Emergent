@@ -148,6 +148,15 @@ function CustomerHome() {
             </>
           )}
 
+          <Pressable testID="explore-map" style={[styles.mapCard, shadow.card]} onPress={() => router.push("/map")}>
+            <View style={styles.mapIcon}><Ionicons name="map" size={26} color={colors.blue} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.mapTitle}>{t("exploreMapTitle")}</Text>
+              <Text style={styles.mapSub}>{t("exploreMapSub")}</Text>
+            </View>
+            <Ionicons name="arrow-forward-circle" size={30} color={colors.blue} />
+          </Pressable>
+
           <View style={styles.grid}>
             {filtered.filter((c) => !(home.state !== "recurring" && c.cat_id === "pulizie")).map((c) => (
               <Pressable
@@ -449,7 +458,8 @@ const styles = StyleSheet.create({
   body: { paddingHorizontal: spacing.lg },
   search: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 50 },
   searchInput: { flex: 1, fontSize: fsize.lg, fontFamily: font.regular, color: colors.onSurface },
-  mapCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.blueBg, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },
+  mapCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.blueBg, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md, marginBottom: spacing.sm },
+  mapIcon: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
   mapTitle: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.blue },
   mapSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.blue, opacity: 0.8, marginTop: 1 },
   sectionTitle: { fontSize: fsize["2xl"], fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.xl, marginBottom: spacing.md },

@@ -39,6 +39,7 @@ async def issue_session(user_id):
     await db.user_sessions.insert_one({
         "session_token": token, "user_id": user_id,
         "created_at": now_utc(), "expires_at": now_utc() + timedelta(days=7)})
+    await db.users.update_one({"user_id": user_id}, {"$set": {"last_login": now_utc().isoformat()}})
     return token
 
 
@@ -155,6 +156,7 @@ async def create_session(body: SessionIn):
     await db.user_sessions.insert_one({
         "session_token": session_token, "user_id": user_id,
         "created_at": now_utc(), "expires_at": now_utc() + timedelta(days=7)})
+    await db.users.update_one({"user_id": user_id}, {"$set": {"last_login": now_utc().isoformat()}})
     return {"user": await _public_user(user_id), "session_token": session_token}
 
 

@@ -11,8 +11,9 @@ router = APIRouter()
 
 
 @router.get("/providers/nearby")
-async def providers_nearby(lat: float, lng: float, category: Optional[str] = None, user=Depends(get_current_user)):
-    # Real registered providers/businesses only (exclude demo bots).
+async def providers_nearby(lat: float, lng: float, category: Optional[str] = None,
+                           radius: Optional[float] = None, user=Depends(get_current_user)):
+    # Real registered providers/businesses only (exclude demo bots), online/active only.
     providers = await db.users.find(
         {"role": {"$in": ["provider", "business"]}, "online": True, "is_bot": {"$ne": True},
          "approval_status": {"$nin": ["rejected", "suspended"]}},
@@ -22,7 +23,9 @@ async def providers_nearby(lat: float, lng: float, category: Optional[str] = Non
         if category and category not in p.get("services", []):
             continue
         dist = haversine(lat, lng, p.get("lat", TREVISO["lat"]), p.get("lng", TREVISO["lng"]))
-        if dist > p.get("radius_km", 10):
+        # If an explicit map radius is given, use it; otherwise use each provider's own reach.
+        limit = radius if radius is not None else p.get("radius_km", 10)
+        if dist > limit:
             continue
         result.append({
             "user_id": p["user_id"], "name": p["name"], "picture": p.get("picture", ""),
@@ -31,7 +34,7 @@ async def providers_nearby(lat: float, lng: float, category: Optional[str] = Non
             "trust_score": p.get("trust_score", 0), "bio": p.get("bio", ""), "distance_km": dist,
             "services": p.get("services", []), "lat": p.get("lat"), "lng": p.get("lng"),
             "role": p.get("role"), "service_mode": p.get("service_mode", "both"),
-            "business_name": p.get("business_name", ""),
+            "business_name": p.get("business_name", ""), "online": p.get("online", False),
             "approval_status": p.get("approval_status", "approved"),
         })
     result.sort(key=lambda x: x["distance_km"])

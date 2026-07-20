@@ -59,9 +59,19 @@ export default function BusinessRequestScreen() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") return;
       const loc = await Location.getCurrentPositionAsync({});
-      setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      setAddress(`${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)} · Treviso`);
+      const c = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setCoords(c);
+      try { const r = await api.reverseGeocode(c.lat, c.lng); if (r?.label) setAddress(r.label); } catch {}
     } catch {}
+  };
+
+  // Converte l'indirizzo digitato in coordinate reali; ritorna le coord da usare.
+  const resolveCoords = async () => {
+    try {
+      const g = await api.geocode(address);
+      if (g && !g.fallback) { const c = { lat: g.lat, lng: g.lng }; setCoords(c); return c; }
+    } catch {}
+    return coords;
   };
 
   const placeOrder = async () => {
@@ -69,10 +79,11 @@ export default function BusinessRequestScreen() {
     if (total > available) { Alert.alert(t("insufficientWallet")); return; }
     setSubmitting(true);
     try {
+      const c = await resolveCoords();
       const items = products.filter((p) => (qty[p.item_id] || 0) > 0).map((p) => ({ item_id: p.item_id, qty: qty[p.item_id] }));
       await api.createOrder({
         business_id: businessId as string, category: category as string, items,
-        address, lat: coords.lat, lng: coords.lng, note: note.trim(),
+        address, lat: c.lat, lng: c.lng, note: note.trim(),
       });
       try { setUser(await api.me()); } catch {}
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -87,9 +98,10 @@ export default function BusinessRequestScreen() {
     if (!note.trim()) return;
     setSubmitting(true);
     try {
+      const c = await resolveCoords();
       await api.createBusinessRequest({
         business_id: businessId as string, category: category as string, note: note.trim(),
-        address, lat: coords.lat, lng: coords.lng, budget: budget.trim() ? Number(budget) : null,
+        address, lat: c.lat, lng: c.lng, budget: budget.trim() ? Number(budget) : null,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSuccess(true);
