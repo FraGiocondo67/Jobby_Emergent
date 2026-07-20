@@ -1,0 +1,42 @@
+Oggetto: Accesso browser al backoffice backend in PRODUZIONE + hosting MongoDB/Backend — app JOBBY (Expo + FastAPI + MongoDB)
+
+Ciao team Emergent,
+sto sviluppando l'app mobile JOBBY (stack Expo React Native + FastAPI + MongoDB).
+Ho un backoffice WEB amministrativo servito dal backend FastAPI alle rotte:
+  • /api/admin/login  (pagina di login: email + password + 2FA TOTP)
+  • /api/admin/ui     (dashboard admin)
+
+In PREVIEW funziona perfettamente da browser:
+  https://jobby-mvp-update.preview.emergentagent.com/api/admin/login
+
+Ho bisogno di aiuto su questi punti (ambiente di PRODUZIONE/Deployment):
+
+1) ACCESSO BROWSER AL BACKOFFICE IN PRODUZIONE
+   Dopo il Deploy, qual è l'URL pubblico del BACKEND di produzione da usare nel browser?
+   Voglio poter aprire https://<url-backend-produzione>/api/admin/login da un normale browser.
+   Attualmente non riesco a raggiungerlo. È possibile abilitare l'accesso browser a queste rotte
+   del backend deployato? Se sì, come? Se serve una configurazione (ingress/route/dominio), ditemi i passi.
+
+2) DUE AMBIENTI (Preview vs Produzione)
+   Confermo di aver capito che Preview e Produzione hanno DATABASE separati.
+   Gli utenti reali registrati dall'app (TestFlight/Apple) finiscono nel DB di PRODUZIONE,
+   quindi li vedo solo dal backoffice di produzione. Confermate? C'è un modo per accedere
+   contemporaneamente ai due backoffice (preview + produzione) da browser?
+
+3) HOSTING MONGODB
+   Su quale piattaforma/cloud è ospitato fisicamente MongoDB (AWS / MongoDB Atlas / cluster interno)
+   per Preview e per Produzione? Come posso connettermi al database esternamente
+   (connection string / credenziali / IP allowlist / eventuale UI)?
+
+4) HOSTING BACKEND
+   Dove gira il backend FastAPI (quale cloud/infra) per Preview e Produzione?
+   Esiste un URL/dashboard per gestirlo e vederne i log in produzione?
+
+Dati progetto:
+  • Nome app / URL preview: jobby-mvp-update.preview.emergentagent.com
+  • Job ID / App ID: <INSERISCI QUI>
+  • Data/ora dei tentativi: <INSERISCI QUI>
+
+Allego screenshot di: (a) login backoffice funzionante in preview, (b) URL produzione non raggiungibile.
+
+Grazie mille!
