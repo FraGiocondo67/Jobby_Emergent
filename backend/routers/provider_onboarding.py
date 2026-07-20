@@ -152,6 +152,7 @@ class ProfileIn(BaseModel):
     iban: Optional[str] = None
     bio: Optional[str] = None
     condizione_soggettiva: Optional[str] = None
+    role: Optional[str] = None    # ruolo scelto dall'utente (provider|business); ha priorità sul tipo profilo
 
 
 @router.post("/onboarding/provider/profile")
@@ -160,7 +161,12 @@ async def set_profile(body: ProfileIn, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="invalid_profile_type")
     if not _is_adult(body.dob):
         raise HTTPException(status_code=400, detail="minor_not_allowed")
-    role = "business" if body.profile_type == "impresa" else "provider"
+    # Il ruolo è deciso dalla scelta dell'utente (Professionista vs Attività di prossimità).
+    # Il tipo profilo (impresa/piva/persona_lf) è solo legale/fiscale.
+    if body.role in ("provider", "business"):
+        role = body.role
+    else:
+        role = "business" if body.profile_type == "impresa" else "provider"
     # #8 — vincolo multi-ruolo: max 2 profili e mai provider+business insieme.
     owned = set(user.get("roles") or [user.get("role") or "client"])
     if role not in owned:

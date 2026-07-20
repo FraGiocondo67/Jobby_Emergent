@@ -40,7 +40,7 @@ export default function Activities() {
     (async () => {
       try {
         const c = await api.categories();
-        setAll(business ? c.proximity : c.standard);
+        setAll(business ? [...(c.proximity || []), ...(c.standard || [])] : (c.standard || []));
       } catch {}
     })();
   }, [business]);

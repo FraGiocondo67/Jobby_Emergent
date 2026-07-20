@@ -631,6 +631,10 @@ export const strings = {
     heldInEscrow: "in garanzia", availableBalance: "Disponibile",
     orderItems: "Articoli ordinati", markDelivered: "Segna come consegnato", orderConfirmedShop: "Ordine confermato",
     noListinoBusiness: "Questa attività non ha ancora un listino",
+    whichActivities: "Quali attività offri?",
+    whichActivitiesProSub: "Seleziona i servizi che vuoi offrire ai clienti.",
+    whichActivitiesBizSub: "Seleziona le categorie della tua attività (prossimità e/o servizi).",
+    selectAtLeastOne: "Seleziona almeno un'attività",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -1262,6 +1266,10 @@ export const strings = {
     heldInEscrow: "in escrow", availableBalance: "Available",
     orderItems: "Ordered items", markDelivered: "Mark as delivered", orderConfirmedShop: "Order confirmed",
     noListinoBusiness: "This business has no catalog yet",
+    whichActivities: "Which activities do you offer?",
+    whichActivitiesProSub: "Select the services you want to offer to clients.",
+    whichActivitiesBizSub: "Select your business categories (proximity and/or services).",
+    selectAtLeastOne: "Select at least one activity",
   },
 };
 

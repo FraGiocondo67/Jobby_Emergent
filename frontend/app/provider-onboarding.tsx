@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -25,12 +26,19 @@ export default function ProviderOnboarding() {
   const { user, setUser } = useAuth();
   const { lang, t } = useLang();
   const router = useRouter();
+  const params = useLocalSearchParams<{ role?: string }>();
   const insets = useSafeAreaInsets();
+
+  // Ruolo scelto dall'utente prima di arrivare qui (Professionista vs Attività).
+  const intendedRole: "provider" | "business" =
+    params.role === "business" ? "business" : params.role === "provider" ? "provider" : (user?.role === "business" ? "business" : "provider");
 
   const [cfg, setCfg] = useState<any>(null);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [profileType, setProfileType] = useState("");
+  const [allCats, setAllCats] = useState<any[]>([]);
+  const [activityCats, setActivityCats] = useState<string[]>(user?.services || []);
   const [dob, setDob] = useState("1990-01-01");
   const [email, setEmail] = useState(user?.email || "");
   const [otpSent, setOtpSent] = useState(false);
@@ -52,11 +60,21 @@ export default function ProviderOnboarding() {
 
   useEffect(() => { (async () => { try { setCfg(await api.onbConfig()); } catch {} })(); }, []);
 
+  // Categorie selezionabili: Professionista → solo standard; Attività → prossimità + standard.
+  useEffect(() => {
+    (async () => {
+      try {
+        const c = await api.categories();
+        setAllCats(intendedRole === "business" ? [...(c.proximity || []), ...(c.standard || [])] : (c.standard || []));
+      } catch {}
+    })();
+  }, [intendedRole]);
+
   const isLF = profileType === "persona_lf";
   const steps = useMemo(() => (
     isLF
-      ? ["intro", "email", "lf_edu", "data", "docs", "lf_delega", "availability", "fee", "submit"]
-      : ["intro", "email", "data", "docs", "availability", "fee", "submit"]
+      ? ["intro", "email", "lf_edu", "data", "attivita", "docs", "lf_delega", "availability", "fee", "submit"]
+      : ["intro", "email", "data", "attivita", "docs", "availability", "fee", "submit"]
   ), [isLF]);
   const cur = steps[step];
 
@@ -114,6 +132,7 @@ export default function ProviderOnboarding() {
     try {
       await api.setProviderProfile({
         profile_type: profileType, dob, name: name.trim() || businessName.trim(),
+        role: intendedRole,
         business_name: businessName.trim() || undefined, vat_number: vat.trim() || undefined,
         codice_fiscale: cf.trim() || undefined, address: address.trim() || undefined,
         lat: coords.lat, lng: coords.lng, iban: iban.trim() || undefined, bio: bio.trim() || undefined,
@@ -152,10 +171,16 @@ export default function ProviderOnboarding() {
     }
   };
 
+  const toggleActivity = (id: string) => {
+    setActivityCats((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+  const saveActivities = async () => { try { const u = await api.updateProfile({ services: activityCats }); setUser(u); } catch {} };
+
   const next = async () => {
     if (cur === "intro") { if (!profileType) return; if (!isAdult) { Alert.alert(t("minorBlocked")); return; } }
     if (cur === "email" && !emailVerified) { Alert.alert(t("verifyEmailFirst")); return; }
     if (cur === "data") { const ok = await saveProfile(); if (!ok) return; }
+    if (cur === "attivita") { if (activityCats.length === 0) { Alert.alert(t("selectAtLeastOne")); return; } await saveActivities(); }
     if (cur === "lf_delega" && !delegaSigned) { Alert.alert(t("signDelegaFirst")); return; }
     if (cur === "availability") await saveAvailability();
     if (cur === "submit") { await submit(); return; }
@@ -239,6 +264,23 @@ export default function ProviderOnboarding() {
             <Text style={styles.label}>{t("presentation")}</Text>
             <TextInput testID="d-bio" style={[styles.input, { minHeight: 80, textAlignVertical: "top" }]} value={bio} onChangeText={setBio} placeholder={t("presentationExample")} placeholderTextColor={colors.muted} multiline />
           </>)}
+        </>);
+      case "attivita":
+        return (<>
+          <Text style={styles.h}>{t("whichActivities")}</Text>
+          <Text style={styles.sub}>{intendedRole === "business" ? t("whichActivitiesBizSub") : t("whichActivitiesProSub")}</Text>
+          <View style={styles.actGrid}>
+            {allCats.map((c) => {
+              const on = activityCats.includes(c.cat_id);
+              return (
+                <Pressable key={c.cat_id} testID={`onb-activity-${c.cat_id}`} style={[styles.actChip, on && styles.actChipOn]} onPress={() => toggleActivity(c.cat_id)}>
+                  <Text style={{ fontSize: 22 }}>{c.emoji}</Text>
+                  <Text style={[styles.actChipText, on && { color: "#fff" }]}>{c.label[lang]}</Text>
+                  {on ? <Ionicons name="checkmark-circle" size={16} color="#fff" /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
         </>);
       case "docs":
         return (<>
@@ -390,4 +432,8 @@ const styles = StyleSheet.create({
   summaryBox: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.md, gap: spacing.sm },
   summaryRow: { fontSize: fsize.base, fontFamily: font.medium, color: colors.success },
   footer: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: colors.divider },
+  actGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm },
+  actChip: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  actChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  actChipText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface },
 });

@@ -26,6 +26,9 @@ export default function ProfileTab() {
   const [unread, setUnread] = useState(0);
 
   const isProvider = user?.role === "provider" || user?.role === "business";
+  const isProviderRole = user?.role === "provider";
+  const isBusiness = user?.role === "business";
+  const services: string[] = user?.services || [];
   const vStatus = user?.verification_status || "unverified";
 
   const loadTrust = useCallback(async () => {
@@ -63,7 +66,7 @@ export default function ProfileTab() {
     }
     Alert.alert(t("activateProfileTitle"), t("activateProfileMsg"), [
       { text: t("cancel"), style: "cancel" },
-      { text: t("continue"), onPress: () => router.push("/provider-onboarding") },
+      { text: t("continue"), onPress: () => router.push(`/provider-onboarding?role=${roleId}`) },
     ]);
   };
 
@@ -142,7 +145,7 @@ export default function ProfileTab() {
         ) : null}
 
         {/* Business listino (proximity products) */}
-        {user?.role === "business" ? (
+        {isBusiness ? (
           <Pressable testID="profile-biz-listino" style={[styles.listRow, shadow.card]} onPress={() => router.push("/listino")}>
             <View style={[styles.rowIcon, { backgroundColor: colors.purpleBg }]}><Ionicons name="cart" size={22} color={colors.purple} /></View>
             <View style={{ flex: 1 }}>
@@ -201,8 +204,8 @@ export default function ProfileTab() {
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Pressable>
 
-        {/* Payments & payout settings */}
-        {isProvider ? (
+        {/* Specialized listini — only for Professionista (provider) and only for selected activities */}
+        {isProviderRole && services.includes("pulizie") ? (
           <Pressable testID="profile-listino" style={[styles.listRow, shadow.card]} onPress={() => router.push("/pulizie/listino")}>
             <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="pricetags" size={22} color={colors.brand} /></View>
             <View style={{ flex: 1 }}>
@@ -213,7 +216,7 @@ export default function ProfileTab() {
           </Pressable>
         ) : null}
 
-        {isProvider ? (
+        {isProviderRole && services.includes("driver") ? (
           <Pressable testID="profile-driver-listino" style={[styles.listRow, shadow.card]} onPress={() => router.push("/driver/listino")}>
             <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="car-sport" size={22} color={colors.brand} /></View>
             <View style={{ flex: 1 }}>
@@ -224,7 +227,7 @@ export default function ProfileTab() {
           </Pressable>
         ) : null}
 
-        {isProvider ? (
+        {isProviderRole && services.includes("artigiani") ? (
           <Pressable testID="profile-art-listino" style={[styles.listRow, shadow.card]} onPress={() => router.push("/artigiani/listino")}>
             <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="build" size={22} color={colors.brand} /></View>
             <View style={{ flex: 1 }}>
@@ -235,7 +238,7 @@ export default function ProfileTab() {
           </Pressable>
         ) : null}
 
-        {isProvider ? (
+        {isProviderRole && services.includes("babysitting") ? (
           <Pressable testID="profile-bs-profile" style={[styles.listRow, shadow.card]} onPress={() => router.push("/babysitting/profilo")}>
             <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="happy" size={22} color={colors.brand} /></View>
             <View style={{ flex: 1 }}>
@@ -244,7 +247,9 @@ export default function ProfileTab() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.muted} />
           </Pressable>
-        ) : (
+        ) : null}
+
+        {!isProvider ? (
           <Pressable testID="profile-children" style={[styles.listRow, shadow.card]} onPress={() => router.push("/babysitting/children")}>
             <View style={[styles.rowIcon, { backgroundColor: colors.brandTertiary }]}><Ionicons name="people" size={22} color={colors.brand} /></View>
             <View style={{ flex: 1 }}>
@@ -253,7 +258,7 @@ export default function ProfileTab() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.muted} />
           </Pressable>
-        )}
+        ) : null}
 
         <Pressable testID="profile-payments" style={[styles.listRow, shadow.card]} onPress={() => router.push("/payments-settings")}>
           <View style={[styles.rowIcon, { backgroundColor: colors.blueBg }]}><Ionicons name="card" size={22} color={colors.blue} /></View>

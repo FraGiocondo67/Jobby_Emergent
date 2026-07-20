@@ -160,7 +160,7 @@ export default function OnboardingFlow() {
           </View>
         </View>
         <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-          <Button testID="role-next" label={t("next")} disabled={!role} onPress={() => (role === "client" ? setStep(1) : router.replace("/provider-onboarding"))} />
+          <Button testID="role-next" label={t("next")} disabled={!role} onPress={() => (role === "client" ? setStep(1) : router.replace(`/provider-onboarding?role=${role}`))} />
         </View>
       </View>
     );

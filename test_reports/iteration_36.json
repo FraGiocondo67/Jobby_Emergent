@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only regression on role-aware onboarding + Profile listino filtering. Provider UI login (provtest@jobby.app) and business token injection (biz-test-token-999) were both used. All 4 requested behaviours PASS: (1) code inspection of provider-onboarding.tsx + onboarding-flow.tsx confirms role param is passed as ?role=business|provider, steps array now includes 'attivita' after 'data', allCats = proximity+standard for business and standard-only for provider, save via api.updateProfile({services}); i18n strings whichActivities/*Sub present in IT and EN. (2) Provider profile shows ONLY the listini matching selected services (profile-listino, profile-driver-listino, profile-art-listino) and DOES NOT show profile-biz-listino, profile-bs-profile, profile-children. (3) Business profile shows profile-biz-listino ('Il mio listino') and NONE of the specialized provider listini (profile-listino/driver/art/bs). (4) Business Activities screen ('Le mie attività') grid renders BOTH proximity (Lavanderia, Calzolaio, Veterinario, Fioreria, Farmacia, …) and standard (Pulizie, Babysitting, Driver, Artigiani, Hospitality, Assistenza, Tecnico, …) chips — all selectable — and Salva button present. Full new-user email/OTP UI flow to 'attivita' step was not executed because Resend domain is not verified (documented), but the code path is verified.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking, accepted per E1 note. Reference: multiple screens (e.g. profile.tsx uses shadow.card)."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "None required for the four review items — all pass.",
+    "Optional: verify Resend sender domain (yobbyfree.it) in Resend dashboard so real users can complete the email OTP step and actually reach the new 'attivita' step in the UI end-to-end.",
+    "Optional cleanup (not blocking): migrate remaining shadow* usages to boxShadow to silence deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "provider-onboarding.tsx correctly derives intendedRole from ?role= param and falls back to user.role — good.",
+    "activities.tsx and provider-onboarding.tsx both merge proximity+standard for business and standard-only for provider using api.categories(); consistent.",
+    "profile.tsx gates specialized listini strictly on isProviderRole && services.includes(cat) and 'Il mio listino' on isBusiness only; matches spec."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "100%" },
+  "seed_data_creation": "None. Used existing provtest@jobby.app / test1234 and biz-test-token-999 as documented.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To test business flows in UI: navigate to root, then in DevTools/JS run localStorage.setItem('jobby_session_token', JSON.stringify('biz-test-token-999')) and go to https://<host>/ (NOT reload, must hit index.tsx which routes to /(tabs)). Provider UI login works normally with provtest@jobby.app / test1234. Two 'Accedi' texts exist on landing (tab + submit); use the last one or a stricter selector. Full onboarding-flow → provider-onboarding UI walk is blocked by Resend email OTP (domain not verified) — verify via code inspection or fake auto_verified from backend.",
+  "rca_of_issue": "Original report claimed onboarding never asked category, provider Profile hid proximity listino and Profile showed all specialized listini regardless of selected services. Fix applied by E1 addresses all three: (a) added 'attivita' step to provider-onboarding with proximity+standard categories for business role and passed ?role= from onboarding-flow so intendedRole is deterministic; (b) profile.tsx now gates 'Il mio listino' on isBusiness (proximity product listino appears for business); (c) specialized listini gated on isProviderRole && services.includes(cat). Verified all three in UI + code."
+}
