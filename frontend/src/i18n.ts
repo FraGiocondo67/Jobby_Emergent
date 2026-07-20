@@ -637,6 +637,8 @@ export const strings = {
     selectAtLeastOne: "Seleziona almeno un'attività",
     exploreMapTitle: "Cerca attorno a te", exploreMapSub: "Esplora la mappa: provider e attività vicino a te",
     searchRadius: "Raggio di ricerca", allCategories: "Tutte", active: "Attivo", inactive: "Non attivo",
+    reviewsLabel: "recensioni", productsSection: "Prodotti", reviewsSection: "Recensioni",
+    noReviews: "Ancora nessuna recensione", viewAndOrder: "Vedi prodotti e ordina",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -1274,6 +1276,8 @@ export const strings = {
     selectAtLeastOne: "Select at least one activity",
     exploreMapTitle: "Search around you", exploreMapSub: "Explore the map: providers and businesses near you",
     searchRadius: "Search radius", allCategories: "All", active: "Active", inactive: "Inactive",
+    reviewsLabel: "reviews", productsSection: "Products", reviewsSection: "Reviews",
+    noReviews: "No reviews yet", viewAndOrder: "View products & order",
   },
 };
 

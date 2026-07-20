@@ -168,6 +168,7 @@ export const api = {
   deleteReview: (id: string) => request(`/richieste/${id}/review`, { method: "DELETE" }),
   replyReview: (id: string, reply: string) => request(`/richieste/${id}/review/reply`, { method: "POST", body: JSON.stringify({ reply }) }),
   providerReviews: (providerId: string) => request(`/providers/${providerId}/reviews`),
+  providerPublic: (providerId: string) => request(`/providers/${providerId}/public`),
   rateClient: (id: string, rating: number, flags: string[], note: string) => request(`/richieste/${id}/rate-client`, { method: "POST", body: JSON.stringify({ rating, flags, note }) }),
   getClientRating: (id: string) => request(`/richieste/${id}/client-rating`),
   pulizieIncoming: () => request("/pulizie/incoming"),

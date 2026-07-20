@@ -142,7 +142,7 @@ export default function MapScreen() {
             <>
               <Text style={styles.section}>👤 {t("providersOnlineTitle")} ({providers.length})</Text>
               {providers.map((p) => (
-                <View key={p.user_id} style={[styles.card, shadow.card]} testID={`map-provider-${p.user_id}`}>
+                <Pressable key={p.user_id} style={[styles.card, shadow.card]} testID={`map-provider-${p.user_id}`} onPress={() => router.push(`/provider/${p.user_id}`)}>
                   {p.picture ? <Image source={{ uri: p.picture }} style={styles.avatar} contentFit="cover" /> : <View style={[styles.avatar, styles.avFallback, { backgroundColor: colors.blue }]}><Text style={styles.avInit}>{p.name[0]}</Text></View>}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{p.name}</Text>
@@ -150,8 +150,11 @@ export default function MapScreen() {
                     <View style={styles.metaRow}><Stars rating={p.rating} size={12} /><Text style={styles.meta}>{p.rating.toFixed(1)}</Text><TrustChip score={p.trust_score} /><ActivePill online={p.online} /></View>
                     {p.approval_status !== "approved" ? <PendingBadge /> : null}
                   </View>
-                  <Text style={styles.rate}>€{p.hourly_rate.toFixed(0)}{t("perHour")}</Text>
-                </View>
+                  <View style={{ alignItems: "flex-end", gap: 4 }}>
+                    <Text style={styles.rate}>€{p.hourly_rate.toFixed(0)}{t("perHour")}</Text>
+                    <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+                  </View>
+                </Pressable>
               ))}
             </>
           ) : null}
@@ -160,7 +163,7 @@ export default function MapScreen() {
             <>
               <Text style={styles.section}>🏪 {t("nearbyBusinessesTitle")} ({businesses.length})</Text>
               {businesses.map((b) => (
-                <View key={b.user_id} style={[styles.card, shadow.card]} testID={`map-business-${b.user_id}`}>
+                <Pressable key={b.user_id} style={[styles.card, shadow.card]} testID={`map-business-${b.user_id}`} onPress={() => router.push(`/provider/${b.user_id}`)}>
                   {b.picture ? <Image source={{ uri: b.picture }} style={styles.avatar} contentFit="cover" /> : <View style={[styles.avatar, styles.avFallback, { backgroundColor: colors.purple }]}><Text style={styles.avInit}>{(b.business_name || b.name)[0]}</Text></View>}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{b.business_name || b.name}</Text>
@@ -168,7 +171,8 @@ export default function MapScreen() {
                     <View style={styles.metaRow}><Stars rating={b.rating} size={12} /><Text style={styles.meta}>{b.rating.toFixed(1)}</Text><TrustChip score={b.trust_score} /><ActivePill online={b.online} /></View>
                     {b.approval_status !== "approved" ? <PendingBadge /> : null}
                   </View>
-                </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+                </Pressable>
               ))}
             </>
           ) : null}

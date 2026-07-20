@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only test for JOBBY 'Explore Map -> Provider/Business Detail' feature. All acceptance criteria PASS: (1) Tapping business card (map-business-user_2f996c8a010a) on /map navigates to /provider/user_2f996c8a010a. (2) Profile detail renders name (Francesco Franzin), avatar (fallback F), services (Technical Services · Housekeeping · Laundry), 4.8 stars + 6 reviews count, Active status pill, Trust Score 63, Verified badge, address (Meolo via riviera x iii giugno 61). (3) Reviews section shows all 6 review-<i> testIDs with ratings + comments. (4) Products section shows 4 prof-prod-<id> rows (Lavaggio camicia €3.50, Lavaggio a secco cappotto €12.00, Pulizia appartamento €18.00, TEST_Prodotto_Modificato €22.00). (5) Footer CTA prov-request reads 'View products & order' and navigates to /business-request/user_2f996c8a010a?category=tecnico. (6) Tapping a provider card (map-provider-user_45e7ee846f1f, Fioreria Kaed) opens /provider/<id> with NO products section, and CTA reads 'Request service'. (7) Radius chips (radius-5) and category chips (cat-pulizie) still work with no crashes/red-screen. Deprecated shadow* warnings noted (previously flagged as acceptable by main agent).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Deprecation warnings 'shadow* style props are deprecated. Use boxShadow' emitted by react-native-web across map/provider screens. Acceptable per E1 note but should be migrated. Reference: /app/frontend/src/theme (shadow.card usage in /app/frontend/app/map.tsx:145,166 and elsewhere)."},
+      {"component": "props.pointerEvents", "issue": "Deprecation warning 'props.pointerEvents is deprecated. Use style.pointerEvents' from RealMap or map screen. Non-blocking."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional) Migrate shadow* style props to boxShadow to silence RN-web deprecation warnings.",
+    "(Optional) Move pointerEvents from prop to style to silence RN deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "provider/[id].tsx: 'Back' button label is hardcoded English ('Back') instead of using t('back') i18n key.",
+    "provider/[id].tsx line 80: p.business_name is '' for Francesco (server returned empty string) so title falls back to p.name — fine, but title[0] could crash if title is undefined; consider (title || '?')[0]."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "seed_data_creation": "None. Used existing seeded data (user_2f996c8a010a Francesco Franzin business + user_disptest01 client token).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Client session token disp-test-token-777 injected into localStorage key 'jobby_session_token' as JSON string. Business Francesco has 4 products (lavanderia + pulizie + tecnico). Provider Fioreria Kaed (user_45e7ee846f1f) is a role=provider on the map with 0 reviews — good for negative-case review testing. Map default radius 10km at Treviso center 45.6669,12.2433."
+}

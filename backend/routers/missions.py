@@ -177,3 +177,40 @@ async def cancel_mission(mission_id: str, user=Depends(get_current_user)):
 @router.get("/providers/{provider_id}/reviews")
 async def provider_reviews(provider_id: str, user=Depends(get_current_user)):
     return await db.reviews.find({"provider_id": provider_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+@router.get("/providers/{provider_id}/public")
+async def provider_public(provider_id: str, user=Depends(get_current_user)):
+    p = await db.users.find_one({"user_id": provider_id}, {"_id": 0})
+    if not p or p.get("role") not in ("provider", "business"):
+        raise HTTPException(status_code=404, detail="provider_not_found")
+    # Reviews from completed richieste (moderated & visible), across service types.
+    docs = await db.richieste.find(
+        {"provider_scelto": provider_id, "recensione": {"$ne": None}},
+        {"_id": 0, "recensione": 1, "categoria": 1, "data_ora": 1}).to_list(200)
+    reviews = []
+    for d in docs:
+        rec = d.get("recensione") or {}
+        if rec.get("hidden"):
+            continue
+        reviews.append({"rating": rec.get("rating"), "comment": rec.get("comment"),
+                        "reply": rec.get("reply"), "at": rec.get("at") or d.get("data_ora"),
+                        "categoria": d.get("categoria")})
+    # Legacy reviews collection fallback.
+    for r in await db.reviews.find({"provider_id": provider_id}, {"_id": 0}).to_list(200):
+        reviews.append({"rating": r.get("rating"), "comment": r.get("comment"),
+                        "reply": r.get("reply"), "at": r.get("created_at"), "categoria": r.get("categoria")})
+    reviews = [r for r in reviews if r.get("rating")]
+    reviews.sort(key=lambda x: x.get("at") or "", reverse=True)
+    avg = round(sum(r["rating"] for r in reviews) / len(reviews), 2) if reviews else p.get("rating", 0)
+    return {
+        "user_id": p["user_id"], "name": p.get("name"), "business_name": p.get("business_name", ""),
+        "picture": p.get("picture", ""), "role": p.get("role"), "bio": p.get("bio", ""),
+        "services": p.get("services", []), "rating": avg, "reviews_count": len(reviews),
+        "trust_score": p.get("trust_score", 0), "hourly_rate": p.get("hourly_rate", 0),
+        "online": p.get("online", False), "verified": p.get("verified", False),
+        "approval_status": p.get("approval_status", "approved"),
+        "address": p.get("address", ""), "lat": p.get("lat"), "lng": p.get("lng"),
+        "business_photos": p.get("business_photos", []),
+        "reviews": reviews[:50],
+    }
