@@ -59,9 +59,15 @@ export default function OnboardingFlow() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") return;
       const loc = await Location.getCurrentPositionAsync({});
-      setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      setAddress(`${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)} · Treviso`);
+      const c = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setCoords(c);
+      try { const g = await api.reverseGeocode(c.lat, c.lng); if (g?.label) setAddress(g.label); } catch {}
     } catch {}
+  };
+
+  const resolveCoords = async () => {
+    try { const g = await api.geocode(address); if (g && !g.fallback) { const c = { lat: g.lat, lng: g.lng }; setCoords(c); return c; } } catch {}
+    return coords;
   };
 
   const toggleService = (id: string) => {
@@ -120,7 +126,8 @@ export default function OnboardingFlow() {
   const submit = async () => {
     setBusy(true);
     try {
-      const payload: any = { role, name: name.trim() || undefined, phone, address, lat: coords.lat, lng: coords.lng };
+      const c = await resolveCoords();
+      const payload: any = { role, name: name.trim() || undefined, phone, address, lat: c.lat, lng: c.lng };
       if (role === "provider" || role === "business") {
         payload.services = services;
         payload.radius_km = radiusKm;

@@ -67,9 +67,15 @@ export default function BabysittingConfigura() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") return;
       const loc = await Location.getCurrentPositionAsync({});
-      setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      setAddress(`${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)} · Treviso`);
+      const c = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setCoords(c);
+      try { const g = await api.reverseGeocode(c.lat, c.lng); if (g?.label) setAddress(g.label); } catch {}
     } catch {}
+  };
+
+  const resolveCoords = async () => {
+    try { const g = await api.geocode(address); if (g && !g.fallback) { const c = { lat: g.lat, lng: g.lng }; setCoords(c); return c; } } catch {}
+    return coords;
   };
 
   const toggle = (arr: string[], set: (v: string[]) => void, id: string) =>
@@ -79,8 +85,9 @@ export default function BabysittingConfigura() {
     if (selected.length === 0) { setStep(0); return; }
     setLoading(true);
     try {
+      const c = await resolveCoords();
       const r = await api.bsCreateRichiesta({
-        binario, bambini: selected, config, indirizzo: address, lat: coords.lat, lng: coords.lng,
+        binario, bambini: selected, config, indirizzo: address, lat: c.lat, lng: c.lng,
         data_ora: `${date}T${startT}:00`, ora_fine: `${date}T${endT}:00`, urgente,
         ricorrenza, note, accesso, publish: true,
       });

@@ -88,15 +88,21 @@ export default function ArtigianiConfigura() {
 
   const useMyLocation = async () => {
     try { const { status } = await Location.requestForegroundPermissionsAsync(); if (status !== "granted") return;
-      const loc = await Location.getCurrentPositionAsync({}); setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      setAddress(`${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)} · Treviso`); } catch {}
+      const loc = await Location.getCurrentPositionAsync({}); const c = { lat: loc.coords.latitude, lng: loc.coords.longitude }; setCoords(c);
+      try { const g = await api.reverseGeocode(c.lat, c.lng); if (g?.label) setAddress(g.label); } catch {} } catch {}
+  };
+
+  const resolveCoords = async () => {
+    try { const g = await api.geocode(address); if (g && !g.fallback) { const c = { lat: g.lat, lng: g.lng }; setCoords(c); return c; } } catch {}
+    return coords;
   };
 
   const submit = async () => {
     setLoading(true);
     try {
+      const c = await resolveCoords();
       const descFinal = modalita === "diagnosi" ? [buildDesc(), isTuttofare ? "" : descrizione].filter(Boolean).join(" — ") : descrizione;
-      const r = await api.artCreateRichiesta({ mestiere, modalita, intervento_id: interventoId, parametri: params, descrizione: descFinal, foto, binario, urgente, fascia_urgenza: fascia, fascia_oraria: fasciaOraria, data_ora: dataGiorno, indirizzo: address, accesso, lat: coords.lat, lng: coords.lng });
+      const r = await api.artCreateRichiesta({ mestiere, modalita, intervento_id: interventoId, parametri: params, descrizione: descFinal, foto, binario, urgente, fascia_urgenza: fascia, fascia_oraria: fasciaOraria, data_ora: dataGiorno, indirizzo: address, accesso, lat: c.lat, lng: c.lng });
       router.replace(`/artigiani/${r.richiesta_id}?new=1`);
     } catch { setLoading(false); }
   };

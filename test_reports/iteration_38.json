@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend-only regression test of the real-geocoding pattern (OpenStreetMap) extended to all client-side create-request flows. Verified PULIZIE, BABYSITTING, ARTIGIANI configurator create flows end-to-end plus CLIENT onboarding via code review. All 3 configurator publish paths (publish-button / bs-publish / art-publish) call POST /api/geocode 200 during submit, receive real coords, then POST /api/{domain}/richieste 200 and navigate to the request detail (/pulizie/<id>?new=1, /babysitting/<id>?new=1, /artigiani/<id>?new=1). Zero JS errors, zero red screens, no crashes. Only pre-existing shadow* deprecation warnings (acceptable per main agent). CLIENT onboarding submit verified by code: onboarding-flow.tsx submit() awaits resolveCoords() -> api.geocode(address) BEFORE api.completeOnboarding(payload) with c.lat/c.lng. useMyLocation across all 5 files sets GPS coords then calls api.reverseGeocode to fill address (identical pattern to business-request).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "babysitting/[id] and artigiani/[id] detail pages", "issues": ["Status badge shows Italian 'In pubblicazione' while device language is English (device shows 'Craftsmen', 'Cancel', 'Waiting for...' in EN). Pre-existing i18n miss on request-detail status label, unrelated to this geocoding change but worth fixing later."]}
+    ],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Deprecated shadow* style props usage produces console warnings ('shadow*' style props are deprecated. Use 'boxShadow'). Multiple occurrences via src/theme shadow.card. Non-blocking but should be migrated to boxShadow. Reference: /app/frontend/src/theme.ts (shadow.card)"}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: replace 'In pubblicazione' with an i18n key on babysitting/[id] and artigiani/[id] detail screens (pre-existing, not caused by this change).",
+    "Optional: migrate shadow* style props to boxShadow across theme/shadow.card usage to silence deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "resolveCoords()/useMyLocation() pattern is consistent and identical across all 5 target files (business-request, pulizie/configura, babysitting/configura, artigiani/configura, onboarding-flow, provider-onboarding).",
+    "onboarding-flow.tsx:129 submit() awaits resolveCoords() BEFORE api.completeOnboarding — payload uses c.lat/c.lng from returned real coords. Verified by code.",
+    "All submit() implementations swallow errors silently in catch (only setLoading(false)) — good UX but hides API failures from users. Not a regression here, but consider surfacing errors."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "100% (3/3 configurator publish flows + onboarding submit code path)"},
+  "seed_data_creation": "None. Used existing pre-seeded children under disp-test-token-777 (Luca, Sofia).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Client session for testing configurators: localStorage.setItem('jobby_session_token', JSON.stringify('disp-test-token-777')). Configurator publish routes verified working with real geocoding: /pulizie/configura -> /pulizie/<id>?new=1, /babysitting/configura -> /babysitting/<id>?new=1, /artigiani/configura -> /artigiani/<id>?new=1. /api/geocode returns real coords for 'Piazza dei Signori, Treviso, Italy'.",
+  "rca_of_issue": "N/A — feature verification pass, no defects found in the geocoding integration."
+}

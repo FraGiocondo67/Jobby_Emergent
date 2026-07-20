@@ -102,9 +102,15 @@ export default function ProviderOnboarding() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") return;
       const loc = await Location.getCurrentPositionAsync({});
-      setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      setAddress(`${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)} · Treviso`);
+      const c = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setCoords(c);
+      try { const g = await api.reverseGeocode(c.lat, c.lng); if (g?.label) setAddress(g.label); } catch {}
     } catch {}
+  };
+
+  const resolveCoords = async () => {
+    try { const g = await api.geocode(address); if (g && !g.fallback) { const c = { lat: g.lat, lng: g.lng }; setCoords(c); return c; } } catch {}
+    return coords;
   };
 
   const isAdult = (() => { try { const d = new Date(dob); const n = new Date(); let a = n.getFullYear() - d.getFullYear(); if (n.getMonth() < d.getMonth() || (n.getMonth() === d.getMonth() && n.getDate() < d.getDate())) a--; return a >= 18; } catch { return false; } })();
@@ -130,12 +136,13 @@ export default function ProviderOnboarding() {
   const saveProfile = async () => {
     setBusy(true);
     try {
+      const c = await resolveCoords();
       await api.setProviderProfile({
         profile_type: profileType, dob, name: name.trim() || businessName.trim(),
         role: intendedRole,
         business_name: businessName.trim() || undefined, vat_number: vat.trim() || undefined,
         codice_fiscale: cf.trim() || undefined, address: address.trim() || undefined,
-        lat: coords.lat, lng: coords.lng, iban: iban.trim() || undefined, bio: bio.trim() || undefined,
+        lat: c.lat, lng: c.lng, iban: iban.trim() || undefined, bio: bio.trim() || undefined,
         condizione_soggettiva: isLF ? condizione : undefined,
       });
       return true;

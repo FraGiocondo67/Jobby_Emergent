@@ -70,9 +70,15 @@ export default function PulizieConfigura() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") return;
       const loc = await Location.getCurrentPositionAsync({});
-      setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      setAddress(`${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)} · Treviso`);
+      const c = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setCoords(c);
+      try { const g = await api.reverseGeocode(c.lat, c.lng); if (g?.label) setAddress(g.label); } catch {}
     } catch {}
+  };
+
+  const resolveCoords = async () => {
+    try { const g = await api.geocode(address); if (g && !g.fallback) { const c = { lat: g.lat, lng: g.lng }; setCoords(c); return c; } } catch {}
+    return coords;
   };
 
   const toggleExtra = (id: string) => setExtra((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -80,8 +86,9 @@ export default function PulizieConfigura() {
   const submit = async () => {
     setLoading(true);
     try {
+      const c = await resolveCoords();
       const r = await api.createRichiesta({
-        binario, config, indirizzo: address, lat: coords.lat, lng: coords.lng,
+        binario, config, indirizzo: address, lat: c.lat, lng: c.lng,
         data_ora: `${date} ${time}`, flessibilita, ricorrenza,
         note, parcheggio, publish: true,
       });
