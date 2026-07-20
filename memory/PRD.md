@@ -175,3 +175,11 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Nuova schermata `app/provider/[id].tsx`: profilo + stato Attivo/Non attivo + trust + recensioni + (per attività) anteprima prodotti listino + CTA. CTA business = "Vedi prodotti e ordina" → `/business-request/[id]` (categoria del primo prodotto disponibile); CTA provider = "Richiedi un servizio" → configuratore della categoria principale.
 - Le card provider/attività sulla mappa (`/map`) ora sono toccabili → `/provider/[id]`.
 - Verificato testing agent iter39: tap business→profilo (6 recensioni, 4 prodotti, CTA ordine), tap provider→profilo senza prodotti + CTA richiesta; filtri raggio/categoria mappa OK.
+
+## Implemented (2026-06 — BATCH A bug critici dai test utente)
+- #1 Indirizzo driver: `PlaceInput` era un componente definito dentro il render → ricreato ad ogni tasto e perdita focus. Convertito in `renderPlace()` inline in `driver/configura.tsx`. Aggiunto hint "Tocca 🔍 per cercare".
+- #12 Tariffe driver con virgola: `driver/listino.tsx` ora memorizza il valore grezzo mentre si digita e converte virgola→punto con `num()` al salvataggio (niente più NaN). Accetta sia 2,5 che 2.5.
+- #6 Richieste generiche non arrivavano al provider: `ProviderHome` (index.tsx) ora aggrega `pulizieIncoming/bsIncoming/drvIncoming/artIncoming` in base a `user.services` in una sezione "🔔 Nuove opportunità" che apre il dettaglio della richiesta. Prima leggeva solo `incomingMissions` (vecchio sistema).
+- #8 Rifiuto non aggiornava la vista: gli endpoint `/driver|pulizie|babysitting|artigiani/incoming` ora escludono gli inviti con status "declined" (`$elemMatch`).
+- #9 Riassegnazione dopo rifiuto: gli endpoint admin invite (pulizie + driver) riattivano gli inviti precedentemente "declined" (reset a "invited" + notifica).
+- Verificato testing agent iter41: #1 focus 0 perdite, #12 salva 2,5→2.5, #6 opportunità appare dopo invito e apre dettaglio. TODO batch successivi: #5 dettaglio richiesta+chat+accettazione driver/contro-prezzo pendente, #13 mappa→form guidato, #7 notifiche in-app (+push su richiesta), #2/#4/#10/#11 backend/ruoli/bonus, #3 bonus multiplo+nota.
