@@ -191,3 +191,15 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - `/*/incoming` escludono gli inviti "declined" (via $elemMatch) → dopo il rifiuto la richiesta sparisce dalla Home del provider; dopo la riassegnazione riappare.
 - Verificato con test DB integrato: admin vede nuova richiesta ✓, incoming prima del rifiuto ✓, escluso dopo rifiuto ✓, invite_status=declined ✓, riappare dopo riassegnazione ✓.
 - NOTA client "rifiutata": nessun endpoint imposta mai `stato` richiesta a "declined"; con la riassegnazione ora `stato`=in_matching. Non riproducibile lato codice — chiedere repro all'utente se persiste.
+
+## Implemented (2026-06 — Fix isolamento categorie + timeline ciclo di vita + geocode/mappa + Batch C notifiche)
+- **BUG duplicato richieste (root cause)**: `/api/pulizie/richieste` e `/pulizie/incoming` NON filtravano per categoria → restituivano anche driver/babysitting/artigiani dello stesso cliente (stesso documento mostrato due volte; annullando driver spariva "pulizia"). Aggiunto filtro `categoria=CASA, servizio=PULIZIA`. Verificato: 79→47 doc.
+- **Incoming provider** (tutte le categorie): la query ora include anche i lavori confermati/in_corso del provider scelto (`$or` provider_scelto) → la Home mostra opportunità + lavori attivi.
+- **Tab Attività provider ricostruita**: nuovo endpoint `GET /api/provider/jobs` (tutte le categorie, attivi+completati) → card cliccabili verso il dettaglio (dove risiedono pagamento e recensione), filtri Attivi/Completati (testid job-*, jobfilter-*).
+- **StatusTimeline** (`src/components/StatusTimeline.tsx`) su tutti e 4 i dettagli: Confermata → In esecuzione → Completata → Pagata → Recensita, con avviso "in attesa di conferma". Risolve la confusione confermata≠eseguita.
+- **Geocode multi-risultato**: `POST /api/geocode/search` → fino a 5 risultati con etichette pulite ("Via Roma, Pigra (Como)"); lista selezionabile in `driver/configura` (drv-*-res-*). Risolve "una via = 5 città".
+- **Ping su mappa**: nuovo `src/components/MapPicker.tsx` (Leaflet WebView/iframe, tap per posizionare pin) + reverse-geocode → indirizzo. Pulsante "Segna sulla mappa" in driver/configura.
+- **i18n driver detail**: aggiunte chiavi mancanti (drvConfirmTrip, drvModifyPrice, clientLabel, ecc.) IT/EN.
+- **Fix**: `_parse()` in driver.py ora tz-aware (cancel driver crashava con 500).
+- **Batch C — Notifiche in-app**: chat message ora genera notifica al destinatario (ref_type=chat, ref_id = conversazione del destinatario). Campanella con badge unread (`NotifBell`) in tutte e 3 le Home; schermata `/notifications` con routing per tipo (richiesta→pulizie, driver, babysitting, artigiani, chat, dispute, booking). Notifiche per user_id → persistono al cambio profilo. Push rimandate (richiede google-services.json + build).
+- Verificato: testing agent iter42 (backend 14/14 + frontend) e iter43 (notifiche backend 8/8 + frontend). Nessuna regressione; recensioni/dispute/pagamenti intatti.
