@@ -585,20 +585,26 @@ async def review(rid: str, body: ReviewIn, user=Depends(get_current_user)):
 async def admin_richieste(_=Depends(require_admin)):
     items = await db.richieste.find({"stato": {"$in": list(STATES_OPEN)}, **CAT}, {"_id": 0}).sort("created_at", -1).to_list(200)
     for r in items:
-        cfg = r["config"]
-        provs = await compatible_drivers(cfg["tipo"], cfg["classe"], r["lat"], r["lng"])
-        pickup = _parse(r.get("pickup_at", ""))
+        cfg = r.get("config") or {}
         r["compatible"] = []
-        for pp in provs:
-            p = pp["provider"]
-            r["compatible"].append({
-                "provider_id": p["user_id"], "nome": p.get("business_name") or p.get("name"),
-                "distance": pp["distance"], "rating": p.get("rating", 0), "affidabilita": p.get("affidabilita", 100),
-                "auth_ok": bool(p.get("driver_auth_verified")),
-                "price": (ncc_price(pp["listino"], cfg["classe"], cfg["route"], pickup, cfg.get("ritorno"))
-                          if cfg["tipo"] == "ncc" else cfg.get("taxi_estimate")),
-                "invited": p["user_id"] in [i.get("provider_id") for i in r.get("provider_invitati", [])],
-            })
+        try:
+            provs = await compatible_drivers(cfg.get("tipo"), cfg.get("classe"), r.get("lat"), r.get("lng"))
+            pickup = _parse(r.get("pickup_at", ""))
+            for pp in provs:
+                p = pp["provider"]
+                inv = next((i for i in r.get("provider_invitati", []) if i.get("provider_id") == p["user_id"]), None)
+                r["compatible"].append({
+                    "provider_id": p["user_id"], "nome": p.get("business_name") or p.get("name"),
+                    "distance": pp["distance"], "rating": p.get("rating", 0), "affidabilita": p.get("affidabilita", 100),
+                    "auth_ok": bool(p.get("driver_auth_verified")),
+                    "price": (ncc_price(pp["listino"], cfg.get("classe"), cfg.get("route"), pickup, cfg.get("ritorno"))
+                              if cfg.get("tipo") == "ncc" else cfg.get("taxi_estimate")),
+                    "invited": bool(inv),
+                    "invite_status": (inv.get("status") if inv else None),
+                    "confirmed": r.get("provider_scelto") == p["user_id"],
+                })
+        except Exception:
+            r["compatible"] = []
     return items
 
 

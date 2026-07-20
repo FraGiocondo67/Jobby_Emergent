@@ -466,6 +466,8 @@ async def admin_richieste(_=Depends(require_admin)):
             "trust": pp["provider"].get("trust_score", 0),
             "price": price_breakdown(pp["listino"], r["config"], r["binario"], fee)["total_client"],
             "invited": pp["provider"]["user_id"] in [i.get("provider_id") for i in r.get("provider_invitati", [])],
+            "invite_status": next((i.get("status") for i in r.get("provider_invitati", []) if i.get("provider_id") == pp["provider"]["user_id"]), None),
+            "confirmed": r.get("provider_scelto") == pp["provider"]["user_id"],
         } for pp in provs]
     return items
 

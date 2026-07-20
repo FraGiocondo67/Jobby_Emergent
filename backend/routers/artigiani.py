@@ -580,6 +580,8 @@ async def admin_richieste(_=Depends(require_admin)):
             "distance": pp["distance"], "rating": pp["provider"].get("rating", 0),
             "abilitazione_ok": bool(pp["provider"].get("art_abilitazione_verified")),
             "invited": pp["provider"]["user_id"] in [i.get("provider_id") for i in r.get("provider_invitati", [])],
+            "invite_status": next((i.get("status") for i in r.get("provider_invitati", []) if i.get("provider_id") == pp["provider"]["user_id"]), None),
+            "confirmed": r.get("provider_scelto") == pp["provider"]["user_id"],
         } for pp in provs]
     return items
 
@@ -595,17 +597,26 @@ async def admin_invite(rid: str, body: InviteIn, _=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="not_found")
     already = [i.get("provider_id") for i in r.get("provider_invitati", [])]
     new_invites = []
+    reset = 0
     for pid in body.provider_ids:
         if pid in already:
+            res = await db.richieste.update_one(
+                {"richiesta_id": rid, "provider_invitati": {"$elemMatch": {"provider_id": pid, "status": "declined"}}},
+                {"$set": {"provider_invitati.$.status": "invited", "provider_invitati.$.reinvited_at": now_utc().isoformat()}})
+            if res.modified_count:
+                reset += 1
+                await push_notification(pid, "artigiani_invito", "Nuova richiesta artigiano",
+                                        "Hai ricevuto di nuovo una richiesta compatibile.", "artigiani", rid)
             continue
         new_invites.append({"provider_id": pid, "at": now_utc().isoformat(), "status": "invited"})
         await push_notification(pid, "artigiani_invito", "Nuova richiesta artigiano",
                                 "Hai ricevuto una richiesta compatibile.", "artigiani", rid)
-    if new_invites:
-        await db.richieste.update_one({"richiesta_id": rid},
-                                      {"$push": {"provider_invitati": {"$each": new_invites}},
-                                       "$set": {"stato": "in_matching", "updated_at": now_utc().isoformat()}})
-    return {"invited": len(new_invites)}
+    if new_invites or reset:
+        upd = {"$set": {"stato": "in_matching", "updated_at": now_utc().isoformat()}}
+        if new_invites:
+            upd["$push"] = {"provider_invitati": {"$each": new_invites}}
+        await db.richieste.update_one({"richiesta_id": rid}, upd)
+    return {"invited": len(new_invites), "reactivated": reset}
 
 
 class AbilitazioneDecision(BaseModel):

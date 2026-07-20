@@ -466,11 +466,14 @@ async function loadPulizie(){
   list.forEach(r=>{
     const c=r.config||{};
     const comps=(r.compatible||[]);
-    let rows=comps.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
-      <input type="checkbox" data-rid="${r.richiesta_id}" value="${p.provider_id}" ${p.invited?'checked disabled':''}/>
+    let rows=comps.map(p=>{
+      const declined=p.invite_status==='declined';const confirmed=p.confirmed;const disabled=(p.invited&&!declined)||confirmed;
+      const badge=confirmed?'<span class="pill" style="background:#DDEBFF;color:#1E63C7">confermato</span>':declined?'<span class="pill" style="background:#FDE4E1;color:#DE4B3F">✗ rifiutato · riassegnabile</span>':p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':'';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" data-rid="${r.richiesta_id}" value="${p.provider_id}" ${disabled?'checked disabled':''}/>
       <span style="flex:1"><b>${p.nome}</b> <span class="muted">· ${p.distance}km · ⭐${(p.rating||0).toFixed(1)} · Trust ${Math.round(p.trust||0)}</span></span>
-      <b>€${(p.price||0).toFixed(2)}</b> ${p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':''}
-    </label>`).join('') || '<div class="muted">Nessun professionista compatibile in zona.</div>';
+      <b>€${(p.price||0).toFixed(2)}</b> ${badge}
+    </label>`;}).join('') || '<div class="muted">Nessun professionista compatibile in zona.</div>';
     html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
       <div style="display:flex;align-items:center;gap:10px">
         <span class="em">🧹</span>
@@ -498,11 +501,14 @@ async function loadBabysitting(){
   list.forEach(r=>{
     const c=r.config||{};
     const comps=(r.compatible||[]);
-    let rows=comps.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
-      <input type="checkbox" data-brid="${r.richiesta_id}" value="${p.provider_id}" ${p.invited?'checked disabled':''}/>
+    let rows=comps.map(p=>{
+      const declined=p.invite_status==='declined';const confirmed=p.confirmed;const disabled=(p.invited&&!declined)||confirmed;
+      const badge=confirmed?'<span class="pill" style="background:#DDEBFF;color:#1E63C7">confermato</span>':declined?'<span class="pill" style="background:#FDE4E1;color:#DE4B3F">✗ rifiutato · riassegnabile</span>':p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':'';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" data-brid="${r.richiesta_id}" value="${p.provider_id}" ${disabled?'checked disabled':''}/>
       <span style="flex:1"><b>${p.nome}</b> <span class="muted">· ${p.distance}km · ⭐${(p.rating||0).toFixed(1)} · ${p.esperienza_anni||0}y ${p.casellario_ok?'· 🛡️':''} ${(p.certificazioni||[]).includes('primo_soccorso_pediatrico')?'· 🩹':''}</span></span>
-      <b>€${(p.price||0).toFixed(2)}</b> ${p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':''}
-    </label>`).join('') || '<div class="muted">Nessuna babysitter compatibile in zona.</div>';
+      <b>€${(p.price||0).toFixed(2)}</b> ${badge}
+    </label>`;}).join('') || '<div class="muted">Nessuna babysitter compatibile in zona.</div>';
     const gen=(r.bambini_generic||[]).map(x=>x.eta_band_it+(x.esigenza?(' ⚠️'+x.esigenza):'')).join(', ');
     html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
       <div style="display:flex;align-items:center;gap:10px">
@@ -531,11 +537,16 @@ async function loadDriver(){
   list.forEach(r=>{
     const c=r.config||{};
     const comps=(r.compatible||[]);
-    let rows=comps.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
-      <input type="checkbox" data-drid="${r.richiesta_id}" value="${p.provider_id}" ${p.invited?'checked disabled':''}/>
+    let rows=comps.map(p=>{
+      const declined=p.invite_status==='declined';
+      const confirmed=p.confirmed;
+      const disabled=(p.invited&&!declined)||confirmed;
+      const badge=confirmed?'<span class="pill" style="background:#DDEBFF;color:#1E63C7">confermato</span>':declined?'<span class="pill" style="background:#FDE4E1;color:#DE4B3F">✗ rifiutato · riassegnabile</span>':p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':'';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" data-drid="${r.richiesta_id}" value="${p.provider_id}" ${disabled?'checked disabled':''}/>
       <span style="flex:1"><b>${p.nome}</b> <span class="muted">· ${p.distance}km · ⭐${(p.rating||0).toFixed(1)} · affid. ${p.affidabilita||100}% ${p.auth_ok?'· 🛡️':''}</span></span>
-      <b>€${(p.price||0).toFixed(2)}</b> ${p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':''}
-    </label>`).join('') || '<div class="muted">Nessun driver compatibile in zona.</div>';
+      <b>€${(p.price||0).toFixed(2)}</b> ${badge}
+    </label>`;}).join('') || '<div class="muted">Nessun driver compatibile in zona.</div>';
     html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
       <div style="display:flex;align-items:center;gap:10px">
         <span class="em">${c.tipo==='taxi'?'🚕':'🚘'}</span>
@@ -598,11 +609,14 @@ async function loadArtigiani(){
   list.forEach(r=>{
     const c=r.config||{};
     const comps=(r.compatible||[]);
-    let rows=comps.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
-      <input type="checkbox" data-arid="${r.richiesta_id}" value="${p.provider_id}" ${p.invited?'checked disabled':''}/>
+    let rows=comps.map(p=>{
+      const declined=p.invite_status==='declined';const confirmed=p.confirmed;const disabled=(p.invited&&!declined)||confirmed;
+      const badge=confirmed?'<span class="pill" style="background:#DDEBFF;color:#1E63C7">confermato</span>':declined?'<span class="pill" style="background:#FDE4E1;color:#DE4B3F">✗ rifiutato · riassegnabile</span>':p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':'';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" data-arid="${r.richiesta_id}" value="${p.provider_id}" ${disabled?'checked disabled':''}/>
       <span style="flex:1"><b>${p.nome}</b> <span class="muted">· ${p.distance}km · ⭐${(p.rating||0).toFixed(1)} ${p.abilitazione_ok?'· 🛡️ abilitato':''}</span></span>
-      ${p.invited?'<span class="pill" style="background:#E4F6EC;color:#1E9E5B">invited</span>':''}
-    </label>`).join('') || '<div class="muted">Nessun artigiano compatibile in zona.</div>';
+      ${badge}
+    </label>`;}).join('') || '<div class="muted">Nessun artigiano compatibile in zona.</div>';
     html+=`<div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
       <div style="display:flex;align-items:center;gap:10px">
         <span class="em">🔧</span>

@@ -183,3 +183,11 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - #8 Rifiuto non aggiornava la vista: gli endpoint `/driver|pulizie|babysitting|artigiani/incoming` ora escludono gli inviti con status "declined" (`$elemMatch`).
 - #9 Riassegnazione dopo rifiuto: gli endpoint admin invite (pulizie + driver) riattivano gli inviti precedentemente "declined" (reset a "invited" + notifica).
 - Verificato testing agent iter41: #1 focus 0 perdite, #12 salva 2,5→2.5, #6 opportunità appare dopo invito e apre dettaglio. TODO batch successivi: #5 dettaglio richiesta+chat+accettazione driver/contro-prezzo pendente, #13 mappa→form guidato, #7 notifiche in-app (+push su richiesta), #2/#4/#10/#11 backend/ruoli/bonus, #3 bonus multiplo+nota.
+
+## Fix #8/#9 backend+admin (rifiuto & riassegnazione) — tutte le categorie
+- Causa #8 "nuove richieste non appaiono nel backend": l'endpoint admin driver richieste andava in 500 se `compatible_drivers`/`ncc_price` falliva su una richiesta → ora avvolto in try/except (una richiesta problematica non blocca la lista).
+- Causa #8 "rifiuto non aggiorna": l'admin mostrava i provider invitati come "checked disabled" senza distinguere il rifiuto. Ora ogni provider compatibile ha `invite_status` (invited/declined) + `confirmed`; l'admin mostra badge "✗ rifiutato · riassegnabile" / "invited" / "confermato".
+- Fix #9 riassegnazione: le checkbox dei provider "declined" NON sono più disabilitate → l'admin può riselezionarli; l'endpoint invite riattiva gli inviti declined (status→invited, stato→in_matching, notifica). Applicato a driver + pulizie + babysitting + artigiani.
+- `/*/incoming` escludono gli inviti "declined" (via $elemMatch) → dopo il rifiuto la richiesta sparisce dalla Home del provider; dopo la riassegnazione riappare.
+- Verificato con test DB integrato: admin vede nuova richiesta ✓, incoming prima del rifiuto ✓, escluso dopo rifiuto ✓, invite_status=declined ✓, riappare dopo riassegnazione ✓.
+- NOTA client "rifiutata": nessun endpoint imposta mai `stato` richiesta a "declined"; con la riassegnazione ora `stato`=in_matching. Non riproducibile lato codice — chiedere repro all'utente se persiste.

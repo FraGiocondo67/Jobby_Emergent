@@ -769,6 +769,8 @@ async def admin_richieste(_=Depends(require_admin)):
                 "certificazioni": bsp.get("certificazioni", []), "casellario_ok": bool(p.get("casellario_verified")),
                 "price": price_breakdown(pp["listino"], r["config"], r["binario"], fee)["total_client"],
                 "invited": p["user_id"] in [i.get("provider_id") for i in r.get("provider_invitati", [])],
+                "invite_status": next((i.get("status") for i in r.get("provider_invitati", []) if i.get("provider_id") == p["user_id"]), None),
+                "confirmed": r.get("provider_scelto") == p["user_id"],
             })
     return items
 
@@ -784,17 +786,26 @@ async def admin_invite(rid: str, body: InviteIn, _=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="not_found")
     already = [i.get("provider_id") for i in r.get("provider_invitati", [])]
     new_invites = []
+    reset = 0
     for pid in body.provider_ids:
         if pid in already:
+            res = await db.richieste.update_one(
+                {"richiesta_id": rid, "provider_invitati": {"$elemMatch": {"provider_id": pid, "status": "declined"}}},
+                {"$set": {"provider_invitati.$.status": "invited", "provider_invitati.$.reinvited_at": now_utc().isoformat()}})
+            if res.modified_count:
+                reset += 1
+                await push_notification(pid, "babysitting_invito", "Nuova richiesta babysitting",
+                                        "Hai ricevuto di nuovo una richiesta compatibile.", "babysitting", rid)
             continue
         new_invites.append({"provider_id": pid, "at": now_utc().isoformat(), "status": "invited"})
         await push_notification(pid, "babysitting_invito", "Nuova richiesta babysitting",
                                 "Hai ricevuto una richiesta compatibile. Rispondi entro 24h.", "babysitting", rid)
-    if new_invites:
-        await db.richieste.update_one({"richiesta_id": rid},
-                                      {"$push": {"provider_invitati": {"$each": new_invites}},
-                                       "$set": {"stato": "in_matching", "updated_at": now_utc().isoformat()}})
-    return {"invited": len(new_invites)}
+    if new_invites or reset:
+        upd = {"$set": {"stato": "in_matching", "updated_at": now_utc().isoformat()}}
+        if new_invites:
+            upd["$push"] = {"provider_invitati": {"$each": new_invites}}
+        await db.richieste.update_one({"richiesta_id": rid}, upd)
+    return {"invited": len(new_invites), "reactivated": reset}
 
 
 class CasellarioDecisionIn(BaseModel):
