@@ -1,0 +1,29 @@
+{
+  "summary": "Fase 3 Listini retest — ALL THREE review items PASS. (1) A4 DELETE product on /listino now works on web: window.confirm branch fires with Italian message 'Eliminare questo prodotto?', product removed from list (verified: added TEST_ToDelete via API, edited to TEST_Edited, then delete confirmed → row disappeared, del-<id> testID no longer in DOM). (2) i18n restructure verified: app renders ITALIAN throughout — 'Il mio listino', 'Aggiungi prodotto', 'Prodotti e prezzi della tua attività', 'Ciao, Test 👋', 'professionisti online', 'Prossima visita', 'visite completate', 'Riprenota'/'Sposta'/'Scrivi', 'Richieste in arrivo', 'in garanzia', 'Completata'/'Annullata', 'Portafoglio', 'Serve una mano?', 'Pezzo (Pz)', 'Ora (Hr)'. Zero English fallback strings observed on any Fase 3 screen. NO red-screen crashes / TypeErrors / PageErrors on business /listino, business home (Richieste in arrivo), client home, client Attività (Richieste) tab. (3) Fase 3 happy path regression: business /listino Lavanderia chip → ADD (product-desc + product-price + product-save) creates new row → EDIT via edit-<id> updates description → DELETE via del-<id> removes it. Client Attività/Richieste tab renders order cards with itemized '1× Lavaggio camicia · €3.50' + '🔒 €3.50 in garanzia' + status chips (Completata/Annullata) + filter chips Tutte/In corso/Completate + sort chip Più recenti. Business incoming Richieste in arrivo also render with itemized lines. Only console noise is the expected shadow*/pointerEvents RN deprecation warnings.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "theme.ts shadow.card / shadow.float", "issue": "Deprecated 'shadow*' style props warning still printed on every screen — should migrate to boxShadow. Reference: /app/frontend/src/theme.ts"},
+      {"component": "(tabs)/index.tsx CustomerHome floatWrap View", "issue": "props.pointerEvents is deprecated warning — should be moved into style prop. Reference: /app/frontend/app/(tabs)/index.tsx:~182"}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL: migrate shadow.* StyleSheet props to boxShadow (RN 0.76+) to silence console deprecation warning.",
+    "OPTIONAL: move `<View pointerEvents=...>` into the style prop on CustomerHome to silence deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "listino/index.tsx remove() correctly branches on Platform.OS==='web' → window.confirm(t('deleteProductConfirm')) → doDelete(); on native it uses Alert.alert with destructive style. Clean pattern, mirrors (tabs)/richieste.tsx.",
+    "src/i18n.ts is now structurally correct: `it: {` opens at line 4, `en: {` opens at line 635, both are proper sibling keys of `strings`. Italian is the default lang and renders across all tested screens. English strings are properly encapsulated in the `en:` block (unused at runtime for now, but no longer overwriting Italian)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only retest)", "frontend": "100% (3/3 review items pass — A4 DELETE ✓, Italian i18n ✓, Fase 3 happy path ADD+EDIT+DELETE + Richieste render ✓)"},
+  "seed_data_creation": "Created TEST_ToDelete_2 → edited to TEST_Edited_<shortid> → deleted (cleanup done). Two seeded Lavanderia products remain untouched (Lavaggio camicia €3.50, Lavaggio a secco cappotto €12.00).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both critical iteration-34 blockers are resolved on preview: (a) DELETE product on /listino works on web via window.confirm branch. (b) i18n.ts now has proper it/en split — Italian renders app-wide. Session tokens still JSON-stringified in localStorage 'jobby_session_token'. Biz token 'biz-test-token-999' has services [tecnico, pulizie, lavanderia]; seeded products live on lavanderia — tap that chip after entry. Client token 'disp-test-token-777' has wallet €87.50 with multiple existing orders visible in Attività/Richieste tab. Only remaining non-blocking items are the shadow*/pointerEvents RN deprecation warnings.",
+  "rca_of_issue": "n/a — retest confirms iteration-34 fixes are effective."
+}

@@ -85,6 +85,7 @@ export default function ListinoScreen() {
   };
 
   const choosePhoto = () => {
+    if (Platform.OS === "web") { pickImage(false); return; }
     Alert.alert(t("productPhoto"), "", [
       { text: t("takePhoto"), onPress: () => pickImage(true) },
       { text: t("chooseFromGallery"), onPress: () => pickImage(false) },
@@ -107,11 +108,16 @@ export default function ListinoScreen() {
   };
 
   const remove = (p: any) => {
+    const doDelete = async () => {
+      try { await api.deleteProduct(p.item_id); load(); } catch { Alert.alert(t("error")); }
+    };
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(t("deleteProductConfirm"))) doDelete();
+      return;
+    }
     Alert.alert(t("deleteProductConfirm"), "", [
       { text: t("cancel"), style: "cancel" },
-      { text: t("delete") || "Elimina", style: "destructive", onPress: async () => {
-        try { await api.deleteProduct(p.item_id); load(); } catch { Alert.alert(t("error")); }
-      } },
+      { text: "Elimina", style: "destructive", onPress: doDelete },
     ]);
   };
 

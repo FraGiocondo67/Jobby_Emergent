@@ -631,6 +631,8 @@ export const strings = {
     heldInEscrow: "in garanzia", availableBalance: "Disponibile",
     orderItems: "Articoli ordinati", markDelivered: "Segna come consegnato", orderConfirmedShop: "Ordine confermato",
     noListinoBusiness: "Questa attività non ha ancora un listino",
+  },
+  en: {
     appTagline: "Work should adapt to life, not life to work.",
     continueGoogle: "Continue with Google",
     signingIn: "Signing in...",
