@@ -284,6 +284,22 @@ export const api = {
     request(`/business-requests/${id}/respond`, { method: "POST", body: JSON.stringify(data) }),
   cancelBusinessRequest: (id: string) => request(`/business-requests/${id}/cancel`, { method: "POST" }),
 
+  // listino prodotti (Fase 3 — cataloghi prossimità)
+  myListino: (category?: string) => request(`/listino/mine${category ? `?category=${category}` : ""}`),
+  createProduct: (data: { category: string; descrizione: string; unita: string; prezzo: number; foto?: string | null }) =>
+    request("/listino", { method: "POST", body: JSON.stringify(data) }),
+  updateProduct: (itemId: string, data: { category: string; descrizione: string; unita: string; prezzo: number; foto?: string | null }) =>
+    request(`/listino/${itemId}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteProduct: (itemId: string) => request(`/listino/${itemId}`, { method: "DELETE" }),
+  businessListino: (businessId: string, category?: string) =>
+    request(`/listino/business/${businessId}${category ? `?category=${category}` : ""}`),
+  createOrder: (data: { business_id: string; category: string; items: { item_id: string; qty: number }[]; address?: string; lat?: number | null; lng?: number | null; note?: string }) =>
+    request("/listino/order", { method: "POST", body: JSON.stringify(data) }),
+  respondOrder: (rid: string, data: { accept: boolean; eta?: string; mode?: string; note?: string }) =>
+    request(`/listino/order/${rid}/respond`, { method: "POST", body: JSON.stringify(data) }),
+  completeOrder: (rid: string) => request(`/listino/order/${rid}/complete`, { method: "POST" }),
+  cancelOrder: (rid: string) => request(`/listino/order/${rid}/cancel`, { method: "POST" }),
+
   // babysitting (Spec 6)
   bsConfig: () => request("/babysitting/config"),
   bsEstimate: (data: any) => request("/babysitting/estimate", { method: "POST", body: JSON.stringify(data) }),

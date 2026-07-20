@@ -292,26 +292,37 @@ function BusinessHome() {
 
   const decline = async (r: any) => {
     Haptics.selectionAsync().catch(() => {});
-    await api.respondBusinessRequest(r.request_id, { accept: false });
+    if (r.order) await api.respondOrder(r.request_id, { accept: false });
+    else await api.respondBusinessRequest(r.request_id, { accept: false });
+    load();
+  };
+
+  const completeOrd = async (r: any) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    try { await api.completeOrder(r.request_id); } catch {}
     load();
   };
 
   const confirm = async () => {
     setBusy(true);
     try {
-      await api.respondBusinessRequest(active.request_id, {
-        accept: true, eta, mode,
-        delivery_cost: Number(deliveryCost) || 0,
-        price: Number(price) || 0,
-        note,
-      });
+      if (active.order) {
+        await api.respondOrder(active.request_id, { accept: true, eta, mode, note });
+      } else {
+        await api.respondBusinessRequest(active.request_id, {
+          accept: true, eta, mode,
+          delivery_cost: Number(deliveryCost) || 0,
+          price: Number(price) || 0,
+          note,
+        });
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setActive(null);
       load();
     } catch {} finally { setBusy(false); }
   };
 
-  const statusColor: Record<string, string> = { pending: colors.warning, confirmed: colors.success, declined: colors.error };
+  const statusColor: Record<string, string> = { pending: colors.warning, confirmed: colors.success, completed: colors.brand, declined: colors.error, cancelled: colors.muted };
 
   return (
     <View style={styles.container}>
@@ -336,9 +347,21 @@ function BusinessHome() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.missionTitle}>{r.category_label?.[lang] || r.category}</Text>
                   <Text style={styles.missionSub}>{r.client_name}</Text>
-                  <Text style={styles.missionSub}>{r.note}</Text>
+                  {r.order && r.items?.length ? (
+                    <View style={{ marginTop: 4, marginBottom: 2 }}>
+                      {r.items.map((it: any, i: number) => (
+                        <Text key={i} style={styles.orderLine}>{it.qty}× {it.descrizione} · €{Number(it.line_total).toFixed(2)}</Text>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.missionSub}>{r.note}</Text>
+                  )}
                   {r.address ? <Text style={styles.missionSub}>📍 {r.address}</Text> : null}
-                  {r.budget ? <Text style={styles.budgetTag}>💰 {t("budgetLabel")}: €{Number(r.budget).toFixed(0)}</Text> : null}
+                  {r.order ? (
+                    <Text style={styles.budgetTag}>🔒 €{Number(r.total).toFixed(2)} {t("heldInEscrow")}</Text>
+                  ) : r.budget ? (
+                    <Text style={styles.budgetTag}>💰 {t("budgetLabel")}: €{Number(r.budget).toFixed(0)}</Text>
+                  ) : null}
                 </View>
                 <View style={[styles.pill, { backgroundColor: (statusColor[r.status] || colors.muted) + "22" }]}>
                   <Text style={[styles.pillText, { color: statusColor[r.status] || colors.muted }]}>{t(`status_${r.status}` as any) || r.status}</Text>
@@ -349,6 +372,8 @@ function BusinessHome() {
                   <Button testID={`breq-decline-${r.request_id}`} label={t("decline")} variant="secondary" onPress={() => decline(r)} style={{ flex: 1, height: 46 }} />
                   <Button testID={`breq-accept-${r.request_id}`} label={t("acceptConfirm")} onPress={() => openRespond(r)} style={{ flex: 1, height: 46 }} />
                 </View>
+              ) : r.status === "confirmed" && r.order ? (
+                <Button testID={`order-complete-${r.request_id}`} label={t("markDelivered")} onPress={() => completeOrd(r)} style={{ marginTop: spacing.md, height: 46 }} />
               ) : r.status === "confirmed" && r.response ? (
                 <Text style={styles.confirmedInfo}>
                   {r.response.mode === "delivery" ? t("mode_delivery") : t("mode_pickup")} · {r.response.eta || "—"} · €{(r.response.price || 0).toFixed(2)} + €{(r.response.delivery_cost || 0).toFixed(2)}
@@ -381,10 +406,14 @@ function BusinessHome() {
 
             <View style={styles.row2}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.modalLabel}>{t("priceLabel")}</Text>
-                <TextInput testID="resp-price" style={styles.modalInput} value={price} onChangeText={setPrice} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} />
+                {active?.order ? null : (
+                  <>
+                    <Text style={styles.modalLabel}>{t("priceLabel")}</Text>
+                    <TextInput testID="resp-price" style={styles.modalInput} value={price} onChangeText={setPrice} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} />
+                  </>
+                )}
               </View>
-              {mode === "delivery" ? (
+              {mode === "delivery" && !active?.order ? (
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalLabel}>{t("deliveryCost")}</Text>
                   <TextInput testID="resp-delivery-cost" style={styles.modalInput} value={deliveryCost} onChangeText={setDeliveryCost} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} />
@@ -468,6 +497,7 @@ const styles = StyleSheet.create({
   missionTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface, textTransform: "capitalize" },
   missionSub: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 1 },
   budgetTag: { fontSize: fsize.sm, fontFamily: font.bold, color: colors.green, marginTop: 4 },
+  orderLine: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.onSurfaceTertiary },
   missionPrice: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.brand },
   actionRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
   acceptedTag: { marginTop: spacing.md, fontSize: fsize.sm, fontFamily: font.medium, color: colors.warning },

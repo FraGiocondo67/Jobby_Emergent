@@ -141,6 +141,18 @@ export default function ProfileTab() {
           </Pressable>
         ) : null}
 
+        {/* Business listino (proximity products) */}
+        {user?.role === "business" ? (
+          <Pressable testID="profile-biz-listino" style={[styles.listRow, shadow.card]} onPress={() => router.push("/listino")}>
+            <View style={[styles.rowIcon, { backgroundColor: colors.purpleBg }]}><Ionicons name="cart" size={22} color={colors.purple} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{t("myListino")}</Text>
+              <Text style={styles.rowSub}>{t("myListinoSub")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        ) : null}
+
         {/* Trust score */}
         <View style={[styles.trustCard, shadow.card]} testID="trust-card">
           <View style={styles.trustHead}>

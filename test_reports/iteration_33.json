@@ -1,0 +1,36 @@
+{
+  "summary": "Fase 3 (Listini) frontend E2E tested via injected session tokens. Client order flow, wallet block/decrease, business itemized card, accept (no price for orders), and Segna consegnato (release) all work. Two frontend bugs found: (1) /listino screen for business with 2+ services does NOT auto-select first category (category state stays empty; user is loaded async but useState(services[0] || '') snapshots before user resolves) — user must manually tap the chip; (2) client Richieste tab crashes with 'TypeError: Cannot read properties of undefined (reading status_preventivo)' when merged list contains a 'preventivo' status, preventing biz order cards from rendering.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "/listino/index.tsx (ListinoScreen)", "issue": "When business has 2+ services, category is initialised via useState(services[0] || '') at first render — but AuthContext.user is loaded asynchronously, so services=[] at mount and category becomes ''. The screen then shows the category chips but 'Select a category' body and never auto-selects. User must manually tap a chip. Impact: seeded products not visible on entry. FIX: add useEffect(() => { if (!category && services.length) setCategory(services[0]); }, [services]). Reference: /app/frontend/app/listino/index.tsx:27", "testID": "listino-cat-*", "priority": "HIGH"},
+      {"component": "(tabs)/richieste.tsx StatusPill", "issue": "Crash 'Cannot read properties of undefined (reading status_preventivo)' when rendering client list. Suggests t() lookup path returns undefined for statuses not present in either it/en dict (or LanguageContext not fully hydrated). Result: biz order cards do not render in Richieste for client (0 cards, held/cancel not visible). Reference: /app/frontend/app/(tabs)/richieste.tsx:19 and /app/frontend/src/context/LanguageContext.tsx:29. FIX: add missing keys status_preventivo/status_matched/status_declined/status_confirmed/status_completed etc. to both it & en, or make t() null-safe: return strings?.[lang]?.[k] ?? strings?.en?.[k] ?? k;", "testID": "req-biz-*", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Client Richieste tab — order card + held amount + cancel", "issue": "Backend returns the order correctly (verified via wallet decrease and business seeing itemized card); frontend crashes prevent the client from viewing/held-amount/cancelling from Richieste. Blocks the 'cancel pending order (refund)' UX flow.", "affected_testIDs": ["req-biz-*", "cancel-biz-*"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Global styles", "issue": "Deprecated 'shadow*' style props detected (console warning). Migrate to boxShadow (RN 0.76+). Reference: /app/frontend/src/theme.ts (shadow.card, shadow.float)."},
+      {"component": "(tabs)/index.tsx CustomerHome floatWrap View", "issue": "Deprecated props.pointerEvents — use style.pointerEvents instead. Reference: /app/frontend/app/(tabs)/index.tsx:182 (<View style={styles.floatWrap} pointerEvents=\"box-none\">)."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix ListinoScreen category auto-selection: add useEffect syncing category with user.services when services becomes non-empty (or use user?.services?.[0] directly in effect).",
+    "Fix Richieste crash 'status_preventivo': add all status_* i18n keys for both it & en (status_preventivo, status_confirmed, status_declined, status_cancelled, status_pubblicata, status_in_matching, status_con_proposte, status_confermata, status_in_corso, status_recensita, status_scaduta, status_annullata, status_matched, status_completed, status_pending, status_booked, status_in_progress, status_disputed), OR make t null-safe. This blocks the client cancel/held-amount UX.",
+    "Migrate shadow* style props to boxShadow to remove deprecation warnings.",
+    "Replace <View pointerEvents=\"...\"> with style.pointerEvents in home screen."
+  ],
+  "critical_code_review_comments": [
+    "ListinoScreen initializes state from user?.services on first render only — this is a common React pitfall. Should sync via useEffect.",
+    "LanguageContext t() lookups do not guard against undefined language dicts; StatusPill assumes every status has a translation."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only run)", "frontend": "78% (11/14 sub-checks pass) — A1 listino auto-select FAIL; C1/C2 Richieste order card & held FAIL due to crash; A2/A3/A4 catalog CRUD not executed due to A1 blocker (but were previously validated via curl per handoff)"},
+  "seed_data_creation": "None (used existing seeded products for user_2f996c8a010a and client user_disptest01).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Session token is stored JSON-stringified in localStorage key 'jobby_session_token' (must use JSON.stringify when injecting). Business direct URL: /listino (after login). Client order direct URL: /business-request/user_2f996c8a010a?category=lavanderia&name=Francesco%20Franzin&label=Lavanderia. After the two fixes above, re-run A1 (auto-select), A2/A3/A4 (add/edit/delete product), C1/C2/C3 (Richieste biz card + held + cancel). Backend endpoints all working per curl verification in handoff notes.",
+  "rca_of_issue": "Bug 1 (Listino cat auto-select): user context resolves after component mount; useState(services[0] || '') captures the empty snapshot and doesn't update. Bug 2 (Richieste crash): 'preventivo' status is used in the status color map (line 17) but no status_preventivo key exists in i18n it/en dicts. When another mission from a different service (e.g. artigiani proposta) returns status='preventivo', StatusPill's translation call chain fails since either the lang dict returns undefined for the key or the fallback t() itself crashes. Both bugs are simple 1-line fixes."
+}

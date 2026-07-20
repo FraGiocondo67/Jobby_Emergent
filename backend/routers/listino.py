@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from core import db, now_utc, new_id
 from deps import get_current_user
+from routers.chat import open_thread
 
 router = APIRouter()
 
@@ -41,6 +42,29 @@ class OrderIn(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
     note: str = ""
+
+
+class OrderRespondIn(BaseModel):
+    accept: bool
+    eta: str = ""
+    mode: str = "pickup"          # pickup | delivery
+    note: str = ""
+
+
+async def _refund_held(order: dict):
+    """Return the blocked amount to the client (bonus first, then wallet)."""
+    inc = {}
+    if order.get("held_from_bonus"):
+        inc["bonus_credit"] = round(float(order["held_from_bonus"]), 2)
+    if order.get("held_from_wallet"):
+        inc["wallet_balance"] = round(float(order["held_from_wallet"]), 2)
+    if inc:
+        await db.users.update_one({"user_id": order["client_id"]}, {"$inc": inc})
+    await db.transactions.insert_one({
+        "tx_id": new_id("tx"), "user_id": order["client_id"], "type": "order_refund", "status": "done",
+        "amount": round(float(order.get("held", 0)), 2),
+        "label": f"Rimborso ordine {order.get('business_name', '')} €{float(order.get('held', 0)):.2f}",
+        "request_id": order["request_id"], "created_at": now_utc().isoformat()})
 
 
 def _pub(p: dict) -> dict:
@@ -166,3 +190,74 @@ async def create_order(body: OrderIn, user=Depends(get_current_user)):
         "amount": -total, "label": f"Ordine {biz.get('business_name') or biz['name']} €{total:.2f} (in garanzia)",
         "request_id": rid, "created_at": now_utc().isoformat()})
     return {"request_id": rid, "total": total, "held_from_bonus": from_bonus, "held_from_wallet": from_wallet}
+
+
+# ---------------- Ciclo di vita dell'ordine ----------------
+@router.post("/listino/order/{rid}/respond")
+async def order_respond(rid: str, body: OrderRespondIn, user=Depends(get_current_user)):
+    """Il Business accetta o rifiuta un ordine. Rifiuto → rimborso importo bloccato."""
+    o = await db.business_requests.find_one({"request_id": rid, "order": True}, {"_id": 0})
+    if not o:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    if o["business_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if o["status"] != "pending":
+        raise HTTPException(status_code=400, detail="already_handled")
+
+    if not body.accept:
+        await _refund_held(o)
+        await db.business_requests.update_one(
+            {"request_id": rid},
+            {"$set": {"status": "declined", "payment_status": "refunded", "updated_at": now_utc().isoformat()}})
+        return {"status": "declined", "refunded": o.get("held", 0)}
+
+    response = {"eta": body.eta, "mode": body.mode, "note": body.note}
+    await db.business_requests.update_one(
+        {"request_id": rid},
+        {"$set": {"status": "confirmed", "response": response, "updated_at": now_utc().isoformat()}})
+    mode_txt = "Consegna a domicilio" if body.mode == "delivery" else "Ritiro in sede"
+    summary = (f"Ordine confermato ✅\n{mode_txt}\nTempo: {body.eta or 'da concordare'}\n"
+               f"Totale: €{float(o['total']):.2f} (in garanzia)"
+               + (f"\nNota: {body.note}" if body.note else ""))
+    await open_thread(o["client_id"], o["client_name"], o["business_id"], o["business_name"],
+                      o.get("business_picture", ""), first_message=summary)
+    return {"status": "confirmed", "response": response}
+
+
+@router.post("/listino/order/{rid}/complete")
+async def order_complete(rid: str, user=Depends(get_current_user)):
+    """Il Business marca l'ordine come consegnato → sblocca l'importo verso il wallet del business."""
+    o = await db.business_requests.find_one({"request_id": rid, "order": True}, {"_id": 0})
+    if not o:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    if o["business_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if o["status"] != "confirmed":
+        raise HTTPException(status_code=400, detail="not_confirmed")
+    total = round(float(o.get("held", 0)), 2)
+    await db.users.update_one({"user_id": o["business_id"]}, {"$inc": {"wallet_balance": total}})
+    await db.business_requests.update_one(
+        {"request_id": rid},
+        {"$set": {"status": "completed", "payment_status": "released", "updated_at": now_utc().isoformat()}})
+    await db.transactions.insert_one({
+        "tx_id": new_id("tx"), "user_id": o["business_id"], "type": "order_earning", "status": "done",
+        "amount": total, "label": f"Ordine {o.get('client_name', '')} €{total:.2f} (incassato)",
+        "request_id": rid, "created_at": now_utc().isoformat()})
+    return {"status": "completed", "released": total}
+
+
+@router.post("/listino/order/{rid}/cancel")
+async def order_cancel(rid: str, user=Depends(get_current_user)):
+    """Il Cliente annulla il proprio ordine finché è ancora in attesa → rimborso."""
+    o = await db.business_requests.find_one({"request_id": rid, "order": True}, {"_id": 0})
+    if not o:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    if o["client_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if o["status"] != "pending":
+        raise HTTPException(status_code=400, detail="cannot_cancel")
+    await _refund_held(o)
+    await db.business_requests.update_one(
+        {"request_id": rid},
+        {"$set": {"status": "cancelled", "payment_status": "refunded", "updated_at": now_utc().isoformat()}})
+    return {"status": "cancelled", "refunded": o.get("held", 0)}

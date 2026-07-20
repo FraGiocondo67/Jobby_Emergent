@@ -98,6 +98,7 @@ function CustomerRequests() {
   };
   const doCancelMission = (id: string) => confirmCancel(async () => { await api.cancelMission(id); load(); });
   const doCancelBiz = (id: string) => confirmCancel(async () => { await api.cancelBusinessRequest(id); load(); });
+  const doCancelOrder = (id: string) => confirmCancel(async () => { await api.cancelOrder(id); load(); });
 
   const renderPulizie = (r: any) => (
     <Pressable key={`rq-${r.richiesta_id}`} testID={`req-pulizie-${r.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/pulizie/${r.richiesta_id}`)}>
@@ -177,17 +178,37 @@ function CustomerRequests() {
         <Text style={{ fontSize: 26 }}>🏪</Text>
         <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>{r.business_name}</Text>
-          <Text style={styles.cardSub}>{r.category_label?.[lang] || r.category} · {r.note}</Text>
-          {r.budget ? <Text style={styles.budgetSub}>💰 {t("budgetLabel")}: €{Number(r.budget).toFixed(0)}</Text> : null}
+          {r.order && r.items?.length ? (
+            <>
+              <Text style={styles.cardSub}>{r.category_label?.[lang] || r.category}</Text>
+              {r.items.map((it: any, i: number) => (
+                <Text key={i} style={styles.budgetSub}>{it.qty}× {it.descrizione} · €{Number(it.line_total).toFixed(2)}</Text>
+              ))}
+              <Text style={[styles.budgetSub, { color: colors.brand, fontFamily: font.bold }]}>🔒 €{Number(r.total).toFixed(2)} {t("heldInEscrow")}</Text>
+            </>
+          ) : (
+            <Text style={styles.cardSub}>{r.category_label?.[lang] || r.category} · {r.note}</Text>
+          )}
+          {!r.order && r.budget ? <Text style={styles.budgetSub}>💰 {t("budgetLabel")}: €{Number(r.budget).toFixed(0)}</Text> : null}
           <View style={{ marginTop: 6 }}><StatusPill status={r.status} /></View>
         </View>
       </View>
       {r.status === "pending" ? (
-        <Pressable testID={`cancel-biz-${r.request_id}`} style={[styles.cancelBtn, { alignSelf: "flex-start" }]} onPress={() => doCancelBiz(r.request_id)}>
+        <Pressable testID={`cancel-biz-${r.request_id}`} style={[styles.cancelBtn, { alignSelf: "flex-start" }]} onPress={() => (r.order ? doCancelOrder(r.request_id) : doCancelBiz(r.request_id))}>
           <Text style={styles.cancelText}>✕ {t("cancelRequest")}</Text>
         </Pressable>
       ) : null}
-      {r.status === "confirmed" && r.response ? (
+      {r.status === "confirmed" && r.order && r.response ? (
+        <>
+          <Text style={styles.bizInfo}>
+            {r.response.mode === "delivery" ? t("mode_delivery") : t("mode_pickup")} · {r.response.eta || "—"} · €{Number(r.total).toFixed(2)}
+          </Text>
+          <Pressable testID={`biz-chat-${r.request_id}`} style={styles.chatBtn} onPress={() => openChat(r.business_id)}>
+            <Text style={styles.chatBtnText}>💬 {t("chat")}</Text>
+          </Pressable>
+        </>
+      ) : null}
+      {r.status === "confirmed" && !r.order && r.response ? (
         <>
           <Text style={styles.bizInfo}>
             {r.response.mode === "delivery" ? t("mode_delivery") : t("mode_pickup")} · {r.response.eta || "—"} · €{(r.response.price || 0).toFixed(2)}
