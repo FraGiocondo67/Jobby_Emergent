@@ -155,3 +155,12 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - **activities.tsx**: le Attività ora vedono prossimità + standard (prima solo prossimità).
 - **profile.tsx**: i listini specializzati (pulizie/driver/artigiani/babysitting) appaiono SOLO per provider e SOLO se la categoria è tra i `services` selezionati; "Il mio listino" (prodotti prossimità) appare per role=business.
 - Verificato: backend curl (role override, services proximity+standard); frontend testing agent iter36 (filtro listini provider/business, activities business, step attività via code-inspection perché OTP Resend blocca il walkthrough completo — ma send-otp auto-verifica e il FE gestisce auto_verified, quindi l'onboarding è completabile con un click su "Invia codice").
+
+## Implemented (2026-06 — Geolocalizzazione, Esplora Mappa, Rating/Stato, Admin date, Lingua dispositivo)
+- **Geocoding reale** (OpenStreetMap Nominatim, no key): nuovo `routers/geo.py` → `POST /api/geocode {query}` (indirizzo→lat/lng+label) e `POST /api/reverse-geocode {lat,lng}` (→label). `api.geocode`/`api.reverseGeocode`. Cablato in `business-request` (indirizzo digitato geocodificato all'invio; "usa posizione" reverse-geocode in indirizzo leggibile).
+- **Esplora MAPPA** (Home card `explore-map` → `/map`): mappa reale con cerchio di copertura, selettore raggio (chip 2/5/10/20/50 km), filtro categoria (standard+prossimità). `GET /providers/nearby` ora accetta `radius` opzionale (filtra per distanza dal centro) e ritorna `online`. Mostra SOLO attivi/online (scelta utente).
+- **Rating + stato**: ogni card provider/attività mostra Stars, Trust chip e badge Attivo/Non attivo (ActivePill).
+- **Admin USERS backend** (`admin_web.py`): sotto ogni utente mostra attività selezionate + "📅 Attivo dal" (created_at) e "🕑 Ultimo login" (last_login). `last_login` salvato in `issue_session` e nel login OAuth.
+- **Lingua dispositivo** (`expo-localization`): `LanguageContext` default = locale dispositivo (it→Italiano, altrimenti Inglese); override manuale IT/EN persistito in `jobby_lang`.
+- Verificato: backend curl (geocode/reverse, radius filter, last_login); frontend testing agent iter37 (lingua device, esplora mappa raggio+categoria+stato, geocoding ordine, regressione Fase 3) — tutti PASS.
+- Nota: bstest@jobby.app e provtest@jobby.app sono entrambi role=provider (test_credentials aggiornato).
