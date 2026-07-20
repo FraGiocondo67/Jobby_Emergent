@@ -139,3 +139,12 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Frontend wired: Home tile → `/artigiani/configura`; Richieste tab client cards + provider incoming section; Profile provider "Listino artigiano" link; screens `app/artigiani/{configura,[id],listino}.tsx`.
 - Admin web (`admin_web.py`): new "Artigiani" tab (manual matching/invite) + abilitazione verify button in Onboarding.
 - Legacy `tuttofare` category set `active:false`; `artigiani` active.
+
+## Implemented (2026-06 — Fase 3: Listini prodotti per attività di PROSSIMITÀ)
+- **Backend** `routers/listino.py` (registrato in server.py). Prodotto: `item_id · category · descrizione · unita(pz|nr|hr|kg|bulk) · prezzo · foto(base64 opz)`. Il Business gestisce il listino SOLO per le categorie in `services`.
+  - CRUD business: `GET /api/listino/mine[?category]`, `POST /api/listino`, `PUT/DELETE /api/listino/{item_id}`.
+  - Cliente: `GET /api/listino/business/{business_id}[?category]`; `POST /api/listino/order {business_id,category,items[{item_id,qty}],address,lat,lng,note}` → totale calcolato lato server, importo BLOCCATO nel wallet (prima `bonus_credit`, poi `wallet_balance`), crea doc `business_requests {order:true, items[], total, held, held_from_bonus/wallet, payment_status:held}` + transazione `held`.
+  - Ciclo di vita: `POST /api/listino/order/{rid}/respond {accept,eta,mode,note}` (business; rifiuto → rimborso; conferma → apre chat), `POST .../complete` (business → sblocca held verso wallet business), `POST .../cancel` (cliente pending → rimborso).
+- **Frontend**: Business gestisce catalogo in `/listino` (Profilo → "Il mio listino"; add/edit/delete con foto da fotocamera o galleria, selettore unità, prezzo). Cliente ordina in `/business-request/[businessId]` (stepper quantità + carrello + totale + blocco wallet; fallback a nota libera se il business non ha listino per quella categoria). BusinessHome mostra ordini in arrivo con articoli + "Segna consegnato". Tab Richieste mostra card ordine con importo in garanzia + annulla.
+- Verificato: backend via curl (CRUD, split bonus+wallet, accept→complete, decline/cancel→refund, insufficient_wallet guard); frontend via testing agent iter35 (ADD/EDIT/DELETE, ordine happy path, i18n IT, nessun crash).
+- **NOTA regressione risolta**: durante l'aggiunta stringhe i18n era stato rimosso per errore il boundary it/en in `src/i18n.ts` (tutto finito in `it:`, `en` undefined → UI in inglese). Ripristinati i blocchi `it:{}`/`en:{}` e reso `t()` null-safe in LanguageContext.
