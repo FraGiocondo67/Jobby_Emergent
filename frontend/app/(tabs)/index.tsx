@@ -179,7 +179,7 @@ function CustomerHome() {
         </View>
       </ScrollView>
 
-      <View style={[styles.floatWrap, { bottom: insets.bottom + 96 }]} pointerEvents="box-none">
+      <View style={[styles.floatWrap, { bottom: insets.bottom + 96, pointerEvents: "box-none" }]}>
         <Button
           testID="request-service-button"
           label={`+ ${t("requestService")}`}

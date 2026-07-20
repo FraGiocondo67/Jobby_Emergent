@@ -26,7 +26,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     storage.setItem("jobby_lang", l);
   };
 
-  const t = (k: StringKey) => strings[lang][k] || strings.en[k] || k;
+  const t = (k: StringKey) => {
+    const dict = (strings as any)?.[lang] || (strings as any)?.en || {};
+    return dict?.[k] ?? (strings as any)?.en?.[k] ?? k;
+  };
 
   return <LangContext.Provider value={{ lang, setLang, t }}>{children}</LangContext.Provider>;
 }

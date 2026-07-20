@@ -24,8 +24,7 @@ export default function ListinoScreen() {
 
   const services: string[] = user?.services || [];
   const [catLabels, setCatLabels] = useState<Record<string, any>>({});
-  const [category, setCategory] = useState<string>(services[0] || "");
-  const [items, setItems] = useState<any[]>([]);
+  const [category, setCategory] = useState<string>(services[0] || "");  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // editor modal
@@ -55,6 +54,11 @@ export default function ListinoScreen() {
     finally { setLoading(false); }
   }, [category]);
   useEffect(() => { load(); }, [load]);
+
+  // Auto-select first service once AuthContext.user resolves.
+  useEffect(() => {
+    if (!category && services.length) setCategory(services[0]);
+  }, [services, category]);
 
   const label = (cat: string) => catLabels[cat]?.[lang] || cat;
 

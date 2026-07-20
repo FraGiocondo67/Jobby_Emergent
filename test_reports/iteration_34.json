@@ -1,0 +1,39 @@
+{
+  "summary": "Fase 3 Listini retest. BUG FIX #1 (Richieste crash) VERIFIED FIXED: client Richieste tab renders biz order cards with itemized lines + '🔒 amount in escrow', pending order shows Cancel button; cancelling flips status to Cancelled (backend refund verified). BUG FIX #2 (Listino auto-select) VERIFIED FIXED: services[0] ('tecnico') is auto-selected on entry to /listino for biz-test-token-999. NOTE: seeded products are on 'lavanderia' (services[2]), so the seeded 'Lavaggio camicia' etc. only appear after tapping the Lavanderia chip; the auto-select itself works as per the useEffect fix. Full order flow (client→business Accept modal has NO price field →Segna consegnato→wallet) all working. CRUD: ADD (A2) and EDIT (A3) work correctly on /listino. DELETE (A4) FAILS on web: Alert.alert in listino/index.tsx does not fire its destructive callback on react-native-web, so the delete API is never called. Discovered a separate CRITICAL i18n structural bug: /app/frontend/src/i18n.ts has ONLY one dict opener (`it: {` at line 4) and never opens `en: {`; English strings (lines 1194-1262) are declared as duplicate keys inside the SAME `it:` block. Consequence: `strings.en` is undefined at runtime; the UI currently renders English text because duplicates overwrite the Italian values; and t('delete') (no such key anywhere) caused a red screen 'Cannot read properties of undefined (reading delete)' in the destructive alert path. I applied a proper null-guard to LanguageContext.t (uses ?.[k] ?? … ?? k) so no more red screens, but the underlying i18n structure needs main agent restructuring.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "/listino/index.tsx remove()", "issue": "Delete product does not work on web preview: Alert.alert(title, msg, [Cancel, Delete-destructive, onPress: api.deleteProduct]) never invokes the destructive callback under react-native-web. A4 flow blocked. Use the same web branch pattern used in (tabs)/richieste.tsx (confirmCancel): if (Platform.OS==='web') window.confirm(...) else Alert.alert(...). Reference: /app/frontend/app/listino/index.tsx:109-116", "testID": "del-*", "priority": "HIGH"},
+      {"component": "src/i18n.ts", "issue": "STRUCTURAL: only one language dict opener (`it: {` line 4) and no `en: {` block. All English strings (myListino, addProduct, ..., appTagline, heldInEscrow, ...) are declared as DUPLICATE keys inside the `it:` object (lines 1194-1262). At runtime `strings.en` is undefined, and because JS duplicate keys keep the LAST value, the Italian entries get overwritten by English so the app renders English strings even when lang='it'. The `t('delete')` red screen we hit on delete confirm was a direct consequence (no 'delete' key anywhere → fell through to strings.en[k] which is undefined). Reference: /app/frontend/src/i18n.ts:4, 1263-1266. Main agent must split into `it: {...}, en: {...}` and add missing 'delete' key.", "testID": "n/a", "priority": "CRITICAL"},
+      {"component": "src/context/LanguageContext.tsx", "issue": "Previous null-guard was incomplete: `return dict[k] || strings.en[k] || k;` still crashed when `strings.en` was undefined. FIXED IN THIS ITERATION using optional chaining + nullish coalescing.", "testID": "n/a", "priority": "RESOLVED"}
+    ],
+    "integration_issues": [
+      {"flow": "Delete product from catalog on web", "issue": "Alert.alert destructive button does not fire on react-native-web → api.deleteProduct never called → product remains.", "affected_testIDs": ["del-*"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Global styles / theme.ts (shadow.card, shadow.float)", "issue": "Deprecated 'shadow*' style props (console warning repeated) — migrate to boxShadow. Reference: /app/frontend/src/theme.ts."},
+      {"component": "(tabs)/index.tsx CustomerHome floatWrap View", "issue": "Deprecated props.pointerEvents warning — should be moved into style. Reference: /app/frontend/app/(tabs)/index.tsx:182."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix DELETE product on web: refactor listino/index.tsx `remove()` to use Platform.OS==='web' ? window.confirm(...) : Alert.alert(...) — mirror the pattern already used in (tabs)/richieste.tsx confirmCancel.",
+    "CRITICAL: restructure /app/frontend/src/i18n.ts to properly declare `it: {...}, en: {...}` (currently a single `it:` block holds everything and `strings.en` is undefined). Add missing keys 'delete' (both languages) and audit duplicates.",
+    "Consider whether /listino should auto-select the first service that has products (instead of literal services[0]) so the seeded catalog is visible immediately on entry.",
+    "Migrate `shadow.*` StyleSheet props to `boxShadow` (RN 0.76+).",
+    "Move `<View pointerEvents=...>` into style prop on home CustomerHome."
+  ],
+  "critical_code_review_comments": [
+    "i18n.ts structural corruption: single-block object with duplicate keys silently makes strings.en undefined and overrides Italian strings with English at runtime. This is a latent bug that also blocks the future EN language switch entirely.",
+    "listino/index.tsx uses Alert.alert directly for destructive confirms — must branch on Platform.OS === 'web' (see richieste.tsx pattern).",
+    "LanguageContext.t must always be defensive: `dict?.[k] ?? strings?.en?.[k] ?? k` (applied)."
+  ],
+  "updated_files": ["/app/frontend/src/context/LanguageContext.tsx"],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "88% (7/8 core checks pass) — A4 DELETE fails on web due to Alert.alert limitation; all other flows (Richieste render/held/cancel/refund, Listino auto-select, A2 ADD, A3 EDIT, order placement, business accept modal without price, mark delivered) pass."},
+  "seed_data_creation": "Used existing seeded products; added/edited TEST_Prodotto_Nuovo → TEST_Prodotto_Modificato on tecnico (still present, cleanup on delete blocked by the Alert.alert web bug — manual cleanup via API needed if desired).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Session tokens still stored JSON-stringified in localStorage 'jobby_session_token'. Business token 'biz-test-token-999' services order = [tecnico, pulizie, lavanderia]. Seeded products live only on 'lavanderia' — so auto-select shows empty state initially; that is not a fix bug but a data/UX consideration. Delete product on /listino won't work on web preview until main agent replaces Alert.alert with a Platform.OS branch. The i18n.ts file is structurally corrupt (no `en: {` block) — investigate before adding new keys.",
+  "rca_of_issue": "Delete-product red-screen (surfaced during A4): the pressable calls Alert.alert with `t('delete')` in its buttons array. `strings.it` has no 'delete' key; the t() fallback was `strings.en[k]` — but `strings.en` is undefined because i18n.ts is missing the `en:` divider (all English strings sit inside `it:`). So `undefined.delete` → TypeError. Applied fix: made t() fully null-safe with optional chaining + nullish coalescing so any unresolved key returns `k` instead of crashing. However the delete callback still never fires on web because react-native-web's Alert.alert does not honour the destructive button in its default polyfill — separate fix needed via Platform.OS branch."
+}
