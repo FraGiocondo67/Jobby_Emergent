@@ -444,6 +444,24 @@ async def propose(rid: str, body: ProposeIn, user=Depends(get_current_user)):
         "is_estimate": cfg["tipo"] == "taxi", "message": body.message, "at": now_utc().isoformat(),
     }
     await db.richieste.update_one({"richiesta_id": rid}, {"$pull": {"proposte": {"provider_id": user["user_id"]}}})
+    # Richiesta DIRETTA + accettazione al prezzo di listino → conferma automatica
+    # (il cliente ha già scelto questo driver). Con contro-prezzo resta in attesa.
+    inv = next((p for p in r.get("provider_invitati", []) if p.get("provider_id") == user["user_id"]), {})
+    is_direct = bool(inv.get("direct"))
+    has_counter = ritocco is not None
+    if is_direct and not has_counter:
+        fee = await fee_pct()
+        jobby_fee = round(prezzo * fee / 100.0, 2)
+        await db.richieste.update_one({"richiesta_id": rid}, {
+            "$push": {"proposte": proposal},
+            "$set": {"stato": "confermata", "provider_scelto": user["user_id"], "prezzo_finale": prezzo,
+                     "jobby_fee": jobby_fee,
+                     "pagamento": {"stato": "meter_pending" if cfg["tipo"] == "taxi" else "prepaid",
+                                   "importo": prezzo, "fee": jobby_fee, "at": now_utc().isoformat()},
+                     "updated_at": now_utc().isoformat()}})
+        await push_notification(r["cliente_id"], "driver_confermata", "🚘 Corsa confermata",
+                                f"{proposal['provider_nome']} ha accettato la tua richiesta (€{prezzo:.2f}).", "driver", rid)
+        return {**proposal, "auto_confirmed": True}
     await db.richieste.update_one({"richiesta_id": rid},
                                   {"$push": {"proposte": proposal},
                                    "$set": {"stato": "con_proposte", "updated_at": now_utc().isoformat()}})

@@ -203,3 +203,11 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - **Fix**: `_parse()` in driver.py ora tz-aware (cancel driver crashava con 500).
 - **Batch C — Notifiche in-app**: chat message ora genera notifica al destinatario (ref_type=chat, ref_id = conversazione del destinatario). Campanella con badge unread (`NotifBell`) in tutte e 3 le Home; schermata `/notifications` con routing per tipo (richiesta→pulizie, driver, babysitting, artigiani, chat, dispute, booking). Notifiche per user_id → persistono al cambio profilo. Push rimandate (richiede google-services.json + build).
 - Verificato: testing agent iter42 (backend 14/14 + frontend) e iter43 (notifiche backend 8/8 + frontend). Nessuna regressione; recensioni/dispute/pagamenti intatti.
+
+## Fix driver + reset DB (2026-06)
+- **Auto-matching su pubblicazione**: `create_richiesta` driver ora invita i driver compatibili nel raggio (`compatible_drivers`) + notifica. Prima `provider_invitati=[]` → nessun driver riceveva la richiesta.
+- **Richiesta diretta**: `RichiestaIn.target_provider_id`; profilo provider passa `?provider=<id>` al configuratore. Il driver target è pre-invitato con `direct:true`. **Auto-conferma**: se il driver target accetta al prezzo di listino (senza contro-prezzo) → stato passa direttamente a `confermata` (il cliente ha già scelto). Con contro-prezzo resta `con_proposte` per conferma cliente.
+- **Wallet/guadagni driver**: nuovo `_credit_provider()` accredita il netto (post-fee) sul `wallet_balance` al saldo corsa (NCC su complete, taxi su pay). `/earnings` (bookings.py) riscritto per includere le `richieste` di tutte le categorie (prima solo `bookings` → total_earned restava 0).
+- **Filtri anti-confusione**: Home mostra solo opportunità recenti/attive (max 6) + link "Vedi tutte in Attività"; tab Attività cliente default su "Attive" (filtri all/active/completed scrollabili).
+- **Reset DB test**: cancellate tutte le collezioni attività/transazioni/chat/notifiche/dispute; mantenuti users, sessioni, settings, categorie, listino_prodotti, child_cards; saldi wallet/bonus azzerati.
+- DA DECIDERE con utente: verifica saldo prima della prenotazione (opzioni a: solo avviso / b: blocco wallet / c: prepagato obbligatorio alla conferma).
