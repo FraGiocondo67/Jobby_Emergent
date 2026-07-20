@@ -164,3 +164,8 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - **Lingua dispositivo** (`expo-localization`): `LanguageContext` default = locale dispositivo (it→Italiano, altrimenti Inglese); override manuale IT/EN persistito in `jobby_lang`.
 - Verificato: backend curl (geocode/reverse, radius filter, last_login); frontend testing agent iter37 (lingua device, esplora mappa raggio+categoria+stato, geocoding ordine, regressione Fase 3) — tutti PASS.
 - Nota: bstest@jobby.app e provtest@jobby.app sono entrambi role=provider (test_credentials aggiornato).
+
+## Implemented (2026-06 — Geocoding esteso a tutti i configuratori + onboarding)
+- Pattern geocoding (reverseGeocode su "usa posizione" → indirizzo leggibile; geocode dell'indirizzo digitato via resolveCoords() prima del submit) esteso a: `pulizie/configura`, `babysitting/configura`, `artigiani/configura`, `onboarding-flow` (cliente), `provider-onboarding` (professionista/attività). Driver aveva già geocoding waypoint.
+- Verificato via testing agent iter38: pubblicazione richieste Pulizie/Babysitting/Artigiani OK (POST /api/geocode 200, naviga al dettaglio), onboarding submit chiama resolveCoords prima di completeOnboarding. Nessuna regressione.
+- Nota minore pre-esistente: badge stato "In pubblicazione" hardcoded IT su babysitting/[id] e artigiani/[id] (non legato a questo task).
