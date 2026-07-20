@@ -99,17 +99,12 @@ class VerifyIn(BaseModel):
 
 @router.post("/email/send-otp")
 async def send_otp(body: EmailIn, user=Depends(get_current_user)):
+    # #3 — verifica email DISATTIVATA per ora: l'email si considera verificata
+    # subito, senza invio codice (integrazione reale in un momento successivo).
     email = body.email.strip().lower()
-    code = f"{random.randint(0, 999999):06d}"
-    _send_email(email, "JOBBY — Codice di verifica", _otp_email_html(code))
-    await db.otp_requests.update_one(
-        {"user_id": user["user_id"]},
-        {"$set": {"email": email, "code": code, "created_at": now_utc().isoformat(),
-                  "expires_at": (now_utc() + timedelta(minutes=OTP_TTL_MIN)).isoformat()},
-         "$unset": {"phone": "", "request_id": ""}},
-        upsert=True,
-    )
-    return {"status": "pending"}
+    await db.users.update_one({"user_id": user["user_id"]},
+                              {"$set": {"email": email, "email_verified": True}})
+    return {"status": "verified", "auto_verified": True}
 
 
 @router.post("/email/verify-otp")

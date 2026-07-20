@@ -20,6 +20,19 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
   unauthorizedHandler = fn;
 }
 
+// Auth intent (signup vs signin) persisted across the OAuth redirect (web reloads the page).
+const AUTH_MODE_KEY = "jobby_auth_mode";
+export async function setPendingAuthMode(mode: "signup" | "signin") {
+  await storage.setItem(AUTH_MODE_KEY, mode);
+}
+export async function getPendingAuthMode(): Promise<"signup" | "signin"> {
+  const m = await storage.getItem(AUTH_MODE_KEY, "signup");
+  return m === "signin" ? "signin" : "signup";
+}
+export async function clearPendingAuthMode() {
+  await storage.removeItem(AUTH_MODE_KEY);
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const token = await getToken();
   const headers: Record<string, string> = {
@@ -61,8 +74,8 @@ async function adminRequest(path: string, adminToken: string, options: RequestIn
 }
 
 export const api = {
-  createSession: (session_token: string) =>
-    request("/auth/session", { method: "POST", body: JSON.stringify({ session_token }) }),
+  createSession: (session_token: string, mode: "signup" | "signin" = "signup") =>
+    request("/auth/session", { method: "POST", body: JSON.stringify({ session_token, mode }) }),
   register: (data: { email: string; password: string; name?: string }) =>
     request("/auth/register", { method: "POST", body: JSON.stringify(data) }),
   loginEmail: (data: { email: string; password: string }) =>

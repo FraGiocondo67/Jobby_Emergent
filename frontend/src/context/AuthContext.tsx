@@ -3,7 +3,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { Platform } from "react-native";
 import { router } from "expo-router";
-import { api, setToken, clearToken, getToken, setUnauthorizedHandler } from "@/src/api";
+import { api, setToken, clearToken, getToken, setUnauthorizedHandler, setPendingAuthMode, getPendingAuthMode, clearPendingAuthMode } from "@/src/api";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -11,7 +11,7 @@ type User = any;
 type AuthState = {
   user: User | null;
   loading: boolean;
-  login: () => Promise<void>;
+  login: (mode?: "signup" | "signin") => Promise<void>;
   loginEmail: (email: string, password: string) => Promise<any>;
   register: (email: string, password: string, name: string) => Promise<any>;
   loginApple: (identityToken: string, name?: string | null, email?: string | null) => Promise<any>;
@@ -27,7 +27,9 @@ export const useAuth = () => useContext(AuthContext);
 async function processSessionId(sessionId: string) {
   // Send the one-time session_id straight to our backend, which exchanges it
   // with Emergent's session-data endpoint and returns a persistent token.
-  const backend = await api.createSession(sessionId);
+  const mode = await getPendingAuthMode();
+  const backend = await api.createSession(sessionId, mode);
+  await clearPendingAuthMode();
   await setToken(backend.session_token);
   return backend.user;
 }
@@ -96,7 +98,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [refresh]);
 
-  const login = useCallback(async () => {
+  const login = useCallback(async (mode: "signup" | "signin" = "signup") => {
+    await setPendingAuthMode(mode);
     const redirectUrl =
       Platform.OS === "web" && typeof window !== "undefined"
         ? window.location.origin + "/"

@@ -94,7 +94,12 @@ export default function ProviderOnboarding() {
   const sendOtp = async () => {
     if (!email.trim() || !email.includes("@")) { Alert.alert(t("invalidEmailMsg")); return; }
     setBusy(true);
-    try { await api.sendOtp(email.trim()); setOtpSent(true); Alert.alert(t("otpSent")); }
+    // #3 — verifica email disattivata: l'endpoint auto-verifica subito.
+    try {
+      const r = await api.sendOtp(email.trim());
+      if (r?.auto_verified) { setEmailVerified(true); }
+      else { setOtpSent(true); Alert.alert(t("otpSent")); }
+    }
     catch { Alert.alert(t("error"), t("otpError")); }
     finally { setBusy(false); }
   };

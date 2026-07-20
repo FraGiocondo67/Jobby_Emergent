@@ -37,6 +37,7 @@ export default function Onboarding() {
     if (msg.includes("weak_password")) return t("weakPasswordMsg");
     if (msg.includes("invalid_email")) return t("invalidEmailMsg");
     if (msg.includes("invalid_credentials")) return t("authError");
+    if (msg.includes("not_registered")) return t("notRegisteredMsg");
     return t("authError");
   };
 
@@ -56,7 +57,11 @@ export default function Onboarding() {
 
   const onGoogle = async () => {
     setError(""); setLoading("google");
-    try { await login(); router.replace("/"); } catch { setLoading(null); }
+    try { await login(mode); router.replace("/"); }
+    catch (e: any) {
+      setError(mapError(String(e?.message || "")));
+      setLoading(null);
+    }
   };
 
   const onApple = async () => {

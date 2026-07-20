@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 
 class SessionIn(BaseModel):
     session_token: str
+    mode: Optional[str] = "signup"  # "signin" -> non crea account se inesistente
 
 
 class RegisterIn(BaseModel):

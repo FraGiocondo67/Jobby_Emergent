@@ -26,7 +26,8 @@ def default_user_doc(user_id, email, name, picture="", onboarding_completed=Fals
         "role": "client", "language": "it", "bio": "", "business_name": "",
         "hourly_rate": 13.0, "radius_km": 10.0, "services": [], "online": False, "service_mode": "both",
         "rating": 0.0, "reviews_count": 0, "verified": False, "verification_status": "unverified",
-        "wallet_balance": 92.29, "payment_method": None, "bank_account": None,
+        "wallet_balance": 0.0, "bonus_credit": 0.0, "bonus_granted": False, "email_verified": True,
+        "payment_method": None, "bank_account": None,
         "trust_score": 0.0, "trust_subscores": {}, "client_trust_score": 0.0, "client_trust_subscores": {},
         "is_admin": False, "lat": TREVISO["lat"], "lng": TREVISO["lng"], "created_at": now_utc().isoformat(),
         "approval_status": "approved", "provider_approved": False, "onboarding_completed": onboarding_completed,
@@ -119,7 +120,7 @@ async def demo_login():
         doc = default_user_doc(user_id, DEMO_EMAIL, "Demo User", onboarding_completed=True)
         doc["is_demo"] = True
         doc["auth_provider"] = "demo"
-        doc["wallet_balance"] = 120.0
+        doc["wallet_balance"] = 0.0
         await db.users.insert_one(doc)
     else:
         user_id = u["user_id"]
@@ -141,6 +142,9 @@ async def create_session(body: SessionIn):
     if existing:
         user_id = existing["user_id"]
     else:
+        # #2 — l'Accesso (signin) non deve creare l'account: serve prima la registrazione.
+        if (body.mode or "signup") == "signin":
+            raise HTTPException(status_code=404, detail="not_registered")
         user_id = new_id("user")
         doc = default_user_doc(user_id, email, data.get("name", email.split("@")[0]),
                                picture=data.get("picture", ""), onboarding_completed=False)

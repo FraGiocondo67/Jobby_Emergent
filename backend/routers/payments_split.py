@@ -222,15 +222,26 @@ async def start_checkout(rid: str, body: CheckoutIn, user=Depends(get_current_us
                                    "importo": amt["provider_net"], "jobby_fee_total": amt["jobby_fee"]})
         return {"url": approve, "order_id": order_id, "method": "paypal"}
 
-    # ---- Fallback simulato su wallet (escrow) ----
+    # ---- Fallback simulato su wallet (escrow) — usa prima il Credito Bonus ----
     if body.method == "wallet":
+        bonus = round(float(user.get("bonus_credit", 0)), 2)
         bal = round(float(user.get("wallet_balance", 0)), 2)
-        if bal < amt["charge"]:
+        if bonus + bal < amt["charge"]:
             raise HTTPException(status_code=400, detail="insufficient_wallet")
-        await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"wallet_balance": -amt["charge"]}})
+        from_bonus = round(min(bonus, amt["charge"]), 2)
+        from_wallet = round(amt["charge"] - from_bonus, 2)
+        inc = {}
+        if from_bonus:
+            inc["bonus_credit"] = -from_bonus
+        if from_wallet:
+            inc["wallet_balance"] = -from_wallet
+        await db.users.update_one({"user_id": user["user_id"]}, {"$inc": inc})
+        label = f"Pagamento servizio €{amt['charge']:.2f} (in garanzia)"
+        if from_bonus:
+            label += f" · bonus €{from_bonus:.2f}"
         await db.transactions.insert_one({
             "tx_id": new_id("tx"), "user_id": user["user_id"], "type": "booking_payment", "status": "held",
-            "amount": -amt["charge"], "label": f"Pagamento servizio €{amt['charge']:.2f} (in garanzia)",
+            "amount": -amt["charge"], "label": label,
             "richiesta_id": rid, "created_at": now_utc().isoformat()})
         await _set_pagamento(rid, {"stato": "held", "psp": "simulato", "importo": amt["provider_net"],
                                    "jobby_fee_total": amt["jobby_fee"], "charge": amt["charge"],

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from core import db
+from core import db, now_utc, new_id
 from deps import require_admin
 from trust import recalc_provider_trust, recalc_client_trust
 
@@ -46,6 +46,7 @@ async def admin_users(_=Depends(require_admin)):
         "approval_status": u.get("approval_status", "approved"),
         "trust_score": u.get("trust_score", 0), "client_trust_score": u.get("client_trust_score", 0),
         "rating": u.get("rating", 0), "wallet_balance": u.get("wallet_balance", 0),
+        "bonus_credit": u.get("bonus_credit", 0), "bonus_granted": u.get("bonus_granted", False),
         "is_bot": u.get("is_bot", False), "services": u.get("services", []),
         "online": u.get("online", False), "phone": u.get("phone", ""), "address": u.get("address", ""),
         "business_name": u.get("business_name", ""), "vat_number": u.get("vat_number", ""),
@@ -80,6 +81,31 @@ async def admin_set_user_status(user_id: str, body: UserStatusIn, _=Depends(requ
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="not_found")
     return {"user_id": user_id, "approval_status": body.status}
+
+
+class BonusIn(BaseModel):
+    amount: float = 50.0
+
+
+@router.post("/admin/users/{user_id}/bonus")
+async def admin_grant_bonus(user_id: str, body: BonusIn, _=Depends(require_admin)):
+    """#5 — Credito Bonus campagna adesione. Spendibile in-app (non prelevabile),
+    assegnabile UNA sola volta per utente. Default €50, modificabile."""
+    u = await db.users.find_one({"user_id": user_id})
+    if not u:
+        raise HTTPException(status_code=404, detail="not_found")
+    if u.get("bonus_granted"):
+        raise HTTPException(status_code=400, detail="bonus_already_granted")
+    amount = round(float(body.amount), 2)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="invalid_amount")
+    await db.users.update_one({"user_id": user_id},
+                              {"$inc": {"bonus_credit": amount}, "$set": {"bonus_granted": True}})
+    await db.transactions.insert_one({
+        "tx_id": new_id("tx"), "user_id": user_id, "type": "bonus", "status": "available",
+        "amount": amount, "label": f"Credito Bonus JOBBY €{amount:.2f} (campagna adesione)",
+        "spendable_only": True, "created_at": now_utc().isoformat()})
+    return {"user_id": user_id, "bonus_credit": round(float(u.get("bonus_credit", 0)) + amount, 2), "granted": True}
 
 
 @router.get("/admin/bookings")
@@ -364,10 +390,19 @@ async function loadUsers(){
       <td><span class="pill p-${st}">${st}</span></td>
       <td>${x.role==='client'?(x.client_trust_score||0):(x.trust_score||0)}</td>
       <td>€${(x.wallet_balance||0).toFixed(2)}</td>
+      <td>€${(x.bonus_credit||0).toFixed(2)}${x.bonus_granted?` <span class="muted">(dato)</span>`:` <button class="b-approve" onclick="grantBonus('${x.user_id}')">+ Bonus</button>`}</td>
       <td>${actions}</td></tr>`;}).join('');
-  document.getElementById('users').innerHTML=bar+'<table><tr><th>User</th><th>Role</th><th>Status</th><th>Trust</th><th>Wallet</th><th>Actions</th></tr>'+rows+'</table>';
+  document.getElementById('users').innerHTML=bar+'<table><tr><th>User</th><th>Role</th><th>Status</th><th>Trust</th><th>Wallet</th><th>Bonus</th><th>Actions</th></tr>'+rows+'</table>';
 }
 function setUF(f){USERFILTER=f;loadUsers();}
+async function grantBonus(id){
+  const v=prompt('Importo Credito Bonus (€):','50');
+  if(v===null)return;
+  const amount=parseFloat(v);
+  if(isNaN(amount)||amount<=0){alert('Importo non valido');return;}
+  try{const r=await api('/admin/users/'+id+'/bonus',{method:'POST',body:JSON.stringify({amount})});alert('Bonus €'+amount.toFixed(2)+' assegnato. Credito bonus: €'+r.bonus_credit.toFixed(2));loadUsers();}
+  catch(e){alert(String(e.message)==='400'?'Bonus già assegnato a questo utente':'Errore');}
+}
 async function setStatus(id,status){
   if(status!=='approved'&&!confirm('Set user to '+status+'?'))return;
   await api('/admin/users/'+id+'/status',{method:'POST',body:JSON.stringify({status})});
