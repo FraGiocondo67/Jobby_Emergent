@@ -487,7 +487,7 @@ export const strings = {
     recurrenceDiscountPct: "Sconto ricorrenza", radius: "Raggio d'azione", minHours: "Ore minime",
     // Provider onboarding (Spec 2)
     howDoYouWork: "Come lavori?",
-    profImpresa: "Impresa di pulizie", profImpresaDesc: "Società con P.IVA, fattura",
+    profImpresa: "Società Impresa", profImpresaDesc: "Società con P.IVA, fattura",
     profPiva: "Partita IVA individuale", profPivaDesc: "Lavoratore autonomo con P.IVA",
     profLF: "Persona fisica", profLFDesc: "Con Libretto Famiglia (INPS)",
     dob: "Data di nascita", minorBlocked: "Devi avere almeno 18 anni per registrarti",
@@ -1122,7 +1122,7 @@ export const strings = {
     recurrenceDiscountPct: "Recurrence discount", radius: "Service radius", minHours: "Minimum hours",
     // Provider onboarding (Spec 2)
     howDoYouWork: "How do you work?",
-    profImpresa: "Cleaning company", profImpresaDesc: "Company with VAT, invoice",
+    profImpresa: "Company", profImpresaDesc: "Company with VAT, invoice",
     profPiva: "Individual VAT", profPivaDesc: "Self-employed with VAT number",
     profLF: "Individual", profLFDesc: "With Family Booklet (INPS)",
     dob: "Date of birth", minorBlocked: "You must be at least 18 to register",

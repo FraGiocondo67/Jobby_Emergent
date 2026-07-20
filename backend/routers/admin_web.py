@@ -385,7 +385,7 @@ async function loadUsers(){
       ${st!=='rejected'?`<button class="b-reject" onclick="setStatus('${x.user_id}','rejected')">Reject</button>`:''}
     </div>`:'<span class="muted">auto</span>';
     return `<tr>
-      <td>${x.business_name||x.name||''}${x.is_bot?' 🤖':''}<div class="muted">${x.email||''}${x.phone?' · '+x.phone:''}</div></td>
+      <td>${x.business_name||x.name||''}${x.is_bot?' 🤖':''}<div class="muted">${x.email||''}${x.phone?' · '+x.phone:''}</div>${needs&&(x.services&&x.services.length)?`<div class="muted">🧩 Attività: ${x.services.join(', ')}</div>`:(needs?`<div class="muted" style="color:#DE4B3F">⚠️ Nessuna attività selezionata</div>`:'')}</td>
       <td><span class="pill" style="background:#eee">${x.role}</span></td>
       <td><span class="pill p-${st}">${st}</span></td>
       <td>${x.role==='client'?(x.client_trust_score||0):(x.trust_score||0)}</td>

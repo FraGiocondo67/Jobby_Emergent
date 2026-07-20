@@ -94,7 +94,7 @@ export default function ListinoScreen() {
   };
 
   const save = async () => {
-    const price = Number(prezzo);
+    const price = Number(String(prezzo).replace(",", "."));
     if (!descrizione.trim() || !price || price <= 0) { Alert.alert(t("error")); return; }
     setBusy(true);
     try {
