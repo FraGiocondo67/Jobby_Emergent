@@ -307,3 +307,13 @@
   Curl-verified E2E (pulizie impresa, client disp-test-token-777, provider user_2f996c8a010a): confirm price 41.92 (jobby_fee 5.85, provider_net 36.07) -> stripe=provider_not_onboarded_stripe, paypal=provider_not_onboarded_paypal, wallet=held -> release -> client -41.92, provider +36.07, JOBBY keeps 5.85. CORRECT.
   NOTE: real Stripe destination charge requires Connect enabled on platform account + provider onboarded (USER action; Connect still not enabled per prior note) -> only the wallet(simulated) happy-path is testable E2E now; stripe/paypal validated via guard/error paths.
   TEST both. Login client UI: bstest@jobby.app / test1234. Admin X-Admin-Token jobby-admin-7c2f9a.
+
+## agent_communication (2026-06 fork — FIX: Map → Driver routing for business-drivers)
+-agent: "main"
+-message: |
+  FIXED P0 (user-reported twice): Map 'Driver' filter → tapping a driver opened the free-text business ORDER form ('Vedi prodotti e ordina') instead of the guided Driver wizard.
+  ROOT CAUSE: 'Ale Bragato' is role=business that legitimately offers the standard 'driver' service (driver engine supports business drivers via compatible_drivers/incoming). Two frontend bugs:
+  (1) map.tsx business card onPress did not forward the active ?cat= filter;
+  (2) provider/[id].tsx routed ANY business to /business-request, ignoring the standard-service intent.
+  FIX: map.tsx now appends ?cat= for business cards too. provider/[id].tsx computes standardIntent = (preCat maps to a CFG_ROUTE service the profile offers); if standardIntent -> openConfig (e.g. /driver/configura) for BOTH provider AND business; else business -> product-order flow. CTA label + products section now driven by showOrder = isBusiness && !standardIntent.
+  VERIFIED (testing agent, iteration_45): main fix + person-provider regression + business-order regression all PASS. Retest not needed.
