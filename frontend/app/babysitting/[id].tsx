@@ -8,6 +8,7 @@ import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 import PaymentSection from "@/src/components/PaymentSection";
+import StatusTimeline from "@/src/components/StatusTimeline";
 import { TimeField } from "@/src/components/DateTimeField";
 
 const STATE_LABEL: Record<string, string> = {
@@ -64,6 +65,8 @@ export default function BabysittingDetail() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }}>
         {isNew ? <View style={styles.banner}><Ionicons name="checkmark-circle" size={20} color={colors.success} /><Text style={styles.bannerText}>{t("bsRequestSent")}</Text></View> : null}
         <View style={[styles.statusChip, r.stato === "annullata" && { backgroundColor: colors.error }]}><Text style={styles.statusText}>{STATE_LABEL[r.stato] || r.stato}</Text></View>
+
+        {r.stato !== "annullata" ? <StatusTimeline stato={r.stato} paid={["settled", "released", "captured"].includes(r.pagamento_lavoro?.stato) || r.pagato === true} reviewed={!!r.recensione} /> : null}
 
         <View style={[styles.card, shadow.card]}>
           <Text style={styles.cardH}>{cfg.durata_ore}h · {cfg.n_bambini} {cfg.n_bambini > 1 ? "bambini" : "bambino"}{r.urgente ? " · ⚡" : ""}</Text>

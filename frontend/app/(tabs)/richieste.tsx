@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Alert, Platform } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
@@ -289,14 +290,28 @@ function ProviderJobs() {
   const { t } = useLang();
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<any>(null);
-  const [bookings, setBookings] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<"active" | "completed">("active");
   const router = useRouter();
 
   const load = useCallback(async () => {
-    try { const [e, b] = await Promise.all([api.earnings(), api.bookings()]); setData(e); setBookings(b); } catch {}
+    try { const [e, j] = await Promise.all([api.earnings(), api.providerJobs()]); setData(e); setJobs(j || []); } catch {}
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); const iv = setInterval(load, 6000); return () => clearInterval(iv); }, [load]));
+
+  const ACTIVE = ["pubblicata", "in_matching", "con_proposte", "preventivo", "confermata", "in_corso"];
+  const shown = jobs.filter((j) => (filter === "active" ? ACTIVE.includes(j.stato) : ["completata", "recensita", "annullata"].includes(j.stato)));
+
+  const emoji = (cat: string, cfg: any) => cat === "driver" ? (cfg?.tipo === "taxi" ? "🚕" : "🚘") : cat === "pulizie" ? "🧹" : cat === "babysitting" ? "🧸" : "🔧";
+  const title = (j: any) => {
+    if (j.cat === "driver") return `${j.partenza?.label || ""} → ${j.destinazione?.label || ""}`;
+    if (j.cat === "pulizie") return `${t("cleaning")} · ${j.config?.durata_ore || ""}h`;
+    if (j.cat === "babysitting") return `${t("babysitting")} · ${j.config?.n_bambini || ""}🧒`;
+    return `${j.config?.mestiere || t("artigiani")}`;
+  };
+  const when = (j: any) => (j.data_ora || j.pickup_at || j.updated_at || "").toString().replace("T", " ").slice(0, 16);
+  const price = (j: any) => j.prezzo_finale ?? j.importo_totale ?? null;
 
   return (
     <View style={styles.container}>
@@ -311,20 +326,30 @@ function ProviderJobs() {
             <View style={styles.stat}><Text style={styles.statVal}>€{(data?.pending || 0).toFixed(0)}</Text><Text style={styles.statLbl}>{t("pending")}</Text></View>
           </View>
         </View>
-        <Pressable testID="jobs-see-home" style={styles.hintCard} onPress={() => router.push("/(tabs)")}>
-          <Text style={styles.hintCardText}>🔔 {t("opportunitiesOnHome")}</Text>
-        </Pressable>
-        {bookings.length > 0 ? <Text style={styles.sectionHdr}>🧾 {t("bookings")}</Text> : null}
-        {bookings.map((b) => (
-          <View key={b.booking_id} style={[styles.card, shadow.card]}>
-            <Text style={{ fontSize: 26 }}>🧾</Text>
+
+        <View style={styles.jobFilter}>
+          {(["active", "completed"] as const).map((f) => (
+            <Pressable key={f} testID={`jobfilter-${f}`} style={[styles.chip, filter === f && styles.chipOn]} onPress={() => setFilter(f)}>
+              <Text style={[styles.chipText, filter === f && styles.chipTextOn]}>{f === "active" ? t("filterActive") : t("filterCompleted")}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {shown.length === 0 ? (
+          <View style={styles.empty}><Text style={{ fontSize: 40 }}>☕</Text><Text style={styles.emptyText}>{filter === "active" ? t("noActiveJobs") : t("noRequests")}</Text></View>
+        ) : shown.map((j) => (
+          <Pressable key={`${j.cat}-${j.richiesta_id}`} testID={`job-${j.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/${j.cat}/${j.richiesta_id}` as any)}>
+            <Text style={{ fontSize: 26 }}>{emoji(j.cat, j.config)}</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{b.customer_name}</Text>
-              <Text style={styles.cardSub}>{b.category} · {b.date}</Text>
-              <View style={{ marginTop: 6 }}><StatusPill status={b.status} /></View>
+              <Text style={styles.cardTitle} numberOfLines={1}>{title(j)}{j.urgente ? " ⚡" : ""}</Text>
+              <Text style={styles.cardSub}>{when(j)}{j.is_chosen ? ` · ${j.cliente_nome || t("clientLabel")}` : j.my_proposal ? ` · ${t("proposalSent")}` : ""}</Text>
+              <View style={{ marginTop: 6 }}><StatusPill status={j.stato} /></View>
             </View>
-            <Text style={styles.cardPrice}>€{b.labor_cost.toFixed(2)}</Text>
-          </View>
+            <View style={{ alignItems: "flex-end", gap: 4 }}>
+              {price(j) != null ? <Text style={styles.cardPrice}>€{Number(price(j)).toFixed(2)}</Text> : null}
+              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+            </View>
+          </Pressable>
         ))}
       </ScrollView>
     </View>
@@ -360,6 +385,7 @@ const styles = StyleSheet.create({
   earnHero: { backgroundColor: colors.brand, borderRadius: radius.lg, padding: spacing.xl, marginBottom: spacing.lg },
   hintCard: { backgroundColor: colors.brandTertiary, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
   hintCardText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onBrandTertiary, textAlign: "center" },
+  jobFilter: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
   earnLabel: { color: "rgba(255,255,255,0.85)", fontSize: fsize.base, fontFamily: font.regular },
   earnValue: { color: "#fff", fontSize: 40, fontFamily: font.bold, marginTop: 4 },
   earnStats: { flexDirection: "row", marginTop: spacing.lg, gap: spacing.lg },

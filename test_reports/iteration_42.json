@@ -1,0 +1,41 @@
+{
+  "summary": "Iter 42 verification of the category cross-contamination fix + lifecycle UI + geocode/map picker. Backend 13/14 passed (test_iter42_category_isolation.py). VERIFIED: GET /api/pulizie/richieste now returns ONLY servizio=PULIZIA docs (12 items) — cannot leak; total across cats > pulizie count → root-cause fix confirmed. /api/driver, /api/babysitting, /api/artigiani /richieste each return only their own servizio (regression OK). Provider incoming endpoints per-category isolated. /api/provider/jobs returns provider jobs across categories with fields richiesta_id/cat/stato. /api/geocode/search {'Via Roma 10'} returns 2 short distinct labels ('Via Roma, Pigra (Como)', 'Via Roma, Modica (Ragusa)') under 90 chars each. Admin /api/admin/disputes still reachable, payment_split wallet path still routed. FRONTEND (provtest@jobby.app/test1234, mobile 390x844): ProviderHome shows 'New opportunities' with opp-req_d7b4bac09a57 / opp-req_b3308074bc06 cards; Activity tab shows Earnings summary + jobfilter-active/completed chips + job-* cards; tapping job-req_d7b4bac09a57 navigates to /pulizie/req_d7b4bac09a57 detail which shows the StatusTimeline (Confirmed/In progress/Completed/Paid/Reviewed) with 'Awaiting confirmation' hint AND provider action bar (Accept at list price / Propose price variation / Decline). NO raw i18n keys (drvConfirmTrip, clientLabel) anywhere. /driver/configura route step: drv-from-input + drv-from-search returns selectable list (drv-from-res-0/1); drv-from-map opens MapPicker modal with 'Confirm position' button. No pageerrors thrown. Only pre-existing 'shadow*' style deprecation warnings (non-blocking). 1 REAL BACKEND BUG discovered: POST /api/driver/richieste/{rid}/cancel returns 500 (naive vs aware datetime) whenever pickup_at was stored without timezone — user-facing driver cancel is broken.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/driver/richieste/{rid}/cancel",
+        "issue": "TypeError: can't subtract offset-naive and offset-aware datetimes at routers/driver.py:311 (_cancellation_outcome). _parse('2026-08-02 09:00') returns naive datetime while now_utc() is aware. Any driver cancel with a naive pickup_at (which is the default format the wizard sends) crashes with 500. This is exactly the same lifecycle path the user is testing → must be fixed. Suggested: in _parse, if tzinfo is None assume UTC (dt.replace(tzinfo=timezone.utc)).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles (multiple)", "issue": "Console: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Pre-existing, non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter42_category_isolation.py",
+    "/app/test_reports/pytest/iter42.xml"
+  ],
+  "action_items": [
+    "Fix driver cancel 500: in /app/backend/routers/driver.py _parse(), if the parsed datetime has tzinfo None, set it to timezone.utc (or make now_utc() naive-consistent). Add regression test."
+  ],
+  "critical_code_review_comments": [
+    "routers/richieste.py: my_richieste and incoming now filter on {categoria:'CASA', servizio:'PULIZIA'} — root-cause fix, verified.",
+    "routers/richieste.py provider_jobs (line 525-560): correctly filters by servizio ∈ SERVIZIO_CAT and skips declined-only invites; hides indirizzo/accesso for non-chosen providers — good.",
+    "routers/geo.py geocode_search: _clean_label builds 'road num, city (prov)' capped at 90 chars, dedup via set → returns short distinct labels as required.",
+    "routers/driver.py _parse (line 37-41): fromisoformat on 'YYYY-MM-DD HH:MM' returns NAIVE datetime; subtracted from now_utc() (aware). This causes 500 on cancel — real production bug found by this test run."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "93% (13/14)", "frontend": "100% (all requested flows verified)"},
+  "seed_data_creation": "Test run created 1 pulizie, 1 driver, 1 babysitting child + richiesta, 1 artigiani richiesta for user_disptest01 (all prefixed 'TEST'). Driver richiesta was NOT cancelled successfully due to bug above — may remain in 'pubblicata' state.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent fixes _parse tz issue in routers/driver.py, re-run backend/tests/test_iter42_category_isolation.py — expect 14/14. Frontend already fully verified for iter 42 scope; skip UI re-test unless timeline/driver-configura code is changed. Bearer tokens: client disp-test-token-777, provider prov-test-token-888; UI provtest@jobby.app/test1234.",
+  "rca_of_issue": "Driver cancel 500 RCA: _parse() uses datetime.fromisoformat which preserves naive/aware from the input string. Wizards & clients store pickup_at as 'YYYY-MM-DD HH:MM' (no offset) → naive. now_utc() returns timezone-aware datetime. The subtraction in _cancellation_outcome (driver.py:311) raises TypeError. Mitigation: coerce parsed dt to UTC when tzinfo is None, OR store pickup_at always in isoformat with 'Z'."
+}

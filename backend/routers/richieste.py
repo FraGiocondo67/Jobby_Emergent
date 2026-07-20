@@ -516,3 +516,45 @@ class FeeIn(BaseModel):
 async def set_fee(body: FeeIn, _=Depends(require_admin)):
     await db.settings.update_one({"key": "pulizie_fee_pct"}, {"$set": {"value": float(body.fee_pct)}}, upsert=True)
     return {"fee_pct": body.fee_pct}
+
+
+
+SERVIZIO_CAT = {"PULIZIA": "pulizie", "BABYSITTING": "babysitting", "DRIVER": "driver", "ARTIGIANI": "artigiani"}
+
+
+@router.get("/provider/jobs")
+async def provider_jobs(user=Depends(get_current_user)):
+    """Tutti i lavori del provider (tutte le categorie) per tracciare il ciclo
+    completo: confermata → esecuzione → completata → pagata → recensita.
+    Ogni card rimanda al dettaglio (dove risiedono pagamento e recensione)."""
+    if user.get("role") not in ("provider", "business"):
+        return []
+    uid = user["user_id"]
+    items = await db.richieste.find(
+        {"$or": [{"provider_invitati.provider_id": uid}, {"provider_scelto": uid}]},
+        {"_id": 0}).sort("updated_at", -1).to_list(300)
+    out = []
+    for r in items:
+        cat = SERVIZIO_CAT.get(r.get("servizio"))
+        if not cat:
+            continue
+        inv = next((p for p in r.get("provider_invitati", []) if p.get("provider_id") == uid), None)
+        is_chosen = r.get("provider_scelto") == uid
+        # invito rifiutato e non scelto → non è un lavoro
+        if inv and inv.get("status") == "declined" and not is_chosen:
+            continue
+        mine = next((p for p in r.get("proposte", []) if p.get("provider_id") == uid), None)
+        if not is_chosen:
+            r.pop("indirizzo", None); r.pop("accesso", None); r.pop("bambini", None)
+        out.append({
+            "richiesta_id": r["richiesta_id"], "cat": cat, "stato": r["stato"],
+            "config": r.get("config"), "created_at": r.get("created_at"), "updated_at": r.get("updated_at"),
+            "data_ora": r.get("data_ora"), "pickup_at": r.get("pickup_at"),
+            "partenza": r.get("partenza"), "destinazione": r.get("destinazione"),
+            "prezzo_finale": r.get("prezzo_finale"), "importo_totale": r.get("importo_totale"),
+            "urgente": r.get("urgente"), "invite_status": (inv or {}).get("status"),
+            "is_chosen": is_chosen, "my_proposal": bool(mine),
+            "pagamento": r.get("pagamento_lavoro") or r.get("pagamento"),
+            "cliente_nome": r.get("cliente_nome"),
+        })
+    return out

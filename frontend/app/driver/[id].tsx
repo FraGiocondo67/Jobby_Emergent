@@ -9,6 +9,7 @@ import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 import PaymentSection from "@/src/components/PaymentSection";
+import StatusTimeline from "@/src/components/StatusTimeline";
 
 const STATE_LABEL: Record<string, string> = {
   pubblicata: "In pubblicazione", in_matching: "Ricerca driver", con_proposte: "Proposte disponibili",
@@ -62,6 +63,8 @@ export default function DriverDetail() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }}>
         {isNew ? <View style={styles.banner}><Ionicons name="checkmark-circle" size={20} color={colors.success} /><Text style={styles.bannerText}>{t("drvRequestSent")}</Text></View> : null}
         <View style={[styles.statusChip, r.stato === "annullata" && { backgroundColor: colors.error }]}><Text style={styles.statusText}>{STATE_LABEL[r.stato] || r.stato}</Text></View>
+
+        {r.stato !== "annullata" ? <StatusTimeline stato={r.stato} paid={r.pagamento?.stato === "settled" || r.pagamento?.stato === "paid" || (r.stato !== "completata" && r.provider_scelto && !isTaxi)} reviewed={!!r.recensione} /> : null}
 
         <View style={[styles.card, shadow.card]}>
           <Text style={styles.route}>📍 {r.partenza?.label}</Text>

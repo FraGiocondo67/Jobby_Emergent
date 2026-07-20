@@ -9,6 +9,7 @@ import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 import PaymentSection from "@/src/components/PaymentSection";
+import StatusTimeline from "@/src/components/StatusTimeline";
 
 const STATE_META: Record<string, { color: string; bg: string }> = {
   pubblicata: { color: "#E8912A", bg: "#FDF0DD" }, in_matching: { color: "#6D3BEA", bg: "#EEE7FD" },
@@ -98,6 +99,8 @@ export default function RichiestaDetail() {
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
         {isNew ? <View style={styles.okBanner}><Ionicons name="checkmark-circle" size={26} color={colors.success} /><Text style={styles.okText}>{t("requestPublished")}</Text></View> : null}
+
+        {r.stato !== "annullata" ? <StatusTimeline stato={r.stato} paid={["settled", "released", "captured"].includes(r.pagamento_lavoro?.stato) || r.pagato === true} reviewed={!!r.recensione} /> : null}
 
         <View style={[styles.card, shadow.card]}>
           <View style={styles.rowBetween}>

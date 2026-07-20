@@ -648,6 +648,9 @@ export const strings = {
     newOpportunities: "Nuove opportunità", proposalSent: "Proposta inviata",
     opportunitiesOnHome: "Le nuove richieste e i lavori in corso sono nella Home",
     oppConfirmed: "Confermata", oppInProgress: "In corso",
+    tlTitle: "Avanzamento", tlConfirmed: "Confermata", tlInProgress: "In esecuzione", tlCompleted: "Completata", tlPaid: "Pagata", tlReviewed: "Recensita",
+    tlWaitingConfirm: "In attesa di conferma: il servizio non è ancora avviato.",
+    noActiveJobs: "Nessun lavoro attivo. Le nuove opportunità sono nella Home.",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -1296,6 +1299,9 @@ export const strings = {
     newOpportunities: "New opportunities", proposalSent: "Proposal sent",
     opportunitiesOnHome: "New requests and ongoing jobs are on the Home",
     oppConfirmed: "Confirmed", oppInProgress: "In progress",
+    tlTitle: "Progress", tlConfirmed: "Confirmed", tlInProgress: "In progress", tlCompleted: "Completed", tlPaid: "Paid", tlReviewed: "Reviewed",
+    tlWaitingConfirm: "Awaiting confirmation: the service has not started yet.",
+    noActiveJobs: "No active jobs. New opportunities are on the Home.",
   },
 };
 
