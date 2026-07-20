@@ -169,3 +169,9 @@ Build the JOBBY mobile MVP: an on-demand local services marketplace for the "Eco
 - Pattern geocoding (reverseGeocode su "usa posizione" → indirizzo leggibile; geocode dell'indirizzo digitato via resolveCoords() prima del submit) esteso a: `pulizie/configura`, `babysitting/configura`, `artigiani/configura`, `onboarding-flow` (cliente), `provider-onboarding` (professionista/attività). Driver aveva già geocoding waypoint.
 - Verificato via testing agent iter38: pubblicazione richieste Pulizie/Babysitting/Artigiani OK (POST /api/geocode 200, naviga al dettaglio), onboarding submit chiama resolveCoords prima di completeOnboarding. Nessuna regressione.
 - Nota minore pre-esistente: badge stato "In pubblicazione" hardcoded IT su babysitting/[id] e artigiani/[id] (non legato a questo task).
+
+## Implemented (2026-06 — Profilo pubblico provider/attività da mappa "Cerca attorno a te")
+- Backend `GET /api/providers/{id}/public`: profilo pubblico (nome, foto, servizi, rating medio, trust, online, bio, indirizzo, business_photos) + lista recensioni (da richieste.recensione + legacy db.reviews). `api.providerPublic`.
+- Nuova schermata `app/provider/[id].tsx`: profilo + stato Attivo/Non attivo + trust + recensioni + (per attività) anteprima prodotti listino + CTA. CTA business = "Vedi prodotti e ordina" → `/business-request/[id]` (categoria del primo prodotto disponibile); CTA provider = "Richiedi un servizio" → configuratore della categoria principale.
+- Le card provider/attività sulla mappa (`/map`) ora sono toccabili → `/provider/[id]`.
+- Verificato testing agent iter39: tap business→profilo (6 recensioni, 4 prodotti, CTA ordine), tap provider→profilo senza prodotti + CTA richiesta; filtri raggio/categoria mappa OK.

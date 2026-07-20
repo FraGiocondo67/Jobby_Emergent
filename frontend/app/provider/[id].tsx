@@ -53,7 +53,8 @@ export default function ProviderDetail() {
 
   const request = () => {
     if (isBusiness) {
-      const cat = p.services?.[0] || "";
+      // Prefer a category that actually has products, else the first service.
+      const cat = products[0]?.category || p.services?.[0] || "";
       router.push(`/business-request/${id}?category=${cat}&name=${encodeURIComponent(title)}&label=${encodeURIComponent(catLabel(cat))}`);
     } else {
       const cat = (p.services || []).find((s: string) => CFG_ROUTE[s]) || p.services?.[0];
