@@ -164,7 +164,7 @@ export default function MapScreen() {
             <>
               <Text style={styles.section}>🏪 {t("nearbyBusinessesTitle")} ({businesses.length})</Text>
               {businesses.map((b) => (
-                <Pressable key={b.user_id} style={[styles.card, shadow.card]} testID={`map-business-${b.user_id}`} onPress={() => router.push(`/provider/${b.user_id}`)}>
+                <Pressable key={b.user_id} style={[styles.card, shadow.card]} testID={`map-business-${b.user_id}`} onPress={() => router.push(`/provider/${b.user_id}${category ? `?cat=${category}` : ""}` as any)}>
                   {b.picture ? <Image source={{ uri: b.picture }} style={styles.avatar} contentFit="cover" /> : <View style={[styles.avatar, styles.avFallback, { backgroundColor: colors.purple }]}><Text style={styles.avInit}>{(b.business_name || b.name)[0]}</Text></View>}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{b.business_name || b.name}</Text>

@@ -62,10 +62,16 @@ export default function ProviderDetail() {
   const title = p.business_name || p.name;
   const catLabel = (c: string) => cats[c]?.[lang] || c;
 
-  // Categorie configurabili offerte dal provider, normalizzate (cleaning→pulizie…)
+  // Categorie configurabili offerte dal provider/business, normalizzate (cleaning→pulizie…)
   const cfgServices: string[] = Array.from(new Set(
     (p.services || []).map((s: string) => toCat(s)).filter((c: string) => CFG_ROUTE[c])
   ));
+
+  // Intento "servizio standard" proveniente dal filtro mappa (es. Driver): ha priorità
+  // sul flusso ordine-prodotti, anche per un business (es. NCC con P.IVA che offre "driver").
+  const wantedCat = preCat ? toCat(preCat) : "";
+  const standardIntent = !!(wantedCat && cfgServices.includes(wantedCat));
+  const showOrder = isBusiness && !standardIntent;
 
   const openConfig = (cat: string) => {
     const c = toCat(cat);
@@ -75,20 +81,17 @@ export default function ProviderDetail() {
   };
 
   const request = () => {
+    // 1) Servizio standard richiesto dalla mappa → configuratore guidato (provider E business).
+    if (standardIntent) { openConfig(wantedCat); return; }
+    // 2) Business senza intento di servizio → flusso ordine prodotti.
     if (isBusiness) {
-      // Prefer a category that actually has products, else the first service.
       const cat = products[0]?.category || p.services?.[0] || "";
       router.push(`/business-request/${id}?category=${cat}&name=${encodeURIComponent(title)}&label=${encodeURIComponent(catLabel(cat))}`);
       return;
     }
-    const wanted = preCat ? toCat(preCat) : "";
-    // 1) categoria arrivata dalla mappa (filtro attivo) se offerta dal provider
-    if (wanted && cfgServices.includes(wanted)) { openConfig(wanted); return; }
-    // 2) un solo servizio configurabile → apri direttamente
+    // 3) Provider senza intento esplicito: uno solo → apri, più di uno → chiedi.
     if (cfgServices.length === 1) { openConfig(cfgServices[0]); return; }
-    // 3) più servizi → chiedi quale
     if (cfgServices.length > 1) { setPickOpen(true); return; }
-    // fallback
     openConfig(p.services?.[0] || "");
   };
 
@@ -134,8 +137,8 @@ export default function ProviderDetail() {
         {p.bio ? <Text style={styles.bio}>{p.bio}</Text> : null}
         {p.address ? <Text style={styles.address}>📍 {p.address}</Text> : null}
 
-        {/* Products (business) */}
-        {isBusiness ? (
+        {/* Products (business, solo quando non è un servizio standard richiesto) */}
+        {showOrder ? (
           <View style={{ marginTop: spacing.xl }}>
             <Text style={styles.section}>🛒 {t("productsSection")}</Text>
             {products.length === 0 ? (
@@ -176,7 +179,7 @@ export default function ProviderDetail() {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Button testID="prov-request" label={isBusiness ? t("viewAndOrder") : t("requestService")} icon={isBusiness ? "cart" : "add"} onPress={request} />
+        <Button testID="prov-request" label={showOrder ? t("viewAndOrder") : t("requestService")} icon={showOrder ? "cart" : "add"} onPress={request} />
       </View>
 
       <Modal visible={pickOpen} transparent animationType="fade" onRequestClose={() => setPickOpen(false)}>

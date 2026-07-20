@@ -1,0 +1,33 @@
+{
+  "summary": "Verified MAP → BUSINESS → DRIVER-configurator routing bug fix. All 3 requested scenarios pass on live preview using bearer disp-test-token-777. (1) MAIN: /map radius-50 + cat-driver → tap Ale Bragato (map-business-user_5ca043918cc5) → URL becomes /provider/user_5ca043918cc5?cat=driver → CTA reads t('requestService') ('Request service', NOT 'View products & order' i.e. NOT t('viewAndOrder')) → tap prov-request navigates to /driver/configura?provider=user_5ca043918cc5&providerName=Ale%20Bragato and the 7-step DRIVER wizard renders (step 1: NCC vs Taxi). Products section is correctly hidden. (2) REGRESSION provider person: /provider/prov_cfbd9805ce97?cat=driver (Giulia, multi-service) → CTA 'Request service', prov-request → /driver/configura (standard-intent wins over picker). (3) REGRESSION business w/o filter: (a) direct /provider/user_5ca043918cc5 and (b) map cat-all → Ale both show 'View products & order' CTA + Products section, tap routes to /business-request/user_5ca043918cc5 (free-text form since Ale has no catalog). Also confirmed map now correctly omits ?cat= when 'Tutte le categorie' is active. Note on locale: browser default lang is EN so labels are 'Request service' / 'View products & order' which are the exact i18n translations of the Italian labels quoted in the request ('Richiedi servizio' / 'Vedi prodotti e ordina') — this is functionally identical (same t() keys) and not a bug.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warnings: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Emitted on multiple screens (map card, provider profile). Not blocking but should be migrated. Reference: /app/frontend/src/theme.ts (shadow tokens) and any component using shadow.card."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' on map screen. Reference: likely inside RealMap or an ancestor View in /app/frontend/app/map.tsx or /app/frontend/src/components/RealMap.tsx."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_45.json"],
+  "action_items": [
+    "None for the reported P0 bug — it is fully fixed and validated.",
+    "Optional cleanup (unrelated to this bug): migrate deprecated 'shadow*' style props to 'boxShadow' in theme.ts / shadow.card usage, and replace props.pointerEvents with style.pointerEvents in RealMap wrapper."
+  ],
+  "critical_code_review_comments": [
+    "provider/[id].tsx: SERVICE_TO_CAT correctly normalizes raw provider service codes (cleaning→pulizie, ncc/taxi/mobilita→driver) so standardIntent works both for a business whose services=['driver'] (Ale) and for a multi-service person provider whose services include 'driver' (Giulia). Logic is clean.",
+    "map.tsx: businesses now propagate ?cat=${category} same as providers (line 167), fixing the root cause. When category is null (cat-all), the query is correctly omitted.",
+    "provider/[id].tsx: showOrder = isBusiness && !standardIntent is the correct pivot for CTA label and Products section — verified in UI."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only test)", "frontend": "100% (4/4 scenarios pass)"},
+  "seed_data_creation": "None. Used existing bearer disp-test-token-777 and pre-seeded users user_5ca043918cc5 (Ale Bragato, business, driver, Jesolo ~34km from Treviso) and prov_cfbd9805ce97 (Giulia Bianchi, provider, multi-service incl. driver).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug JOBBY map→business driver routing is CLOSED as of iteration_45. If retested: (a) MUST set radius to 50km — Ale is 33.97km from Treviso and won't show at default 10km; (b) inject token via localStorage.setItem('jobby_session_token', JSON.stringify('disp-test-token-777')) then reload; (c) CTA label depends on browser lang — check the t() key semantically (requestService vs viewAndOrder), not the literal Italian string, since the app is i18n'd. Skipped optional backend driver-wizard submission E2E (would require driving the 7-step form incl. Nominatim geocoding); the UI routing evidence is already conclusive for the reported bug.",
+  "rca_of_issue": "Root cause (already fixed by main agent, confirmed by code review + UI test): (1) map.tsx passed ?cat=${category} only for providers, not for businesses, so tapping Ale from the driver-filtered map lost the intent. (2) provider/[id].tsx used `isBusiness ? businessOrder : configurator` without considering the map's standard-service intent, so any business went to the free-text order form even when the map filter clearly requested a standard service like Driver. Fix: (a) map.tsx now appends ?cat= to both provider AND business cards; (b) provider/[id].tsx computes standardIntent = preCat is a configurable service offered by the profile, then routes to CFG_ROUTE[cat] first (works for both provider and business), falling back to product-order only when isBusiness && !standardIntent. CTA label and Products section are also driven by showOrder=isBusiness && !standardIntent."
+}
