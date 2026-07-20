@@ -153,15 +153,24 @@ Le cause tipiche, in ordine di frequenza:
 
 ---
 
-## 7. Il pannello Admin
+## 7. Il Backoffice WEB (Admin) — con login sicuro
 
-Raggiungibile su `…/api/admin/ui`. Sezioni: **Dashboard, Categories, Users
-(All / Pending / Providers / Business / Clients), Bookings, Disputes, Pulizie,
-Babysitting, Driver, Artigiani, Regole, Verifiche, Onboarding**.
+Il backoffice è un **sito web separato**, servito dal backend, **NON più dentro l'app mobile**.
 
-- La lista Users legge da `db.users` (fino a 1000, ordinati per data). I filtri per
-  tab (Clients/Providers/Business) filtrano per `role`.
-- Ricorda: mostra gli utenti **del database di quell'ambiente** (preview o produzione).
+### 🔑 Accesso
+- **URL (Preview)**: `https://jobby-mvp-update.preview.emergentagent.com/api/admin/login`
+- **URL (Produzione)**: `https://<url-deploy>/api/admin/login` (dopo il deploy; se il browser non lo raggiunge, vedi nota ambienti + supporto)
+- **Login**: email + **password** + **2FA (Google Authenticator)**
+  - Email: `hello@jobbyfree.it`
+  - Password iniziale: comunicata a parte (da cambiare al primo accesso)
+  - Al **primo accesso** compare un **QR code**: inquadralo con Google Authenticator/Authy, poi inserisci il codice a 6 cifre. Dai login successivi servirà sempre il codice 2FA.
+- **Logout**: link in alto a destra nel pannello.
+
+### Sezioni disponibili
+**Dashboard, Categories, Users** (All / Pending / Providers / Business / Clients con **Approva/Rifiuta**), **Bookings, Disputes, Pulizie, Babysitting, Driver, Artigiani, Regole, Verifiche, Onboarding**.
+
+> ⚠️ Il vecchio "Pannello Admin" dentro l'app mobile è stato **rimosso**: nessun utente finale vede più sezioni admin.
+> La sicurezza (password + 2FA) vale sia in Preview che in Produzione perché è lo stesso codice.
 
 ---
 

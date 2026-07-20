@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import timezone
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 from core import db, ADMIN_TOKEN, now_utc
 
 
@@ -22,7 +22,18 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     return user
 
 
-async def require_admin(x_admin_token: Optional[str] = Header(None)):
-    if x_admin_token != ADMIN_TOKEN:
-        raise HTTPException(status_code=403, detail="Admin token required")
-    return True
+async def require_admin(request: Request, x_admin_token: Optional[str] = Header(None)):
+    # 1) Web backoffice session cookie
+    sid = request.cookies.get("jobby_admin")
+    if sid:
+        sess = await db.admin_sessions.find_one({"sid": sid})
+        if sess:
+            exp = sess["expires_at"]
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp >= now_utc():
+                return True
+    # 2) Legacy static token (automated tests / curl)
+    if x_admin_token and x_admin_token == ADMIN_TOKEN:
+        return True
+    raise HTTPException(status_code=403, detail="Admin auth required")

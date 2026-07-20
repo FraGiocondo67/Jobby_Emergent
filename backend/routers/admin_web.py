@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from core import db
@@ -88,7 +88,11 @@ async def admin_bookings(_=Depends(require_admin)):
 
 
 @router.get("/admin/ui", response_class=HTMLResponse)
-async def admin_ui():
+async def admin_ui(request: Request):
+    sid = request.cookies.get("jobby_admin")
+    sess = await db.admin_sessions.find_one({"sid": sid}) if sid else None
+    if not sess:
+        return RedirectResponse("/api/admin/login", status_code=303)
     return HTMLResponse(ADMIN_HTML)
 
 
@@ -145,12 +149,8 @@ ADMIN_HTML = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<header><b>JOBBY</b> <span>Admin Dashboard</span><span class="badge" id="conn">not connected</span></header>
+<header><b>JOBBY</b> <span>Admin Dashboard</span><span class="badge" id="conn">connecting…</span><a href="/api/admin/logout" style="margin-left:12px;color:#fff;font-size:13px;text-decoration:underline">Logout</a></header>
 <div class="wrap">
-  <div class="tokbar">
-    <input id="token" type="password" placeholder="X-Admin-Token"/>
-    <button class="primary" onclick="connect()">Connect</button>
-  </div>
   <div id="err" class="err"></div>
 
   <div id="app" class="hidden">
@@ -293,16 +293,15 @@ async function saveFields(){
 <script>
 let TOKEN='';
 let USERFILTER='all';
-const H=()=>({'X-Admin-Token':TOKEN,'Content-Type':'application/json'});
-async function api(path,opts={}){const r=await fetch('/api'+path,{...opts,headers:H()});if(!r.ok)throw new Error(r.status);return r.json();}
+const H=()=>({'Content-Type':'application/json'});
+async function api(path,opts={}){const r=await fetch('/api'+path,{...opts,headers:H(),credentials:'same-origin'});if(r.status===401||r.status===403){location.href='/api/admin/login';throw new Error('unauth');}if(!r.ok)throw new Error(r.status);return r.json();}
 
 async function connect(){
-  TOKEN=document.getElementById('token').value.trim();
   document.getElementById('err').textContent='';
-  try{ await api('/admin/stats'); localStorage.setItem('jobby_admin_token',TOKEN);
+  try{ await api('/admin/stats');
     document.getElementById('conn').textContent='connected'; document.getElementById('app').classList.remove('hidden');
     go('dashboard'); }
-  catch(e){ document.getElementById('err').textContent='Invalid admin token'; }
+  catch(e){ if(String(e.message)!=='unauth') document.getElementById('err').textContent='Errore di connessione'; }
 }
 function go(t){
   ['dashboard','categories','users','bookings','disputes','pulizie','babysitting','driver','artigiani','spec4','verifiche','onboarding'].forEach(x=>document.getElementById(x).classList.add('hidden'));
@@ -637,7 +636,7 @@ async function verifyAbilitazione(uid){
   await api('/admin/artigiani/'+uid+'/abilitazione',{method:'POST',body:JSON.stringify({verified:true})});
   loadOnboarding();
 }
-(function(){const t=localStorage.getItem('jobby_admin_token');if(t){document.getElementById('token').value=t;connect();}})();
+(function(){connect();})();
 </script>
 </body>
 </html>

@@ -12,6 +12,7 @@ from routers import auth, catalog_routes, missions, bookings, wallet, chat, admi
 from routers import dashboard
 from routers import spec4
 from routers import payments_split
+from routers import admin_auth
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ api.include_router(artigiani.router)
 api.include_router(dashboard.router)
 api.include_router(spec4.router)
 api.include_router(payments_split.router)
+api.include_router(admin_auth.router)
 api.include_router(provider_onboarding.router)
 api.include_router(catalog_routes.router)
 api.include_router(missions.router)
@@ -73,6 +75,8 @@ async def startup():
     await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
     await db.categories.create_index("cat_id", unique=True)
     await seed_categories()
+    await db.admin_sessions.create_index("expires_at", expireAfterSeconds=0)
+    await admin_auth.seed_admin()
     # Existing users (pre-onboarding feature) should not be forced through onboarding.
     await db.users.update_many({"onboarding_completed": {"$exists": False}}, {"$set": {"onboarding_completed": True}})
     # Wallet: ensure the blocked/pending balance field exists.
