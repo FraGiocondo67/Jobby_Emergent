@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/src/context/LanguageContext";
+import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
@@ -17,6 +18,7 @@ const STATE_LABEL: Record<string, string> = {
 export default function DriverDetail() {
   const { id, new: isNew } = useLocalSearchParams<{ id: string; new?: string }>();
   const { t } = useLang();
+  const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [r, setR] = useState<any>(null);
@@ -26,6 +28,11 @@ export default function DriverDetail() {
   const [comment, setComment] = useState("");
   const [extraType, setExtraType] = useState("attesa");
   const [extraAmt, setExtraAmt] = useState("");
+  const [showPrice, setShowPrice] = useState(false);
+  const [propPrice, setPropPrice] = useState("");
+  const [propReason, setPropReason] = useState("");
+
+  const RITOCCO = [["bagagli", "Bagagli voluminosi"], ["seggiolino", "Seggiolino richiesto"], ["attesa", "Attesa programmata"], ["pedaggi", "Pedaggi/ZTL"]];
 
   const load = useCallback(async () => { try { setR(await api.drvGetRichiesta(id)); } catch {} }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -63,7 +70,51 @@ export default function DriverDetail() {
           <Text style={styles.cardSub}>{r.pickup_at?.replace("T", " ").slice(0, 16)}{cfg.flight_number ? ` · ✈️ ${cfg.flight_number}` : ""}</Text>
           <Text style={styles.cardSub}>{cfg.classe} · {cfg.passeggeri}👤 · {cfg.bagagli}🧳 · {cfg.route?.distance_km} km</Text>
           {r.passeggero ? <Text style={styles.cardSub}>🧑 {t("drvWhoTravels")}: {r.passeggero.nome} {r.passeggero.tel}</Text> : null}
+          {isProvider ? <Text style={styles.cardSub}>👤 {t("clientLabel")}: {r.cliente_nome || "—"}</Text> : null}
+          {r.note ? <Text style={styles.cardSub}>📝 {r.note}</Text> : null}
         </View>
+
+        {/* PROVIDER: accept / counter-price / decline for OPEN requests */}
+        {isProvider && ["pubblicata", "in_matching", "con_proposte"].includes(r.stato) ? (() => {
+          const mine = (r.proposte || []).find((p: any) => p.provider_id === user?.user_id);
+          if (mine) return (
+            <View style={[styles.card, shadow.card]}>
+              <Text style={styles.sectionH}>⏳ {t("proposalSent")}</Text>
+              <Text style={styles.priceLine}>€{Number(mine.prezzo).toFixed(2)}</Text>
+              <Text style={styles.cardSub}>{t("drvWaitClientConfirm")}</Text>
+              {r.cliente_id ? <Button testID="drv-chat-client" label={`💬 ${t("chat")}`} variant="secondary" onPress={() => router.push(`/chat/${r.cliente_id}`)} style={{ marginTop: spacing.md, height: 44 }} /> : null}
+            </View>
+          );
+          return (
+            <View style={[styles.card, shadow.card]}>
+              <Text style={styles.sectionH}>{t("drvConfirmTrip")}</Text>
+              {!showPrice ? (
+                <>
+                  <Button testID="drv-accept-trip" label={t("drvConfirmTripBtn")} icon="checkmark-circle" loading={busy} onPress={() => act(() => api.drvPropose(id, { accept: true }))} />
+                  <Button testID="drv-modify-price" label={t("drvModifyPrice")} variant="secondary" onPress={() => setShowPrice(true)} style={{ marginTop: spacing.sm, height: 46 }} />
+                  {r.cliente_id ? <Button testID="drv-chat-client" label={`💬 ${t("chat")}`} variant="secondary" onPress={() => router.push(`/chat/${r.cliente_id}`)} style={{ marginTop: spacing.sm, height: 46 }} /> : null}
+                  <Button testID="drv-decline-trip" label={t("drvReject")} variant="secondary" onPress={() => act(() => api.drvPropose(id, { accept: false }), () => router.back())} style={{ marginTop: spacing.sm, height: 46 }} />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.label}>{t("drvNewPrice")} (€)</Text>
+                  <TextInput testID="drv-prop-price" style={styles.input} value={propPrice} onChangeText={setPropPrice} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.muted} />
+                  <Text style={styles.label}>{t("drvPriceReason")}</Text>
+                  <View style={styles.segRow2}>
+                    {RITOCCO.map(([rid2, lbl]) => (
+                      <Pressable key={rid2} testID={`drv-reason-${rid2}`} style={[styles.reasonChip, propReason === rid2 && styles.segOn]} onPress={() => setPropReason(rid2)}>
+                        <Text style={[styles.segText, propReason === rid2 && styles.segTextOn]}>{lbl}</Text>
+                      </Pressable>))}
+                  </View>
+                  <Text style={styles.cardSub}>ℹ️ {t("drvCounterPending")}</Text>
+                  <Button testID="drv-send-price" label={t("drvSendProposal")} loading={busy} disabled={!propPrice}
+                    onPress={() => act(() => api.drvPropose(id, { accept: true, prezzo: Number(String(propPrice).replace(",", ".")), ritocco_motivo: propReason }), () => setShowPrice(false))} style={{ marginTop: spacing.md }} />
+                  <Button testID="drv-price-back" label={t("cancel")} variant="secondary" onPress={() => setShowPrice(false)} style={{ marginTop: spacing.sm, height: 44 }} />
+                </>
+              )}
+            </View>
+          );
+        })() : null}
 
         {/* CLIENT: proposals */}
         {isClient && r.stato === "con_proposte" ? (
