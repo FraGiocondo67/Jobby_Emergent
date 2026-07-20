@@ -290,15 +290,11 @@ function ProviderJobs() {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<any>(null);
   const [bookings, setBookings] = useState<any[]>([]);
-  const [incoming, setIncoming] = useState<any[]>([]);
-  const [bsIncoming, setBsIncoming] = useState<any[]>([]);
-  const [drvIncoming, setDrvIncoming] = useState<any[]>([]);
-  const [artIncoming, setArtIncoming] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
   const load = useCallback(async () => {
-    try { const [e, b, inc, bsInc, drvInc, artInc] = await Promise.all([api.earnings(), api.bookings(), api.pulizieIncoming(), api.bsIncoming(), api.drvIncoming(), api.artIncoming()]); setData(e); setBookings(b); setIncoming(inc || []); setBsIncoming(bsInc || []); setDrvIncoming(drvInc || []); setArtIncoming(artInc || []); } catch {}
+    try { const [e, b] = await Promise.all([api.earnings(), api.bookings()]); setData(e); setBookings(b); } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -315,71 +311,10 @@ function ProviderJobs() {
             <View style={styles.stat}><Text style={styles.statVal}>€{(data?.pending || 0).toFixed(0)}</Text><Text style={styles.statLbl}>{t("pending")}</Text></View>
           </View>
         </View>
-        {incoming.length > 0 ? (
-          <>
-            <Text style={styles.sectionHdr}>🧹 {t("incomingPulizie")}</Text>
-            {incoming.map((r) => (
-              <Pressable key={r.richiesta_id} testID={`incoming-${r.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/pulizie/${r.richiesta_id}`)}>
-                <Text style={{ fontSize: 26 }}>🧹</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>{r.config?.mq_band?.replace("_", "–")} m² · {r.config?.durata_ore}h</Text>
-                  <Text style={styles.cardSub}>{r.data_ora} · {r.my_proposal ? t("proposalSent") : t("respondWithin24h")}</Text>
-                </View>
-                <Text style={styles.cardPrice}>€{(r.price?.total_client || 0).toFixed(2)}</Text>
-              </Pressable>
-            ))}
-            <Text style={styles.sectionHdr}>🧾 {t("bookings")}</Text>
-          </>
-        ) : null}
-        {bsIncoming.length > 0 ? (
-          <>
-            <Text style={styles.sectionHdr}>🧸 {t("babysitting")}</Text>
-            {bsIncoming.map((r) => (
-              <Pressable key={r.richiesta_id} testID={`bs-incoming-${r.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/babysitting/${r.richiesta_id}`)}>
-                <Text style={{ fontSize: 26 }}>🧸</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>{r.config?.durata_ore}h · {r.config?.n_bambini} 🧒{r.urgente ? " ⚡" : ""}</Text>
-                  <Text style={styles.cardSub}>{r.data_ora?.replace("T", " ").slice(0, 16)} · {r.my_proposal ? t("proposalSent") : t("respondWithin24h")}</Text>
-                </View>
-                <Text style={styles.cardPrice}>€{(r.price?.total_client || 0).toFixed(2)}</Text>
-              </Pressable>
-            ))}
-          </>
-        ) : null}
-        {drvIncoming.length > 0 ? (
-          <>
-            <Text style={styles.sectionHdr}>🚘 {t("driver")}</Text>
-            {drvIncoming.map((r) => {
-              const isTaxi = r.config?.tipo === "taxi";
-              return (
-                <Pressable key={r.richiesta_id} testID={`drv-incoming-${r.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/driver/${r.richiesta_id}`)}>
-                  <Text style={{ fontSize: 26 }}>{isTaxi ? "🚕" : "🚘"}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle} numberOfLines={1}>{r.partenza?.label} → {r.destinazione?.label}</Text>
-                    <Text style={styles.cardSub}>{r.pickup_at?.replace("T", " ").slice(0, 16)} · {r.config?.route?.distance_km} km</Text>
-                  </View>
-                  <Text style={styles.cardPrice}>€{(r.suggested_price ?? r.taxi_estimate ?? 0).toFixed(2)}</Text>
-                </Pressable>);
-            })}
-          </>
-        ) : null}
-        {artIncoming.length > 0 ? (
-          <>
-            <Text style={styles.sectionHdr}>🔧 {t("artigiani")}</Text>
-            {artIncoming.map((r) => {
-              const isDiag = r.config?.modalita === "diagnosi";
-              return (
-                <Pressable key={r.richiesta_id} testID={`art-incoming-${r.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/artigiani/${r.richiesta_id}`)}>
-                  <Text style={{ fontSize: 26 }}>🔧</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle} numberOfLines={1}>{r.config?.mestiere}{r.urgente ? " ⚡" : ""}</Text>
-                    <Text style={styles.cardSub}>{isDiag ? t("artDiagnosi") : t("artPaniere")} · {r.my_proposal ? t("proposalSent") : t("respondWithin24h")}</Text>
-                  </View>
-                  {r.my_price != null ? <Text style={styles.cardPrice}>€{Number(r.my_price).toFixed(2)}</Text> : null}
-                </Pressable>);
-            })}
-          </>
-        ) : null}
+        <Pressable testID="jobs-see-home" style={styles.hintCard} onPress={() => router.push("/(tabs)")}>
+          <Text style={styles.hintCardText}>🔔 {t("opportunitiesOnHome")}</Text>
+        </Pressable>
+        {bookings.length > 0 ? <Text style={styles.sectionHdr}>🧾 {t("bookings")}</Text> : null}
         {bookings.map((b) => (
           <View key={b.booking_id} style={[styles.card, shadow.card]}>
             <Text style={{ fontSize: 26 }}>🧾</Text>
@@ -423,6 +358,8 @@ const styles = StyleSheet.create({
   pill: { alignSelf: "flex-start", paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.pill },
   pillText: { fontSize: fsize.sm, fontFamily: font.medium },
   earnHero: { backgroundColor: colors.brand, borderRadius: radius.lg, padding: spacing.xl, marginBottom: spacing.lg },
+  hintCard: { backgroundColor: colors.brandTertiary, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
+  hintCardText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onBrandTertiary, textAlign: "center" },
   earnLabel: { color: "rgba(255,255,255,0.85)", fontSize: fsize.base, fontFamily: font.regular },
   earnValue: { color: "#fff", fontSize: 40, fontFamily: font.bold, marginTop: 4 },
   earnStats: { flexDirection: "row", marginTop: spacing.lg, gap: spacing.lg },

@@ -44,6 +44,45 @@ async def geocode(body: GeocodeIn, user=Depends(get_current_user)):
     return {"lat": TREVISO["lat"], "lng": TREVISO["lng"], "label": q, "fallback": True}
 
 
+def _clean_label(item: dict) -> str:
+    a = item.get("address", {}) or {}
+    road = a.get("road") or a.get("pedestrian") or a.get("suburb") or a.get("hamlet") or ""
+    num = a.get("house_number", "")
+    city = a.get("city") or a.get("town") or a.get("village") or a.get("municipality") or ""
+    prov = a.get("county") or a.get("province") or ""
+    street = f"{road} {num}".strip()
+    parts = [p for p in [street, city] if p]
+    label = ", ".join(parts) if parts else (item.get("display_name", "") or "")[:80]
+    if prov and city and prov != city:
+        label += f" ({prov})"
+    return label[:90]
+
+
+@router.post("/geocode/search")
+async def geocode_search(body: GeocodeIn, user=Depends(get_current_user)):
+    """Ritorna fino a 5 risultati distinti per far scegliere l'indirizzo esatto."""
+    q = (body.query or "").strip()
+    if len(q) < 3:
+        return {"results": []}
+    try:
+        r = requests.get("https://nominatim.openstreetmap.org/search",
+                         params={"q": q, "format": "json", "limit": 8, "countrycodes": "it", "addressdetails": 1},
+                         headers=UA, timeout=8)
+        js = r.json() or []
+        seen, out = set(), []
+        for x in js:
+            label = _clean_label(x)
+            if not label or label in seen:
+                continue
+            seen.add(label)
+            out.append({"lat": float(x["lat"]), "lng": float(x["lon"]), "label": label})
+            if len(out) >= 5:
+                break
+        return {"results": out}
+    except Exception:
+        return {"results": []}
+
+
 @router.post("/reverse-geocode")
 async def reverse_geocode(body: ReverseIn, user=Depends(get_current_user)):
     try:

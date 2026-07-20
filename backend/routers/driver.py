@@ -338,9 +338,12 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
 async def incoming(user=Depends(get_current_user)):
     if user.get("role") not in ("provider", "business"):
         return []
+    uid = user["user_id"]
     items = await db.richieste.find(
-        {"provider_invitati": {"$elemMatch": {"provider_id": user["user_id"], "status": {"$ne": "declined"}}},
-         "stato": {"$in": list(STATES_OPEN)}, **CAT},
+        {**CAT, "$or": [
+            {"provider_invitati": {"$elemMatch": {"provider_id": uid, "status": {"$ne": "declined"}}}, "stato": {"$in": list(STATES_OPEN)}},
+            {"provider_scelto": uid, "stato": {"$in": ["confermata", "in_corso"]}},
+        ]},
         {"_id": 0}).sort("created_at", -1).to_list(100)
     lst = user.get("driver_listino") or {}
     for r in items:

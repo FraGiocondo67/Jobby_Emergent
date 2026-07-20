@@ -280,7 +280,9 @@ function ProviderHome() {
                     <Text style={styles.missionTitle}>{cats[r.__cat]?.[lang] || r.__cat}</Text>
                     <Text style={styles.missionSub} numberOfLines={1}>{oppSubtitle(r)}</Text>
                     {oppWhen(r) ? <Text style={styles.missionSub}>🗓️ {oppWhen(r)}</Text> : null}
-                    {r.my_proposal ? <Text style={styles.acceptedTag}>⏳ {t("proposalSent")}</Text> : null}
+                    {r.stato === "confermata" ? <Text style={styles.acceptedTag}>✅ {t("oppConfirmed")}</Text>
+                      : r.stato === "in_corso" ? <Text style={styles.acceptedTag}>🚗 {t("oppInProgress")}</Text>
+                      : r.my_proposal ? <Text style={styles.acceptedTag}>⏳ {t("proposalSent")}</Text> : null}
                   </View>
                   <View style={{ alignItems: "flex-end", gap: 4 }}>
                     {r.suggested_price != null ? <Text style={styles.missionPrice}>€{Number(r.suggested_price).toFixed(0)}</Text> : null}

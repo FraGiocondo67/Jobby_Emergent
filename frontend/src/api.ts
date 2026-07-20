@@ -303,6 +303,7 @@ export const api = {
 
   // geocoding (OpenStreetMap)
   geocode: (query: string) => request("/geocode", { method: "POST", body: JSON.stringify({ query }) }),
+  geocodeSearch: (query: string) => request("/geocode/search", { method: "POST", body: JSON.stringify({ query }) }),
   reverseGeocode: (lat: number, lng: number) => request("/reverse-geocode", { method: "POST", body: JSON.stringify({ lat, lng }) }),
 
   // babysitting (Spec 6)

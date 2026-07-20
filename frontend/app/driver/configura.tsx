@@ -8,6 +8,7 @@ import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 import { DateField, TimeField } from "@/src/components/DateTimeField";
+import MapPicker from "@/src/components/MapPicker";
 
 const STEPS = ["tipo", "route", "when", "class", "people", "extras", "summary"];
 
@@ -42,18 +43,37 @@ export default function DriverConfigura() {
   const [returnTime, setReturnTime] = useState("18:00");
   const [note, setNote] = useState("");
   const [est, setEst] = useState<any>(null);
+  const [fromRes, setFromRes] = useState<any[]>([]);
+  const [toRes, setToRes] = useState<any[]>([]);
+  const [mapFor, setMapFor] = useState<"from" | "to" | null>(null);
 
   useEffect(() => { (async () => { try { setMeta(await api.drvConfig()); } catch {} })(); }, []);
 
   const geocode = async (which: "from" | "to") => {
     const q = which === "from" ? fromQ : toQ;
-    if (!q.trim()) return;
+    if (q.trim().length < 3) return;
     setSearching(which);
     try {
-      const res = await api.drvGeocode(q);
-      const wp = { label: res.label || q, lat: res.lat, lng: res.lng };
-      if (which === "from") setFrom(wp); else setTo(wp);
+      const res = await api.geocodeSearch(q);
+      const list = res.results || [];
+      if (which === "from") setFromRes(list); else setToRes(list);
+      if (list.length === 0) Alert.alert(t("drvNoAddress"), t("drvTryMap"));
     } catch { Alert.alert(t("error")); } finally { setSearching(""); }
+  };
+
+  const pickResult = (which: "from" | "to", res: any) => {
+    const wp = { label: res.label, lat: res.lat, lng: res.lng };
+    if (which === "from") { setFrom(wp); setFromQ(res.label); setFromRes([]); }
+    else { setTo(wp); setToQ(res.label); setToRes([]); }
+  };
+
+  const pickFromMap = async (which: "from" | "to", coord: { lat: number; lng: number }) => {
+    setMapFor(null);
+    let label = `${coord.lat.toFixed(4)}, ${coord.lng.toFixed(4)}`;
+    try { const rev = await api.reverseGeocode(coord.lat, coord.lng); if (rev.label) label = rev.label; } catch {}
+    const wp = { label, lat: coord.lat, lng: coord.lng };
+    if (which === "from") { setFrom(wp); setFromQ(label); setFromRes([]); }
+    else { setTo(wp); setToQ(label); setToRes([]); }
   };
 
   const pickShortcut = (s: any, which: "from" | "to") => {
@@ -92,18 +112,33 @@ export default function DriverConfigura() {
   const renderPlace = (which: "from" | "to") => {
     const wp = which === "from" ? from : to;
     const q = which === "from" ? fromQ : toQ;
+    const results = which === "from" ? fromRes : toRes;
     return (
       <View style={{ marginBottom: spacing.md }}>
         <Text style={styles.label}>{which === "from" ? t("drvFrom") : t("drvTo")}</Text>
         <View style={styles.searchRow}>
           <TextInput testID={`drv-${which}-input`} style={styles.searchInput} value={q}
-            onChangeText={(v) => (which === "from" ? setFromQ(v) : setToQ(v))}
+            onChangeText={(v) => { if (which === "from") { setFromQ(v); setFromRes([]); } else { setToQ(v); setToRes([]); } }}
             placeholder={t("drvSearchPlace")} placeholderTextColor={colors.muted} onSubmitEditing={() => geocode(which)} returnKeyType="search" />
           <Pressable testID={`drv-${which}-search`} style={styles.searchBtn} onPress={() => geocode(which)}>
             {searching === which ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="search" size={18} color="#fff" />}
           </Pressable>
         </View>
-        {wp ? <Text style={styles.wpOk}>📍 {wp.label}</Text> : (q.trim().length > 2 ? <Text style={styles.wpHint}>{t("drvTapSearch")}</Text> : null)}
+        {results.length > 0 ? (
+          <View style={styles.resultsBox}>
+            {results.map((res: any, i: number) => (
+              <Pressable key={i} testID={`drv-${which}-res-${i}`} style={styles.resultRow} onPress={() => pickResult(which, res)}>
+                <Ionicons name="location-outline" size={18} color={colors.brand} />
+                <Text style={styles.resultText} numberOfLines={2}>{res.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        <Pressable testID={`drv-${which}-map`} style={styles.mapBtn} onPress={() => setMapFor(which)}>
+          <Ionicons name="map-outline" size={16} color={colors.brand} />
+          <Text style={styles.mapBtnText}>{t("drvPinOnMap")}</Text>
+        </Pressable>
+        {wp ? <Text style={styles.wpOk}>📍 {wp.label}</Text> : (q.trim().length > 2 && results.length === 0 ? <Text style={styles.wpHint}>{t("drvTapSearch")}</Text> : null)}
         <View style={styles.shortcutWrap}>
           {meta.shortcuts.map((s: any) => (
             <Pressable key={s.id} testID={`sc-${which}-${s.id}`} style={styles.shortcut} onPress={() => pickShortcut(s, which)}>
@@ -220,6 +255,15 @@ export default function DriverConfigura() {
           <Button testID={isLast ? "drv-publish" : "drv-next"} label={isLast ? t("publishRequest") : t("next")} loading={loading} onPress={() => (isLast ? submit() : (canNext ? setStep(step + 1) : Alert.alert(t("drvSearchPlace"))))} />
         </View>
       </KeyboardAvoidingView>
+      <MapPicker
+        visible={!!mapFor}
+        center={(mapFor === "from" ? from : to) || { lat: 45.6669, lng: 12.2433 }}
+        title={t("drvPinOnMap")}
+        hint={t("drvMapHint")}
+        confirmLabel={t("drvConfirmPosition")}
+        onCancel={() => setMapFor(null)}
+        onPick={(coord) => mapFor && pickFromMap(mapFor, coord)}
+      />
     </View>
   );
 }
@@ -249,6 +293,11 @@ const styles = StyleSheet.create({
   searchBtn: { width: 50, borderRadius: radius.md, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
   wpOk: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.success, marginTop: 6 },
   wpHint: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 6 },
+  resultsBox: { marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, overflow: "hidden" },
+  resultRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.md, paddingHorizontal: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  resultText: { flex: 1, fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface },
+  mapBtn: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm, alignSelf: "flex-start" },
+  mapBtnText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.brand },
   shortcutWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm },
   shortcut: { paddingVertical: 6, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   shortcutText: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.onSurface },

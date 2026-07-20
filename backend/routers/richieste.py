@@ -228,7 +228,9 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
 
 @router.get("/pulizie/richieste")
 async def my_richieste(user=Depends(get_current_user)):
-    items = await db.richieste.find({"cliente_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    items = await db.richieste.find(
+        {"cliente_id": user["user_id"], "categoria": "CASA", "servizio": "PULIZIA"},
+        {"_id": 0}).sort("created_at", -1).to_list(100)
     return items
 
 
@@ -263,8 +265,12 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
 async def incoming(user=Depends(get_current_user)):
     if user.get("role") not in ("provider", "business"):
         return []
+    uid = user["user_id"]
     items = await db.richieste.find(
-        {"provider_invitati": {"$elemMatch": {"provider_id": user["user_id"], "status": {"$ne": "declined"}}}, "stato": {"$in": list(STATES_OPEN)}},
+        {"categoria": "CASA", "servizio": "PULIZIA", "$or": [
+            {"provider_invitati": {"$elemMatch": {"provider_id": uid, "status": {"$ne": "declined"}}}, "stato": {"$in": list(STATES_OPEN)}},
+            {"provider_scelto": uid, "stato": {"$in": ["confermata", "in_corso"]}},
+        ]},
         {"_id": 0}).sort("created_at", -1).to_list(100)
     fee = await fee_pct()
     out = []

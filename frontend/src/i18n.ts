@@ -557,6 +557,11 @@ export const strings = {
     drvNightPct: "Maggiorazione notturna (%)", drvHolidayPct: "Maggiorazione festiva (%)", drvArDiscount: "Sconto andata/ritorno (%)",
     drvMinorTransport: "Trasporto minori non accompagnati", drvAnimals: "Animali a bordo", drvServiceType: "Tipo servizio",
     drvRequestSent: "Richiesta inviata!", drvSharedRideNote: "Solo tu (e il passeggero) potete seguire la corsa.",
+    drvNoAddress: "Nessun indirizzo trovato", drvTryMap: "Prova a scrivere più dettagli o segna il punto sulla mappa.",
+    drvPinOnMap: "Segna sulla mappa", drvMapHint: "Tocca la mappa per posizionare il punto esatto", drvConfirmPosition: "Conferma posizione",
+    drvConfirmTrip: "Rispondi alla richiesta", drvConfirmTripBtn: "Accetta al prezzo di listino", drvModifyPrice: "Proponi un altro prezzo",
+    drvNewPrice: "Nuovo prezzo", drvPriceReason: "Motivo del ritocco", drvCounterPending: "Il cliente dovrà confermare il tuo prezzo: la richiesta resta in attesa.",
+    drvSendProposal: "Invia proposta", drvWaitClientConfirm: "In attesa che il cliente confermi.", clientLabel: "Cliente",
     // Artigiani (Spec 7)
     artigiani: "Artigiani", artCta: "Trova un artigiano", artMestiere: "Che artigiano ti serve?",
     artProblem: "Qual è il problema?", artPaniere: "Interventi a prezzo fisso", artDiagnosi: "Ispezione",
@@ -641,6 +646,8 @@ export const strings = {
     noReviews: "Ancora nessuna recensione", viewAndOrder: "Vedi prodotti e ordina",
     drvTapSearch: "Tocca 🔍 per cercare l'indirizzo",
     newOpportunities: "Nuove opportunità", proposalSent: "Proposta inviata",
+    opportunitiesOnHome: "Le nuove richieste e i lavori in corso sono nella Home",
+    oppConfirmed: "Confermata", oppInProgress: "In corso",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -1198,6 +1205,11 @@ export const strings = {
     drvNightPct: "Night surcharge (%)", drvHolidayPct: "Holiday surcharge (%)", drvArDiscount: "Round-trip discount (%)",
     drvMinorTransport: "Unaccompanied minor transport", drvAnimals: "Pets on board", drvServiceType: "Service type",
     drvRequestSent: "Request sent!", drvSharedRideNote: "Only you (and the passenger) can follow the ride.",
+    drvNoAddress: "No address found", drvTryMap: "Try adding more details or pin the point on the map.",
+    drvPinOnMap: "Pin on map", drvMapHint: "Tap the map to place the exact point", drvConfirmPosition: "Confirm position",
+    drvConfirmTrip: "Respond to request", drvConfirmTripBtn: "Accept at list price", drvModifyPrice: "Propose another price",
+    drvNewPrice: "New price", drvPriceReason: "Reason for adjustment", drvCounterPending: "The client must confirm your price: the request stays pending.",
+    drvSendProposal: "Send proposal", drvWaitClientConfirm: "Waiting for the client to confirm.", clientLabel: "Client",
     // Artigiani (Spec 7)
     artigiani: "Craftsmen", artCta: "Find a craftsman", artMestiere: "Which craftsman?",
     artProblem: "What's the problem?", artPaniere: "Fixed-price jobs", artDiagnosi: "Inspection",
@@ -1282,6 +1294,8 @@ export const strings = {
     noReviews: "No reviews yet", viewAndOrder: "View products & order",
     drvTapSearch: "Tap 🔍 to search the address",
     newOpportunities: "New opportunities", proposalSent: "Proposal sent",
+    opportunitiesOnHome: "New requests and ongoing jobs are on the Home",
+    oppConfirmed: "Confirmed", oppInProgress: "In progress",
   },
 };
 
