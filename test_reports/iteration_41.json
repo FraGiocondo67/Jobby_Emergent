@@ -1,0 +1,26 @@
+{
+  "summary": "Batch A frontend fixes fully verified on mobile viewport 390x844. #1 DRIVER ADDRESS FOCUS: typed 'Piazza dei Signori Treviso' (26 chars) and 'Aeroporto Venezia' char-by-char in drv-from-input/drv-to-input — 0 focus_lost events, full text preserved, geocode (📍) resolved, shortcuts + Next flow OK. #12 DRIVER TARIFFS COMMA: enabled dl-class-standard, typed '2,5' in dl-standard-per_km (no NaN in UI), '8.5' in dl-standard-base, dl-save succeeded and closed screen; backend GET /api/driver/listino confirms persisted values base=8.5 per_km=2.5 (comma correctly converted). #6 PROVIDER INCOMING: as provtest@jobby.app (services artigiani/driver/pulizie), ProviderHome opens without crash, online toggle flips online↔offline; with an admin-invited pulizie request (req_d7b4bac09a57), the '🔔 New opportunities' section renders opp-req_d7b4bac09a57 card and tapping it navigates to /pulizie/req_d7b4bac09a57 detail with Accept/Propose/Decline. Empty-state path (no invites) also renders cleanly ('No missions nearby'). REGRESSION: driver configurator progressed steps tipo→route; provider Online toggle works. No pageerrors thrown. Deprecated packages detected: none new; only pre-existing 'shadow*' & 'props.pointerEvents' style warnings (non-blocking).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles (multiple screens)", "issue": "Console warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Pre-existing across app — non-blocking but should migrate to boxShadow / elevation."},
+      {"component": "RealMap or child web view", "issue": "Console warns: 'props.pointerEvents is deprecated. Use style.pointerEvents' — pre-existing, non-blocking."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_41.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "driver/configura.tsx: renderPlace() inline function correctly avoids remount-per-keystroke — verified 0 blur events while typing. Good fix.",
+    "driver/listino.tsx num() at line 53 accepts both '2,5' and '8.5' via String(v).replace(',', '.') → Number(); classi/glob values stored as raw strings and normalised on save. Verified end-to-end.",
+    "(tabs)/index.tsx ProviderHome (lines 203-293): SOURCES map keyed by user.services filter; Promise.all with per-source .catch(()=>[]) ensures a single failing endpoint cannot crash the section. Sorting by created_at fallback to '' is safe. opps.length>0 guards the section, and incomingMissions still renders below."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100% (3/3 batch-A fixes verified + regression OK)"},
+  "seed_data_creation": "Created 1 pulizie richiesta req_d7b4bac09a57 (client user_disptest01, Via Roma 1 Treviso, 2026-07-30 10:00) and admin-invited provider user_ef12485287e0 (provtest@jobby.app) so that #6 opp-* card could be observed. Also wrote base=8.5, per_km=2.5 into provtest's NCC standard listino during #12 verification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Batch A (bugs #1, #12, #6, #8) closed on the frontend side. If Batch B introduces further ProviderHome changes, re-test opp-* rendering by re-inviting provider user_ef12485287e0 to a pulizie/artigiani/driver richiesta and confirming provtest@jobby.app sees the card and can tap through. Provider listino currently seeded with standard {base:8.5, per_km:2.5, per_hour:35, attesa_per_hour:30} — reset if needed."
+}

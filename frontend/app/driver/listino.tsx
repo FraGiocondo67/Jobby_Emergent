@@ -47,8 +47,10 @@ export default function DriverListino() {
   const toggleClass = (cid: string) => setClassi((p: any) => {
     const n = { ...p }; if (n[cid]) delete n[cid]; else n[cid] = { ...DEF_CLASS }; return n;
   });
-  const setClassVal = (cid: string, k: string, v: string) => setClassi((p: any) => ({ ...p, [cid]: { ...p[cid], [k]: v === "" ? "" : Number(v) } }));
+  const setClassVal = (cid: string, k: string, v: string) => setClassi((p: any) => ({ ...p, [cid]: { ...p[cid], [k]: v } }));
   const setG = (k: string, v: any) => setGlob((p: any) => ({ ...p, [k]: v }));
+  // Accetta i decimali sia con virgola (EU) sia con punto.
+  const num = (v: any) => { const n = Number(String(v ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
 
   const addVehicle = async () => {
     if (!nvPlate.trim()) { Alert.alert(t("drvPlate")); return; }
@@ -72,7 +74,17 @@ export default function DriverListino() {
   const save = async () => {
     if (Object.keys(classi).length === 0) { Alert.alert(t("drvClass")); return; }
     setBusy(true);
-    try { await api.drvSetListino({ tipo, classi, ...glob }); Alert.alert(t("saved")); router.back(); }
+    const classiClean: any = {};
+    Object.entries(classi).forEach(([cid, o]: any) => {
+      classiClean[cid] = {};
+      Object.entries(o).forEach(([k, v]: any) => { classiClean[cid][k] = typeof v === "boolean" ? v : num(v); });
+    });
+    const globClean = {
+      notturno_pct: num(glob.notturno_pct), festivo_pct: num(glob.festivo_pct),
+      sconto_ar_pct: num(glob.sconto_ar_pct), raggio_km: num(glob.raggio_km),
+      trasporto_minori: !!glob.trasporto_minori, animali: !!glob.animali,
+    };
+    try { await api.drvSetListino({ tipo, classi: classiClean, ...globClean }); Alert.alert(t("saved")); router.back(); }
     catch { Alert.alert(t("error")); } finally { setBusy(false); }
   };
 
@@ -126,7 +138,7 @@ export default function DriverListino() {
           {[["notturno_pct", t("drvNightPct")], ["festivo_pct", t("drvHolidayPct")], ["sconto_ar_pct", t("drvArDiscount")], ["raggio_km", `${t("radius")} (km)`]].map(([k, lbl]) => (
             <View key={k} style={styles.numRow}>
               <Text style={styles.numLabel}>{lbl}</Text>
-              <TextInput testID={`dl-g-${k}`} style={styles.numInput2} keyboardType="numeric" value={String(glob[k as string])} onChangeText={(v) => setG(k as string, v === "" ? "" : Number(v))} />
+              <TextInput testID={`dl-g-${k}`} style={styles.numInput2} keyboardType="numeric" value={String(glob[k as string])} onChangeText={(v) => setG(k as string, v)} />
             </View>))}
           <View style={styles.rowOpt}><Text style={styles.optText}>🧑 {t("drvMinorTransport")}</Text><Switch testID="dl-minors" value={glob.trasporto_minori} onValueChange={(v) => setG("trasporto_minori", v)} trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" /></View>
           <View style={styles.rowOpt}><Text style={styles.optText}>🐕 {t("drvAnimals")}</Text><Switch testID="dl-animals" value={glob.animali} onValueChange={(v) => setG("animali", v)} trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" /></View>

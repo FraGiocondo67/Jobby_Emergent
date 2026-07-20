@@ -89,7 +89,7 @@ export default function DriverConfigura() {
 
   if (!meta) return <View style={[styles.container, { alignItems: "center", justifyContent: "center" }]}><ActivityIndicator color={colors.brand} /></View>;
 
-  const PlaceInput = ({ which }: { which: "from" | "to" }) => {
+  const renderPlace = (which: "from" | "to") => {
     const wp = which === "from" ? from : to;
     const q = which === "from" ? fromQ : toQ;
     return (
@@ -98,12 +98,12 @@ export default function DriverConfigura() {
         <View style={styles.searchRow}>
           <TextInput testID={`drv-${which}-input`} style={styles.searchInput} value={q}
             onChangeText={(v) => (which === "from" ? setFromQ(v) : setToQ(v))}
-            placeholder={t("drvSearchPlace")} placeholderTextColor={colors.muted} onSubmitEditing={() => geocode(which)} />
+            placeholder={t("drvSearchPlace")} placeholderTextColor={colors.muted} onSubmitEditing={() => geocode(which)} returnKeyType="search" />
           <Pressable testID={`drv-${which}-search`} style={styles.searchBtn} onPress={() => geocode(which)}>
             {searching === which ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="search" size={18} color="#fff" />}
           </Pressable>
         </View>
-        {wp ? <Text style={styles.wpOk}>📍 {wp.label}</Text> : null}
+        {wp ? <Text style={styles.wpOk}>📍 {wp.label}</Text> : (q.trim().length > 2 ? <Text style={styles.wpHint}>{t("drvTapSearch")}</Text> : null)}
         <View style={styles.shortcutWrap}>
           {meta.shortcuts.map((s: any) => (
             <Pressable key={s.id} testID={`sc-${which}-${s.id}`} style={styles.shortcut} onPress={() => pickShortcut(s, which)}>
@@ -128,7 +128,7 @@ export default function DriverConfigura() {
             </Pressable>))}
         </>);
       case "route":
-        return (<><PlaceInput which="from" /><PlaceInput which="to" /></>);
+        return (<>{renderPlace("from")}{renderPlace("to")}</>);
       case "when":
         return (<>
           <Text style={styles.label}>{t("drvWhen")}</Text>
@@ -248,6 +248,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface },
   searchBtn: { width: 50, borderRadius: radius.md, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
   wpOk: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.success, marginTop: 6 },
+  wpHint: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 6 },
   shortcutWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm },
   shortcut: { paddingVertical: 6, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   shortcutText: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.onSurface },

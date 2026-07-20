@@ -264,7 +264,7 @@ async def incoming(user=Depends(get_current_user)):
     if user.get("role") not in ("provider", "business"):
         return []
     items = await db.richieste.find(
-        {"provider_invitati.provider_id": user["user_id"], "stato": {"$in": list(STATES_OPEN)}},
+        {"provider_invitati": {"$elemMatch": {"provider_id": user["user_id"], "status": {"$ne": "declined"}}}, "stato": {"$in": list(STATES_OPEN)}},
         {"_id": 0}).sort("created_at", -1).to_list(100)
     fee = await fee_pct()
     out = []
@@ -477,16 +477,27 @@ async def admin_invite(rid: str, body: InviteIn, _=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="not_found")
     already = [i.get("provider_id") for i in r.get("provider_invitati", [])]
     new_invites = []
+    reset = 0
     for pid in body.provider_ids:
         if pid in already:
+            # Re-assignment: if the provider had declined, reactivate their invite.
+            res = await db.richieste.update_one(
+                {"richiesta_id": rid, "provider_invitati": {"$elemMatch": {"provider_id": pid, "status": "declined"}}},
+                {"$set": {"provider_invitati.$.status": "invited", "provider_invitati.$.reinvited_at": now_utc().isoformat()}})
+            if res.modified_count:
+                reset += 1
+                await push_notification(pid, "richiesta_invito", "Nuova richiesta di pulizia",
+                                        "Hai ricevuto di nuovo una richiesta compatibile.", "richiesta", rid)
             continue
         new_invites.append({"provider_id": pid, "at": now_utc().isoformat(), "status": "invited"})
         await push_notification(pid, "richiesta_invito", "Nuova richiesta di pulizia",
                                 "Hai ricevuto una richiesta compatibile. Rispondi entro 24h.", "richiesta", rid)
-    if new_invites:
-        upd = {"$push": {"provider_invitati": {"$each": new_invites}}, "$set": {"stato": "in_matching", "updated_at": now_utc().isoformat()}}
+    if new_invites or reset:
+        upd = {"$set": {"stato": "in_matching", "updated_at": now_utc().isoformat()}}
+        if new_invites:
+            upd["$push"] = {"provider_invitati": {"$each": new_invites}}
         await db.richieste.update_one({"richiesta_id": rid}, upd)
-    return {"invited": len(new_invites)}
+    return {"invited": len(new_invites), "reactivated": reset}
 
 
 class FeeIn(BaseModel):

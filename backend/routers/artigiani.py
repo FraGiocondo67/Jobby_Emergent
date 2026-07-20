@@ -286,7 +286,7 @@ async def incoming(user=Depends(get_current_user)):
     if user.get("role") not in ("provider", "business"):
         return []
     items = await db.richieste.find(
-        {"provider_invitati.provider_id": user["user_id"], "stato": {"$in": list(STATES_OPEN)}, **CAT},
+        {"provider_invitati": {"$elemMatch": {"provider_id": user["user_id"], "status": {"$ne": "declined"}}}, "stato": {"$in": list(STATES_OPEN)}, **CAT},
         {"_id": 0}).sort([("urgente", -1), ("created_at", -1)]).to_list(100)
     for r in items:
         cfg = r["config"]

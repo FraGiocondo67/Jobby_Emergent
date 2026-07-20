@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput, RefreshControl, Switch, Modal,
 } from "react-native";
@@ -202,15 +202,44 @@ function CustomerHome() {
 
 function ProviderHome() {
   const { user, setUser } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [incoming, setIncoming] = useState<any[]>([]);
+  const [opps, setOpps] = useState<any[]>([]);
+  const [cats, setCats] = useState<Record<string, any>>({});
   const [online, setOnline] = useState(!!user?.online);
+
+  const SOURCES: Record<string, { fn: () => Promise<any>; route: (id: string) => string }> = {
+    pulizie: { fn: api.pulizieIncoming, route: (id) => `/pulizie/${id}` },
+    babysitting: { fn: api.bsIncoming, route: (id) => `/babysitting/${id}` },
+    driver: { fn: api.drvIncoming, route: (id) => `/driver/${id}` },
+    artigiani: { fn: api.artIncoming, route: (id) => `/artigiani/${id}` },
+  };
 
   const load = useCallback(async () => {
     try { setIncoming(await api.incomingMissions()); } catch {}
+    const services: string[] = user?.services || [];
+    const keys = services.filter((s) => SOURCES[s]);
+    try {
+      const lists = await Promise.all(keys.map((s) =>
+        SOURCES[s].fn().then((l: any[]) => (l || []).map((r) => ({ ...r, __cat: s }))).catch(() => [])));
+      const flat = lists.flat().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+      setOpps(flat);
+    } catch {}
+  }, [user?.services]);
+  useFocusEffect(useCallback(() => { load(); const iv = setInterval(load, 5000); return () => clearInterval(iv); }, [load]));
+
+  useEffect(() => {
+    (async () => { try { const c = await api.categories(); const m: Record<string, any> = {}; [...(c.standard || []), ...(c.proximity || [])].forEach((x: any) => { m[x.cat_id] = x.label; }); setCats(m); } catch {} })();
   }, []);
-  useFocusEffect(useCallback(() => { load(); const iv = setInterval(load, 4000); return () => clearInterval(iv); }, [load]));
+
+  const oppId = (r: any) => r.richiesta_id || r.rid || r.id;
+  const oppSubtitle = (r: any) => {
+    if (r.__cat === "driver") { const cfg = r.config || {}; return `${cfg?.route?.from?.label || r.partenza?.label || ""} → ${cfg?.route?.to?.label || r.destinazione?.label || ""}`.trim() || (r.pickup_at || "").replace("T", " "); }
+    return r.indirizzo || r.address || "";
+  };
+  const oppWhen = (r: any) => (r.data_ora || r.pickup_at || "").toString().replace("T", " ").slice(0, 16);
 
   const toggleOnline = async (v: boolean) => {
     setOnline(v);
@@ -239,8 +268,32 @@ function ProviderHome() {
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 100 }} showsVerticalScrollIndicator={false}>
         <RealMap center={{ lat: user?.lat || 45.6669, lng: user?.lng || 12.2433 }} markers={pins} radiusKm={user?.radius_km || 10} height={200} />
+
+        {/* Opportunità richieste per categoria (spec4) */}
+        {opps.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>🔔 {t("newOpportunities")}</Text>
+            {opps.map((r) => (
+              <Pressable key={`${r.__cat}-${oppId(r)}`} testID={`opp-${oppId(r)}`} style={[styles.missionCard, shadow.card]} onPress={() => router.push(SOURCES[r.__cat].route(oppId(r)) as any)}>
+                <View style={styles.missionRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.missionTitle}>{cats[r.__cat]?.[lang] || r.__cat}</Text>
+                    <Text style={styles.missionSub} numberOfLines={1}>{oppSubtitle(r)}</Text>
+                    {oppWhen(r) ? <Text style={styles.missionSub}>🗓️ {oppWhen(r)}</Text> : null}
+                    {r.my_proposal ? <Text style={styles.acceptedTag}>⏳ {t("proposalSent")}</Text> : null}
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 4 }}>
+                    {r.suggested_price != null ? <Text style={styles.missionPrice}>€{Number(r.suggested_price).toFixed(0)}</Text> : null}
+                    <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+                  </View>
+                </View>
+              </Pressable>
+            ))}
+          </>
+        ) : null}
+
         <Text style={styles.sectionTitle}>{t("incomingMissions")}</Text>
-        {incoming.length === 0 ? (
+        {incoming.length === 0 && opps.length === 0 ? (
           <View style={styles.empty}><Text style={{ fontSize: 40 }}>☕</Text><Text style={styles.emptyText}>{t("noMissions")}</Text></View>
         ) : (
           incoming.map((m) => (

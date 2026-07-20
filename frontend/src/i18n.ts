@@ -639,6 +639,8 @@ export const strings = {
     searchRadius: "Raggio di ricerca", allCategories: "Tutte", active: "Attivo", inactive: "Non attivo",
     reviewsLabel: "recensioni", productsSection: "Prodotti", reviewsSection: "Recensioni",
     noReviews: "Ancora nessuna recensione", viewAndOrder: "Vedi prodotti e ordina",
+    drvTapSearch: "Tocca 🔍 per cercare l'indirizzo",
+    newOpportunities: "Nuove opportunità", proposalSent: "Proposta inviata",
   },
   en: {
     appTagline: "Work should adapt to life, not life to work.",
@@ -1278,6 +1280,8 @@ export const strings = {
     searchRadius: "Search radius", allCategories: "All", active: "Active", inactive: "Inactive",
     reviewsLabel: "reviews", productsSection: "Products", reviewsSection: "Reviews",
     noReviews: "No reviews yet", viewAndOrder: "View products & order",
+    drvTapSearch: "Tap 🔍 to search the address",
+    newOpportunities: "New opportunities", proposalSent: "Proposal sent",
   },
 };
 
