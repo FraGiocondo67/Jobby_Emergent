@@ -13,6 +13,7 @@ import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 import RealMap from "@/src/components/RealMap";
+import NotifBell from "@/src/components/NotifBell";
 
 export default function HomeTab() {
   const { user } = useAuth();
@@ -87,6 +88,7 @@ function CustomerHome() {
           <Pressable testID="wallet-pill" style={styles.walletPill} onPress={() => router.push("/wallet")}>
             <Text style={styles.walletText}>{balance.toFixed(2)}</Text>
           </Pressable>
+          <NotifBell />
           <Image source={require("@/assets/images/jobby-logo.png")} style={styles.logo} contentFit="cover" />
         </View>
 
@@ -262,6 +264,7 @@ function ProviderHome() {
           <Text style={styles.hi}>{t("missions")}</Text>
         </View>
         <View style={styles.onlineToggle}>
+          <NotifBell />
           <Text style={[styles.onlineText, { color: online ? colors.success : colors.muted }]}>{online ? t("online") : t("offline")}</Text>
           <Switch testID="online-toggle" value={online} onValueChange={toggleOnline} trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" />
         </View>
@@ -396,6 +399,7 @@ function BusinessHome() {
           <Text style={styles.hi}>{user?.business_name || t("roleBusiness")}</Text>
         </View>
         <View style={styles.onlineToggle}>
+          <NotifBell />
           <Text style={[styles.onlineText, { color: online ? colors.success : colors.muted }]}>{online ? t("online") : t("offline")}</Text>
           <Switch testID="online-toggle" value={online} onValueChange={toggleOnline} trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" />
         </View>

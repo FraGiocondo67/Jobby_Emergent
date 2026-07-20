@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from core import db, now_utc, new_id
 from deps import get_current_user
 from models import MessageIn
+from routers.notifications import push_notification
 
 router = APIRouter()
 
@@ -82,10 +83,13 @@ async def send_message(conversation_id: str, body: MessageIn, user=Depends(get_c
         raise HTTPException(status_code=403, detail="forbidden")
     tid = convo.get("thread_id") or thread_of(convo["user_id"], convo["other_id"])
     # Make sure the recipient also has a conversation doc for this thread.
-    await ensure_conversation(convo["other_id"], user["user_id"], user["name"], user.get("picture", ""))
+    recip_cid = await ensure_conversation(convo["other_id"], user["user_id"], user["name"], user.get("picture", ""))
     msg = {"message_id": new_id("msg"), "thread_id": tid, "conversation_id": conversation_id,
            "sender_id": user["user_id"], "text": body.text, "created_at": now_utc().isoformat()}
     await db.messages.insert_one(msg)
     await db.conversations.update_many({"thread_id": tid},
                                        {"$set": {"last_message": body.text, "updated_at": now_utc().isoformat()}})
+    preview = (body.text or "")[:80]
+    await push_notification(convo["other_id"], "chat_message", f"💬 {user.get('name', 'Messaggio')}",
+                            preview, "chat", recip_cid)
     return {k: v for k, v in msg.items() if k != "_id"}

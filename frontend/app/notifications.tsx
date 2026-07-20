@@ -12,6 +12,17 @@ const ICON: Record<string, string> = {
   dispute_message: "chatbubble-ellipses",
   dispute_update: "information-circle",
   dispute_resolved: "checkmark-circle",
+  chat_message: "chatbubble-ellipses",
+  driver_invito: "car", driver_proposta: "pricetag", driver_confermata: "checkmark-circle",
+  driver_completata: "flag", driver_in_arrivo: "navigate", driver_annullata: "close-circle",
+  babysitting_invito: "happy", babysitting_proposta: "pricetag", babysitting_confermata: "checkmark-circle",
+  artigiani_invito: "construct", artigiani_proposta: "pricetag", artigiani_preventivo: "document-text",
+  artigiani_confermata: "checkmark-circle", artigiani_completata: "flag",
+};
+
+const REF_ROUTE: Record<string, string> = {
+  richiesta: "/pulizie", driver: "/driver", babysitting: "/babysitting", artigiani: "/artigiani",
+  dispute: "/dispute", booking: "/booking",
 };
 
 function timeAgo(iso: string) {
@@ -36,8 +47,9 @@ export default function Notifications() {
 
   const openItem = async (n: any) => {
     if (!n.read) { try { await api.markNotifRead(n.notif_id); } catch {} }
-    if (n.ref_type === "dispute" && n.ref_id) router.push(`/dispute/${n.ref_id}`);
-    else if (n.ref_type === "booking" && n.ref_id) router.push(`/booking/${n.ref_id}`);
+    if (n.ref_type === "chat" && n.ref_id) router.push(`/chat/${n.ref_id}`);
+    else if (n.ref_type === "profile") router.push("/(tabs)/profile");
+    else if (REF_ROUTE[n.ref_type] && n.ref_id) router.push(`${REF_ROUTE[n.ref_type]}/${n.ref_id}` as any);
     load();
   };
 

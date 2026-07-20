@@ -1,0 +1,30 @@
+{
+  "summary": "Iter 43 — Batch C in-app notifications (feed + badge). BACKEND 8/8 PASS (test_iter43_notifications.py). Verified: POST /api/chat/{cid} creates a chat_message notification for the RECIPIENT with ref_type='chat' and ref_id belonging to the recipient's own conversations set (NOT the sender's cid). GET /api/notifications returns {items, unread}; unread-count matches list; POST /notifications/{id}/read decrements unread; POST /read-all clears unread. Notifications are keyed by user_id (client sending chat does NOT receive a self-notification; every notif in provider's list has user_id == prov_cfbd9805ce97). FRONTEND (bstest@jobby.app/test1234, Provider role, 390x844): ProviderHome header shows testid notif-bell rendering a red badge with count '1'; tapping navigates to /notifications; screen lists notifications with an orange left-border + red dot for unread; testid notif-mark-all clears badge (bell shows no number after) and testid notif-back returns. Tapping a Pulizie 'Nuova proposta' notif (ref_type=richiesta) routes to /pulizie/req_7a69bf801f5d showing the StatusTimeline detail — routing map verified end-to-end. No pageerrors thrown. Only pre-existing 'shadow*' style deprecation warnings.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles (multiple)", "issue": "Console: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Pre-existing, non-blocking (already reported iter 42)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter43_notifications.py",
+    "/app/test_reports/pytest/iter43_notifications.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/chat.py send_message: correctly calls ensure_conversation(convo['other_id'], user['user_id'], ...) and passes the returned recip_cid as ref_id to push_notification. This means the recipient's tap on the notif opens THEIR own conversation doc (owned by them), not the sender's — spec-compliant.",
+    "routers/notifications.py: list/unread-count/read/read-all all correctly scoped to user['user_id']; nothing role-dependent — notifications persist across Client<->Provider profile switches on the same account.",
+    "NotifBell.tsx: uses useFocusEffect + 15s interval → good balance of freshness vs. cost. Badge caps at '9+', has border to separate from bg. testID present. Correctly placed on all three Home variants (CustomerHome, ProviderHome, BusinessHome) — verified visually on ProviderHome and by code inspection for the others.",
+    "notifications.tsx openItem: correctly maps ref_type='chat' → /chat/{ref_id} and ref_type in REF_ROUTE (richiesta/driver/babysitting/artigiani/dispute/booking) → /{route}/{ref_id}. Marks unread as read via api.markNotifRead before navigating and reloads list on return."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (all Batch C flows verified)"},
+  "seed_data_creation": "Test run appended a handful of TEST_iter43 chat messages to conv_681b6c63541b (user_disptest01 <-> prov_cfbd9805ce97). Provider notifications were then read-all'd during UI verification, so unread count for prov-test-token-888 is now 0.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Batch C is complete and passing. Bearer tokens: client disp-test-token-777, provider prov-test-token-888 (Giulia = prov_cfbd9805ce97). UI provider login bstest@jobby.app/test1234 (NOTE: this user is a DIFFERENT provider than prov_cfbd9805ce97, so chat notifications created via disp-test-token-777 -> prov-test-token-888 will NOT show on bstest's UI — use provtest@jobby.app/test1234 if you want to see chat notifs in-UI, or seed a message between bstest's own conversation).",
+  "rca_of_issue": "N/A — no bugs in this batch."
+}
