@@ -317,3 +317,16 @@
   (2) provider/[id].tsx routed ANY business to /business-request, ignoring the standard-service intent.
   FIX: map.tsx now appends ?cat= for business cards too. provider/[id].tsx computes standardIntent = (preCat maps to a CFG_ROUTE service the profile offers); if standardIntent -> openConfig (e.g. /driver/configura) for BOTH provider AND business; else business -> product-order flow. CTA label + products section now driven by showOrder = isBusiness && !standardIntent.
   VERIFIED (testing agent, iteration_45): main fix + person-provider regression + business-order regression all PASS. Retest not needed.
+
+## agent_communication (2026-06 fork — Wallet ESCROW at confirm + 24h hold + QR "consegna verificata")
+-agent: "main"
+-message: |
+  IMPLEMENTED wallet-escrow model (user-approved choices):
+  - Funds BLOCKED at confirm/order (bonus first, then wallet_balance); insufficient -> 400 insufficient_wallet (confirm rejected, UI prompts "Ricarica il portafoglio" -> /wallet).
+  - At completion net released: professionals -> pending_balance + 24h hold (wallet_holds, matures on GET /wallet); businesses -> wallet_balance immediately. Cancel -> refund. LF unchanged.
+  - Taxi/babysitting overtime = conguaglio vs blocked estimate; driver extras/artigiani quote+extras blocked progressively.
+  - QR "consegna verificata" (client pref qr_confirm_enabled): completion ARMED; client shows QR+6-digit code, EARNER scans (expo-camera, DEVICE-ONLY) or types code (POST /api/delivery/confirm-code) to release; auto-release 24h.
+  - New: wallet_escrow.py, confirm_delivery.py (router). Wired richieste/driver/artigiani/babysitting/listino. PaymentSection (old pay-at-execution) REMOVED from 4 service detail screens.
+  - HOME cliente: removed "recurring providers/reorder last services" list.
+  VERIFIED: unit money math (7 scenarios) + backend E2E pytest tests/test_wallet_escrow_e2e.py = 8/8 PASS (iteration_46). Fixed driver direct-target auto-confirm branch that skipped the hold. Frontend smoke OK (home + profile QR toggle).
+  NOTE: QR camera scanner testable only on native build (expo-camera); manual 6-digit code path works on web.

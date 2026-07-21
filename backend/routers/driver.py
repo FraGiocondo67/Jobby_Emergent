@@ -462,6 +462,16 @@ async def propose(rid: str, body: ProposeIn, user=Depends(get_current_user)):
     is_direct = bool(inv.get("direct"))
     has_counter = ritocco is not None
     if is_direct and not has_counter:
+        try:
+            await we.hold(r, prezzo, f"Blocco garanzia corsa €{prezzo:.2f}")
+        except HTTPException:
+            # Cliente senza fondi sufficienti: niente conferma automatica, resta da confermare.
+            await db.richieste.update_one({"richiesta_id": rid},
+                                          {"$push": {"proposte": proposal},
+                                           "$set": {"stato": "con_proposte", "updated_at": now_utc().isoformat()}})
+            await push_notification(r["cliente_id"], "driver_proposta", "Nuova proposta corsa",
+                                    f"{proposal['provider_nome']}: €{prezzo:.2f} — ricarica il portafoglio per confermare.", "driver", rid)
+            return {**proposal, "auto_confirmed": False, "needs_topup": True}
         fee = await fee_pct()
         jobby_fee = round(prezzo * fee / 100.0, 2)
         await db.richieste.update_one({"richiesta_id": rid}, {
