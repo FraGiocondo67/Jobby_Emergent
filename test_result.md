@@ -330,3 +330,12 @@
   - HOME cliente: removed "recurring providers/reorder last services" list.
   VERIFIED: unit money math (7 scenarios) + backend E2E pytest tests/test_wallet_escrow_e2e.py = 8/8 PASS (iteration_46). Fixed driver direct-target auto-confirm branch that skipped the hold. Frontend smoke OK (home + profile QR toggle).
   NOTE: QR camera scanner testable only on native build (expo-camera); manual 6-digit code path works on web.
+
+## agent_communication (2026-06 fork — FIX: auto-invite matching + escrow/QR lifecycle)
+-agent: "main"
+-message: |
+  Fixed 2 user-reported issues:
+  1) SERVICE requests never appeared in provider "incoming" (pulizie/babysitting/artigiani) — root cause: created 'pubblicata' with empty provider_invitati, required MANUAL admin invite. FIX: create endpoints now AUTO-INVITE all compatible providers on publish (provider_invitati status=invited, auto=True) + push notification. Driver already auto-invited. Admin manual invite still works additively.
+  2) QR/escrow "not linked client<->provider" was a symptom of #1 (provider never reached completion). Verified full lifecycle: create→auto-invite→provider incoming→propose→client confirm (funds BLOCKED, escrow.held)→complete→ (QR OFF: release now / QR ON: arm conferma_pending → client shows QR+code → earner POST /api/delivery/confirm-code → release). QR toggle roundtrip (POST /api/profile/qr-confirm ↔ /auth/me) confirmed.
+  VERIFIED: testing_agent iteration_47 = 6/6 PASS (tests/test_auto_invite_iter47.py) across pulizie/babysitting/artigiani/driver + escrow QR on/off + wrong-code 400 + non-earner 403. Earlier escrow mechanics 8/8 (iter46).
+  NOTE: QR camera scanner still device-only (expo-camera); 6-digit code path works everywhere.
