@@ -224,7 +224,15 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
     }
     if body.publish:
         doc["scade_at"] = (now_utc() + timedelta(hours=C.PROPOSAL_WINDOW_HOURS)).isoformat()
+        # Auto-invito dei provider compatibili: la richiesta appare subito nelle loro "in arrivo".
+        provs = await compatible_providers(body.binario, cfg, body.lat, body.lng)
+        doc["provider_invitati"] = [{"provider_id": pp["provider"]["user_id"], "at": now_utc().isoformat(),
+                                     "status": "invited", "auto": True} for pp in provs]
     await db.richieste.insert_one(doc)
+    if body.publish:
+        for inv in doc["provider_invitati"]:
+            await push_notification(inv["provider_id"], "nuova_richiesta", "Nuova richiesta pulizie",
+                                    "Hai una nuova richiesta compatibile in arrivo.", "richiesta", rid)
     return {k: v for k, v in doc.items() if k != "_id"}
 
 

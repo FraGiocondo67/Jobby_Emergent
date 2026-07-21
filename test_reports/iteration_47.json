@@ -1,0 +1,39 @@
+{
+  "summary": "AUTO-INVITE on publish + ESCROW/QR e2e regression — 6/6 tests PASS. Verified: (1) create+publish of a pulizie richiesta auto-populates provider_invitati with compatible providers (auto=True), and req-prov-token (impresa) sees it in /pulizie/incoming WITHOUT any admin invite; propose(accept) transitions to con_proposte. (2) Same for babysitting persona_lf — Giulia (prov-test-token-888) is auto-invited and sees it in /babysitting/incoming. (3) Same for artigiani — an art_listini-seeded provider is auto-invited and sees it in /artigiani/incoming. (4) End-to-end escrow pulizie QR-off (confirm blocks, complete releases immediately to business earner) still green. (5) Pulizie QR-on: complete ARMS (conferma_pending=true, escrow.stato=held), delivery_confirmations doc exists, GET /delivery/ref/{rid} returns code, wrong code→400, non-earner→403, correct code→released + immediate credit. (6) Driver auto-confirm branch (direct target + listino accept) now correctly holds escrow and releases on complete → Giulia's pending_balance +net, wallet_holds pending doc created (prior iter46 CRITICAL bug FIXED). Client wallet + qr pref restored to seed (500 + 50 bonus, qr OFF) after run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auto_invite_iter47.py",
+    "/app/test_reports/pytest/iter47_auto_invite.xml"
+  ],
+  "action_items": [
+    "No fixes required — all originally reported issues (auto-matching gap on publish + QR/escrow linkage) verified as resolved end-to-end. Main agent can close this thread."
+  ],
+  "critical_code_review_comments": [
+    "routers/richieste.py:225-235 — publish branch now calls compatible_providers(...) and populates provider_invitati with {provider_id, at, status: 'invited', auto: True}. Notifications pushed to every auto-invited provider. Admin invite (POST /admin/pulizie/richieste/{rid}/invite) remains available for reassignment / re-inviting declined providers — correctly idempotent.",
+    "routers/babysitting.py:362-371 — same pattern for babysitting. Persona_lf INPS gate is enforced inside compatible_providers so unregistered LF providers are correctly skipped.",
+    "routers/artigiani.py:250-256 — same pattern. Compatibility uses art_listini[mestiere] + binario + urgenze + raggio_km. Provider notifications fire.",
+    "routers/driver.py:303-330 — already had auto-invite (unchanged, working). The iter46 auto-confirm escrow bug (missing we.hold in propose+accept when direct target) has been fixed by main agent — verified: escrow.stato='held' immediately, prezzo debited from client wallet, and on /complete → provider pending_balance += net + wallet_holds doc created.",
+    "wallet_escrow.py + confirm_delivery.py unchanged from iter46 review — QR arm/release logic, refund idempotency, and bonus-first _deduct all verified end-to-end here."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auto_invite_iter47.py (new — 6 test cases across 4 classes)"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6)",
+    "frontend": "n/a (backend-only per request)"
+  },
+  "seed_data_creation": "One TEST_child card is created on-the-fly for the babysitting test if the client has none (kept — cheap). All pulizie/babysitting/artigiani/driver richieste are ephemeral. Client wallet reset to 500 + 50 bonus and qr_confirm_enabled=false after every test and once more after the run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Auto-invite is now the primary matching path (admin invite endpoints remain as fallback / re-invite). If future changes touch compatible_providers(...) in any of the 4 category routers, rerun `pytest /app/backend/tests/test_auto_invite_iter47.py -v` — first three tests will catch a broken match filter and the last three catch escrow regressions. Test preserves client wallet (500 + 50) and qr_confirm_enabled=false. Uses tokens: disp-test-token-777 (client), req-prov-token (impresa business, immediate credit path), prov-test-token-888 (Giulia — provider pending_balance path + babysitter persona_lf + driver ncc), and any DB-discovered artigiano provider with art_listini.",
+  "rca_of_issue": "The originally reported bugs are RESOLVED and verified end-to-end: (1) auto-matching gap (issue #2) — root cause was create endpoints leaving provider_invitati empty until an admin manually invited providers; fix populates provider_invitati at publish time by calling compatible_providers() for pulizie/babysitting/artigiani (driver already did). This test proves the wire is intact from client publish → provider /incoming without any admin step, for all three categories. (2) QR/escrow linkage (issue #1) — verified the full chain client owner GET /delivery/ref/{rid} → earner POST /delivery/confirm-code → escrow release + earner credit + delivery_confirmations.released=true. Wrong code returns 400 invalid_code; a different (non-earner) authenticated user returns 403 (guard checks confirm['earner_id']==caller). No regressions detected."
+}
