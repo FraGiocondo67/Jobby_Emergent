@@ -7,7 +7,7 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
-import PaymentSection from "@/src/components/PaymentSection";
+import { ClientDeliveryQR, EarnerConfirm } from "@/src/components/DeliveryConfirm";
 import StatusTimeline from "@/src/components/StatusTimeline";
 import { TimeField } from "@/src/components/DateTimeField";
 
@@ -35,7 +35,8 @@ export default function BabysittingDetail() {
     setBusy(true);
     try { await fn(); await load(); after?.(); } catch (e: any) {
       const m = String(e?.message || "");
-      if (m.includes("lf_insufficient")) Alert.alert(t("error"), "Borsellino LF insufficiente");
+      if (m.includes("insufficient_wallet")) Alert.alert("Fondi insufficienti", "Ricarica il portafoglio per confermare: l'importo viene bloccato a garanzia.", [{ text: "Annulla", style: "cancel" }, { text: "Ricarica", onPress: () => router.push("/wallet") }]);
+      else if (m.includes("lf_insufficient")) Alert.alert(t("error"), "Borsellino LF insufficiente");
       else if (m.includes("invalid_code")) Alert.alert(t("otpInvalid"));
       else Alert.alert(t("error"));
     } finally { setBusy(false); }
@@ -67,6 +68,9 @@ export default function BabysittingDetail() {
         <View style={[styles.statusChip, r.stato === "annullata" && { backgroundColor: colors.error }]}><Text style={styles.statusText}>{STATE_LABEL[r.stato] || r.stato}</Text></View>
 
         {r.stato !== "annullata" ? <StatusTimeline stato={r.stato} paid={["settled", "released", "captured"].includes(r.pagamento_lavoro?.stato) || r.pagato === true} reviewed={!!r.recensione} /> : null}
+
+        {r.conferma_pending && isClient ? <ClientDeliveryQR refId={id as string} onReleased={load} /> : null}
+        {r.conferma_pending && isProvider ? <EarnerConfirm refId={id as string} onConfirmed={load} /> : null}
 
         <View style={[styles.card, shadow.card]}>
           <Text style={styles.cardH}>{cfg.durata_ore}h · {cfg.n_bambini} {cfg.n_bambini > 1 ? "bambini" : "bambino"}{r.urgente ? " · ⚡" : ""}</Text>
@@ -200,8 +204,8 @@ export default function BabysittingDetail() {
 
         {isClient && (r.stato === "pubblicata" || r.stato === "in_matching" || r.stato === "con_proposte") ? (
           <Button testID="cancel-req" label={t("cancel")} variant="secondary" onPress={() => act(() => api.bsCancelRichiesta(id), () => router.back())} style={{ marginTop: spacing.lg }} />) : null}
-        {isClient && r.provider_scelto && ["confermata", "in_corso", "completata"].includes(r.stato) ? (
-          <PaymentSection r={r} onDone={load} />) : null}
+        {isClient && r.provider_scelto && false ? (
+          <View />) : null}
       </ScrollView>
     </View>
   );

@@ -1,0 +1,34 @@
+{
+  "summary": "Wallet ESCROW at CONFIRM + 24h hold + QR consegna verificata — 7/8 pytest scenarios pass. FOUND one BUG: driver auto-confirm path (direct target + listino-price accept) skips we.hold, so client wallet is NOT blocked and the completed corsa releases €0 (escrow undefined). All other flows (pulizie QR-off/QR-on, insufficient_wallet 400, cancel refund, listino business order QR-off & QR-on, auto-release after past deadline) work end-to-end against live preview URL. Client wallet restored to seed (500 + 50 bonus) after run.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/driver/richieste/{rid}/propose (auto-confirm branch)", "issue": "When a client sends a DIRECT driver richiesta (target_provider_id) and the provider accepts at listino price, the code auto-confirms (stato=confermata) but NEVER calls wallet_escrow.hold(). Consequence: escrow sub-doc is not created, client wallet_balance/bonus are not decremented, and later /complete calls we.release_richiesta which returns 0 because escrow.stato != 'held'. Earner receives NOTHING. The regular POST /api/driver/richieste/{rid}/confirm path DOES call we.hold correctly. Fix: in routers/driver.py lines 464-476 (is_direct && !has_counter branch) call `await we.hold(r, prezzo, f\"Blocco garanzia corsa €{prezzo:.2f}\")` before the $set update (mirror the confirm() handler line 503).", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "req-prov-token session", "issue": "test_credentials.md advertises req-prov-token as the 'pulizie provider impresa' whose earnings should land in pending_balance + wallet_holds (24h). In reality req-prov-token → user_2f996c8a010a which has role='business' (same user as biz-test-token-999), so the escrow engine correctly credits wallet_balance IMMEDIATELY and creates no wallet_holds. Code is correct; test doc is misleading. Consider spinning a separate role='provider' impresa test user (e.g. lf-prov-token but with binario impresa listino, or a new one) if the doc's promise of provider-side 24h hold on impresa flow is required."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_wallet_escrow_e2e.py",
+    "/app/test_reports/pytest/iter46_wallet_escrow.xml"
+  ],
+  "action_items": [
+    "Fix driver auto-confirm escrow bug (routers/driver.py:464-476) — add `await we.hold(r, prezzo, label)` inside the is_direct && !has_counter branch so the client wallet is blocked and the earner is actually paid on complete. After fix, re-run backend/tests/test_wallet_escrow_e2e.py::TestDriverNccEscrow (should turn green).",
+    "Optional: seed a real role='provider' impresa pulizie test user so the '24h hold on provider' half of the impresa flow is exercised in QR-off pulizie tests (currently the impresa test user is role=business so we validate the business-immediate credit path — the provider-pending path is exercised by TestDriverNccEscrow through Giulia)."
+  ],
+  "critical_code_review_comments": [
+    "wallet_escrow.py is clean: bonus-first _deduct, atomic $inc, escrow sub-doc merges cleanly, refund/conguaglio/release_richiesta are idempotent (guarded by escrow.stato == 'held'). Good separation of business vs provider credit paths in credit_earner. HOLD_HOURS constant = 24 as spec'd.",
+    "confirm_delivery.py: arm/release flow correct, single delivery_confirmations collection reused for richieste+orders. auto_release_expired is invoked from GET /wallet AND GET /delivery/mine AND GET /delivery/status → good coverage of lazy-cron triggers.",
+    "routers/richieste.py:328-402 pulizie confirm+complete correctly wire we.hold + cd.arm_or_release_richiesta. Cancel path (line 254) also refunds held escrow. All good.",
+    "routers/listino.py business order path blocks funds at /order (not /confirm) as spec'd and uses arm_or_release_order at /complete. Cancel/decline refund the held amount. Verified 4 order scenarios pass.",
+    "BUG: routers/driver.py auto-confirm branch (direct+listino-accept, lines 464-476) inlines the confirm without calling we.hold — inconsistent with the explicit confirm() handler at line 503. The explicit confirm route was clearly the reference; auto-confirm was refactored/duplicated and lost the hold call."
+  ],
+  "updated_files": ["/app/backend/tests/test_wallet_escrow_e2e.py (new)"],
+  "success_rate": {"backend": "87.5% (7/8)", "frontend": "n/a (backend-only per request)"},
+  "seed_data_creation": "None persisted. Test creates and consumes pulizie richieste/driver richieste/business_requests; client wallet was reset to 500+50 bonus after each test and once more after the full run. delivery_confirmations for released tests are marked released. All ephemeral.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent patches routers/driver.py auto-confirm branch to call we.hold, simply rerun `pytest /app/backend/tests/test_wallet_escrow_e2e.py -v` — all 8 should pass. If a proper role='provider' impresa pulizie tester is added, extend TestPulizieEscrowQrOff to assert the provider-pending / wallet_holds path explicitly (branch already coded in the test — just needs the right token). Test preserves client wallet (500 + 50 bonus) and clears biz wallet after run; other users untouched.",
+  "rca_of_issue": "RCA — Driver auto-confirm escrow bug: routers/driver.py has TWO code paths that transition a driver richiesta to 'confermata'. Path A: POST /driver/richieste/{rid}/confirm (line 489) — calls we.hold(r, prop['prezzo'], ...) → escrow.stato='held'. Path B: POST /driver/richieste/{rid}/propose {accept:true} on a direct target (is_direct && !has_counter, line 464) — inlines the same $set update but WITHOUT calling we.hold. This is a copy-paste oversight introduced when auto-confirm was added: the author reproduced the stato/prezzo_finale/pagamento fields but not the hold. Reproduction: (1) client POST /driver/richieste {..., target_provider_id: prov_X}; (2) provider POST /driver/richieste/{rid}/propose {accept:true} at listino price → response includes {auto_confirmed:true}; (3) DB: richieste doc has stato='confermata' but no escrow field; client wallet unchanged; (4) provider POST /depart+/complete → arm_or_release_richiesta short-circuits because escrow.stato is undefined; earner receives nothing. Fix (one line): add `await we.hold(r, prezzo, f'Blocco garanzia corsa €{prezzo:.2f}')` before the $set in the auto-confirm branch, then optionally include the returned escrow in the update. Guarding: also add a defensive check in complete() to ensure escrow.stato=='held' before crediting, so a missing hold surfaces as a 400 rather than a silent no-op."
+}

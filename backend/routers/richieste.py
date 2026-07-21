@@ -14,6 +14,7 @@ from deps import get_current_user, require_admin
 from routers.notifications import push_notification
 import richieste_config as C
 import wallet_escrow as we
+import confirm_delivery as cd
 
 router = APIRouter()
 
@@ -257,6 +258,8 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="not_found")
     if r["stato"] in ("completata", "recensita"):
         raise HTTPException(status_code=400, detail="already_done")
+    if (r.get("escrow") or {}).get("stato") == "held":
+        await we.refund(r, "Rimborso pulizie")
     await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"stato": "annullata", "updated_at": now_utc().isoformat()}})
     return {"stato": "annullata"}
 
@@ -344,11 +347,14 @@ async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
         lf = {"nominale": nominale, "voucher": prop["breakdown"].get("lf_voucher"),
               "netto_lavoratrice": prop["breakdown"].get("lf_netto_lavoratrice"), "stato": "coperto"}
     bd = prop.get("breakdown", {})
+    if r["binario"] == "impresa":
+        # Blocca subito l'importo dal portafoglio del cliente (garanzia pagamento).
+        await we.hold(r, prop["price"], f"Blocco garanzia pulizie €{prop['price']:.2f}")
     upd = {
         "stato": "confermata", "provider_scelto": body.provider_id,
         "pagamento_fee": {"stato": "charged", "importo": bd.get("fee_client", bd.get("jobby_fee", 0)),
                           "jobby_fee_total": bd.get("jobby_fee", 0), "at": now_utc().isoformat()},
-        "pagamento_lavoro": ({"stato": "psp_pending", "importo": bd.get("provider_net", prop["price"]),
+        "pagamento_lavoro": ({"stato": "held", "importo": bd.get("provider_net", prop["price"]),
                               "fee_provider": bd.get("fee_provider", 0)} if r["binario"] == "impresa"
                              else {**lf, "stato": "lf"}),
         "prezzo_finale": prop["price"], "updated_at": now_utc().isoformat(),
@@ -387,6 +393,10 @@ async def complete(rid: str, user=Depends(get_current_user)):
             "ore": r["config"].get("durata_ore"), "generata_at": now_utc().isoformat(), "stato": "da_trasmettere",
         }
     await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"stato": "completata", "completed_at": now_utc().isoformat(), **extra, "updated_at": now_utc().isoformat()}})
+    if r["binario"] == "impresa":
+        r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+        net = float((r2.get("pagamento_lavoro") or {}).get("importo") or 0)
+        await cd.arm_or_release_richiesta(r2, net, "Compenso pulizie")
     await push_notification(r["cliente_id"], "richiesta_completata", "Servizio completato",
                             "Puoi lasciare una recensione.", "richiesta", rid)
     return {"stato": "completata", **extra}

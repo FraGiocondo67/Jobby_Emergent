@@ -87,6 +87,13 @@ export const api = {
   logout: () => request("/auth/logout", { method: "POST" }),
   switchRole: (role: string) => request("/profile/switch-role", { method: "POST", body: JSON.stringify({ role }) }),
   updateProfile: (data: any) => request("/profile", { method: "PUT", body: JSON.stringify(data) }),
+  setQrConfirm: (enabled: boolean) => request("/profile/qr-confirm", { method: "POST", body: JSON.stringify({ enabled }) }),
+  // consegna verificata (QR / codice)
+  deliveryRef: (refId: string) => request(`/delivery/ref/${refId}`),
+  deliveryMine: () => request("/delivery/mine"),
+  deliveryStatus: (refId: string) => request(`/delivery/status/${refId}`),
+  deliveryConfirmToken: (token: string) => request("/delivery/confirm", { method: "POST", body: JSON.stringify({ token }) }),
+  deliveryConfirmCode: (refId: string, code: string) => request("/delivery/confirm-code", { method: "POST", body: JSON.stringify({ ref_id: refId, code }) }),
   // onboarding
   completeOnboarding: (data: any) => request("/onboarding/complete", { method: "POST", body: JSON.stringify(data) }),
   onboardingStatus: () => request("/onboarding/status"),

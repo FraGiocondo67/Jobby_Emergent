@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -24,6 +24,14 @@ export default function ProfileTab() {
   const insets = useSafeAreaInsets();
   const [trust, setTrust] = useState<any>(null);
   const [unread, setUnread] = useState(0);
+  const [qrConfirm, setQrConfirm] = useState(!!user?.qr_confirm_enabled);
+
+  const toggleQrConfirm = async (v: boolean) => {
+    setQrConfirm(v);
+    Haptics.selectionAsync().catch(() => {});
+    try { await api.setQrConfirm(v); setUser({ ...(user as any), qr_confirm_enabled: v }); }
+    catch { setQrConfirm(!v); Alert.alert(t("error")); }
+  };
 
   const isProvider = user?.role === "provider" || user?.role === "business";
   const isProviderRole = user?.role === "provider";
@@ -182,6 +190,16 @@ export default function ProfileTab() {
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Pressable>
+
+        {/* Consegna verificata (QR/codice) — preferenza del cliente */}
+        <View testID="profile-qr-confirm" style={[styles.listRow, shadow.card]}>
+          <View style={[styles.rowIcon, { backgroundColor: colors.blueBg }]}><Ionicons name="qr-code" size={22} color={colors.brand} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>Conferma con QR</Text>
+            <Text style={styles.rowSub}>Il professionista dovrà scansionare il tuo QR (o codice) per liberare il pagamento.</Text>
+          </View>
+          <Switch testID="qr-confirm-toggle" value={qrConfirm} onValueChange={toggleQrConfirm} trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" />
+        </View>
 
         {/* Personal details */}
         <Pressable testID="profile-details" style={[styles.listRow, shadow.card]} onPress={() => router.push("/profile-details")}>

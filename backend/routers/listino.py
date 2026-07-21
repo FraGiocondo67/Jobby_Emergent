@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from core import db, now_utc, new_id
 from deps import get_current_user
 from routers.chat import open_thread
+import confirm_delivery as cd
 
 router = APIRouter()
 
@@ -235,14 +236,9 @@ async def order_complete(rid: str, user=Depends(get_current_user)):
     if o["status"] != "confirmed":
         raise HTTPException(status_code=400, detail="not_confirmed")
     total = round(float(o.get("held", 0)), 2)
-    await db.users.update_one({"user_id": o["business_id"]}, {"$inc": {"wallet_balance": total}})
-    await db.business_requests.update_one(
-        {"request_id": rid},
-        {"$set": {"status": "completed", "payment_status": "released", "updated_at": now_utc().isoformat()}})
-    await db.transactions.insert_one({
-        "tx_id": new_id("tx"), "user_id": o["business_id"], "type": "order_earning", "status": "done",
-        "amount": total, "label": f"Ordine {o.get('client_name', '')} €{total:.2f} (incassato)",
-        "request_id": rid, "created_at": now_utc().isoformat()})
+    res = await cd.arm_or_release_order(o, total, f"Ordine {o.get('client_name', '')} €{total:.2f} (incassato)")
+    if res.get("awaiting_confirmation"):
+        return {"status": "confirmed", "awaiting_confirmation": True, "deadline": res.get("deadline")}
     return {"status": "completed", "released": total}
 
 

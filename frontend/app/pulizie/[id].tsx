@@ -8,7 +8,7 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
-import PaymentSection from "@/src/components/PaymentSection";
+import { ClientDeliveryQR, EarnerConfirm } from "@/src/components/DeliveryConfirm";
 import StatusTimeline from "@/src/components/StatusTimeline";
 
 const STATE_META: Record<string, { color: string; bg: string }> = {
@@ -59,7 +59,12 @@ export default function RichiestaDetail() {
     }
     setBusy(true);
     try { await api.confirmRichiesta(id as string, pid); await load(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); }
-    catch (e: any) { if (String(e?.message).includes("lf_insufficient")) Alert.alert(t("lfInsufficient"), t("lfTopupNeeded")); else Alert.alert(t("error")); }
+    catch (e: any) {
+      const m = String(e?.message);
+      if (m.includes("lf_insufficient")) Alert.alert(t("lfInsufficient"), t("lfTopupNeeded"));
+      else if (m.includes("insufficient_wallet")) Alert.alert("Fondi insufficienti", "Ricarica il portafoglio per confermare: l'importo viene bloccato a garanzia.", [{ text: "Annulla", style: "cancel" }, { text: "Ricarica", onPress: () => router.push("/wallet") }]);
+      else Alert.alert(t("error"));
+    }
     finally { setBusy(false); }
   };
   const topup = async () => { setBusy(true); try { await api.lfTopup(100); setBors(await api.lfBorsellino()); Alert.alert(t("lfTopupDone")); } catch {} finally { setBusy(false); } };
@@ -101,6 +106,9 @@ export default function RichiestaDetail() {
         {isNew ? <View style={styles.okBanner}><Ionicons name="checkmark-circle" size={26} color={colors.success} /><Text style={styles.okText}>{t("requestPublished")}</Text></View> : null}
 
         {r.stato !== "annullata" ? <StatusTimeline stato={r.stato} paid={["settled", "released", "captured"].includes(r.pagamento_lavoro?.stato) || r.pagato === true} reviewed={!!r.recensione} /> : null}
+
+        {r.conferma_pending && isClient ? <ClientDeliveryQR refId={id as string} onReleased={load} /> : null}
+        {r.conferma_pending && !isClient ? <EarnerConfirm refId={id as string} onConfirmed={load} /> : null}
 
         <View style={[styles.card, shadow.card]}>
           <View style={styles.rowBetween}>
@@ -159,10 +167,7 @@ export default function RichiestaDetail() {
           </View>
         ) : null}
 
-        {/* Pagamento reale (Spec 3) — impresa/piva */}
-        {isClient && ["confermata", "in_corso", "completata"].includes(r.stato) ? (
-          <PaymentSection r={r} onDone={load} />
-        ) : null}
+        {/* Pagamento gestito via escrow-portafoglio (bloccato alla conferma). */}
 
         {/* Review */}
         {isClient && r.stato === "completata" ? (

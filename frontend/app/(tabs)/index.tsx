@@ -14,6 +14,7 @@ import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 import RealMap from "@/src/components/RealMap";
 import NotifBell from "@/src/components/NotifBell";
+import { EarnerConfirm } from "@/src/components/DeliveryConfirm";
 
 export default function HomeTab() {
   const { user } = useAuth();
@@ -100,55 +101,18 @@ function CustomerHome() {
         ) : null}
 
         <View style={styles.body}>
-          {home.state === "recurring" && (home.relationships || []).length ? (
-            <>
-              {(home.relationships || []).map((rel: any) => {
-                const initials = (rel.nome || "?").trim().charAt(0).toUpperCase();
-                const goDetail = () => rel.problem_richiesta_id || rel.next_richiesta_id || rel.last_richiesta_id
-                  ? router.push(`/pulizie/${rel.problem_richiesta_id || rel.next_richiesta_id || rel.last_richiesta_id}` as any) : null;
-                return (
-                  <View key={rel.provider_id} style={[styles.relCard, shadow.card]}>
-                    {rel.problem ? (
-                      <Pressable testID={`rel-problem-${rel.provider_id}`} style={styles.problemBanner} onPress={goDetail}>
-                        <Ionicons name="alert-circle" size={16} color={colors.warning} />
-                        <Text style={styles.problemTxt}>{rel.problem_kind === "scelta_proposta" ? t("relProblemChoose") : t("relProblemPay")}</Text>
-                        <Text style={styles.problemResolve}>{t("relResolve")} →</Text>
-                      </Pressable>
-                    ) : null}
-                    <View style={styles.relTop}>
-                      <View style={styles.relAvatar}><Text style={styles.relAvatarTxt}>{initials}</Text></View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.relName} numberOfLines={1}>{rel.nome}</Text>
-                        <Text style={styles.relNext}>{rel.next_visit ? `${t("relNext")}: ${rel.next_visit}` : t("relNoNext")}</Text>
-                        {rel.visits_count ? <Text style={styles.relMeta}>{rel.visits_count} {t("relVisits")}</Text> : null}
-                      </View>
-                    </View>
-                    <View style={styles.relActions}>
-                      <Pressable testID={`rel-rebook-${rel.provider_id}`} style={styles.relBtn} onPress={() => router.push("/pulizie/configura")}><Ionicons name="repeat" size={16} color={colors.brand} /><Text style={styles.relBtnTxt}>{t("relRebook")}</Text></Pressable>
-                      <Pressable testID={`rel-move-${rel.provider_id}`} style={styles.relBtn} onPress={goDetail}><Ionicons name="calendar" size={16} color={colors.brand} /><Text style={styles.relBtnTxt}>{t("relReschedule")}</Text></Pressable>
-                      <Pressable testID={`rel-msg-${rel.provider_id}`} style={styles.relBtn} onPress={() => router.push(`/chat?peer=${rel.provider_id}` as any)}><Ionicons name="chatbubble-ellipses" size={16} color={colors.brand} /><Text style={styles.relBtnTxt}>{t("relMessage")}</Text></Pressable>
-                    </View>
-                  </View>
-                );
-              })}
-              <Text style={styles.sectionTitle}>{t("otherServices")}</Text>
-            </>
-          ) : (
-            <>
-              <View style={styles.heroCard}>
-                <Text style={styles.heroPromise}>{t("homePromise")}</Text>
-              </View>
-              <Pressable testID="pulizie-entry" style={[styles.entryCard, shadow.card]} onPress={() => router.push("/pulizie/configura")}>
-                <Text style={{ fontSize: 34 }}>🧽</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.entryTitle}>{t("homePulizieEntry")}</Text>
-                  <Text style={styles.entrySub}>{t("homePulizieSub")}</Text>
-                </View>
-                <Ionicons name="arrow-forward-circle" size={30} color={colors.brand} />
-              </Pressable>
-              <Text style={styles.sectionTitle}>{t("otherServices")}</Text>
-            </>
-          )}
+          <View style={styles.heroCard}>
+            <Text style={styles.heroPromise}>{t("homePromise")}</Text>
+          </View>
+          <Pressable testID="pulizie-entry" style={[styles.entryCard, shadow.card]} onPress={() => router.push("/pulizie/configura")}>
+            <Text style={{ fontSize: 34 }}>🧽</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.entryTitle}>{t("homePulizieEntry")}</Text>
+              <Text style={styles.entrySub}>{t("homePulizieSub")}</Text>
+            </View>
+            <Ionicons name="arrow-forward-circle" size={30} color={colors.brand} />
+          </Pressable>
+          <Text style={styles.sectionTitle}>{t("otherServices")}</Text>
 
           <Pressable testID="explore-map" style={[styles.mapCard, shadow.card]} onPress={() => router.push("/map")}>
             <View style={styles.mapIcon}><Ionicons name="map" size={26} color={colors.blue} /></View>
@@ -446,6 +410,8 @@ function BusinessHome() {
                   <Button testID={`breq-decline-${r.request_id}`} label={t("decline")} variant="secondary" onPress={() => decline(r)} style={{ flex: 1, height: 46 }} />
                   <Button testID={`breq-accept-${r.request_id}`} label={t("acceptConfirm")} onPress={() => openRespond(r)} style={{ flex: 1, height: 46 }} />
                 </View>
+              ) : r.status === "confirmed" && r.order && r.conferma_pending ? (
+                <EarnerConfirm refId={r.request_id} onConfirmed={load} />
               ) : r.status === "confirmed" && r.order ? (
                 <Button testID={`order-complete-${r.request_id}`} label={t("markDelivered")} onPress={() => completeOrd(r)} style={{ marginTop: spacing.md, height: 46 }} />
               ) : r.status === "confirmed" && r.response ? (

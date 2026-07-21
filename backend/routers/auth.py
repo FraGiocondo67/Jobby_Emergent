@@ -6,6 +6,7 @@ import bcrypt
 import jwt
 from jwt import PyJWKClient
 from fastapi import APIRouter, Header, HTTPException, Depends
+from pydantic import BaseModel
 
 from core import db, now_utc, new_id, TREVISO, EMERGENT_SESSION_URL
 from deps import get_current_user
@@ -189,6 +190,20 @@ async def update_profile(body: ProfileUpdate, user=Depends(get_current_user)):
     if "role" in update:
         await recalc_provider_trust(user["user_id"])
     return await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+
+
+class QrPrefIn(BaseModel):
+    enabled: bool
+
+
+@router.post("/profile/qr-confirm")
+async def set_qr_confirm(body: QrPrefIn, user=Depends(get_current_user)):
+    """Client preference: require a QR/6-digit confirmation from the earner before the
+    escrow payment is released (extra 'consegna verificata' guarantee)."""
+    await db.users.update_one({"user_id": user["user_id"]},
+                              {"$set": {"qr_confirm_enabled": bool(body.enabled)}})
+    return {"qr_confirm_enabled": bool(body.enabled)}
+
 
 
 @router.post("/verification/start")

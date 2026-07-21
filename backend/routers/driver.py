@@ -19,6 +19,8 @@ from core import db, now_utc, new_id, haversine
 from deps import get_current_user, require_admin
 from routers.notifications import push_notification
 import driver_config as D
+import wallet_escrow as we
+import confirm_delivery as cd
 
 router = APIRouter()
 
@@ -370,6 +372,16 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="already_closed")
     prezzo = float(r.get("prezzo_finale", 0))
     outcome = _cancellation_outcome(_parse(r.get("pickup_at", "")), prezzo)
+    # Escrow: rilascia la penale al driver (se dovuta) e rimborsa il resto al cliente.
+    if (r.get("escrow") or {}).get("stato") == "held":
+        charge = round(float(outcome.get("charge", 0)), 2)
+        if charge > 0 and r.get("provider_scelto"):
+            await we.conguaglio(r, charge)
+            r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+            feev = await fee_pct()
+            await we.release_richiesta(r, round(charge * (1 - feev / 100.0), 2), "Penale cancellazione")
+        else:
+            await we.refund(r, "Rimborso corsa annullata")
     upd = {"stato": "annullata", "cancellazione": outcome, "updated_at": now_utc().isoformat()}
     if r.get("provider_scelto") and outcome["charge"] > 0:
         await push_notification(r["provider_scelto"], "driver_annullata", "Corsa annullata",
@@ -487,6 +499,8 @@ async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
     is_taxi = r["config"]["tipo"] == "taxi"
     fee = await fee_pct()
     jobby_fee = round(prop["prezzo"] * fee / 100.0, 2)
+    # Blocca subito l'importo (stima per il taxi) dal portafoglio del cliente.
+    await we.hold(r, prop["prezzo"], f"Blocco garanzia corsa €{prop['prezzo']:.2f}")
     upd = {"stato": "confermata", "provider_scelto": body.provider_id, "prezzo_finale": prop["prezzo"],
            "jobby_fee": jobby_fee,
            "pagamento": {"stato": "meter_pending" if is_taxi else "prepaid",
@@ -565,6 +579,11 @@ async def approve_extra(rid: str, body: ExtraApprove, user=Depends(get_current_u
     if not r or r["cliente_id"] != user["user_id"]:
         raise HTTPException(status_code=404, detail="not_found")
     st = "approved" if body.approve else "rejected"
+    if body.approve:
+        ex = next((e for e in r.get("extra", []) if e.get("extra_id") == body.extra_id), None)
+        if ex and ex.get("stato") == "pending":
+            # Blocca l'importo extra dal portafoglio del cliente (garanzia).
+            await we.hold(r, float(ex.get("importo", 0)), f"Extra corsa €{float(ex.get('importo', 0)):.2f}")
     await db.richieste.update_one({"richiesta_id": rid, "extra.extra_id": body.extra_id},
                                   {"$set": {"extra.$.stato": st}})
     return {"extra_id": body.extra_id, "stato": st}
@@ -581,6 +600,12 @@ async def noshow(rid: str, user=Depends(get_current_user)):
                                   {"$set": {"stato": "completata", "no_show": True,
                                             "importo_dovuto": r.get("prezzo_finale", 0),
                                             "completed_at": now_utc().isoformat(), "updated_at": now_utc().isoformat()}})
+    # No-show: la corsa è dovuta per intero → rilascio diretto al driver (niente QR: cliente assente).
+    feev = await fee_pct()
+    r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+    held = float((r2.get("escrow") or {}).get("held", 0))
+    if held > 0:
+        await we.release_richiesta(r2, round(held * (1 - feev / 100.0), 2), "No-show corsa")
     await push_notification(r["cliente_id"], "driver_noshow", "Mancata presentazione",
                             "La corsa è dovuta per intero.", "driver", rid)
     return {"stato": "completata", "no_show": True}
@@ -603,19 +628,25 @@ async def complete(rid: str, body: CompleteIn, user=Depends(get_current_user)):
         if body.meter_amount is None:
             raise HTTPException(status_code=400, detail="meter_amount_required")
         totale = round(float(body.meter_amount) + extras, 2)
-        pay_stato = "meter_to_settle"
     else:
         totale = round(float(r.get("prezzo_finale", 0)) + extras, 2)
-        pay_stato = "settled"
     await db.richieste.update_one({"richiesta_id": rid},
                                   {"$set": {"stato": "completata", "importo_totale": totale, "extra_totale": extras,
-                                            "pagamento.stato": pay_stato, "completed_at": now_utc().isoformat(),
+                                            "pagamento.stato": "settled", "completed_at": now_utc().isoformat(),
                                             "updated_at": now_utc().isoformat()}})
     await push_notification(r["cliente_id"], "driver_completata", "Corsa completata",
-                            (f"Importo tassametro: €{totale:.2f}. Salda in app." if is_taxi else "Grazie! Lascia una recensione."),
+                            (f"Importo tassametro: €{totale:.2f}." if is_taxi else "Grazie! Lascia una recensione."),
                             "driver", rid)
-    if not is_taxi:
-        await _credit_provider(rid, user["user_id"], totale)
+    # Conguaglio (taxi) + rilascio/arma conferma verso il driver.
+    feev = await fee_pct()
+    r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+    if is_taxi:
+        collectable = await we.conguaglio(r2, totale)
+        r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+    else:
+        collectable = float((r2.get("escrow") or {}).get("held", totale))
+    net = round(collectable * (1 - feev / 100.0), 2)
+    await cd.arm_or_release_richiesta(r2, net, "Compenso corsa")
     return {"stato": "completata", "importo_totale": totale}
 
 

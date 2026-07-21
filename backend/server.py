@@ -15,6 +15,7 @@ from routers import payments_split
 from routers import admin_auth
 from routers import listino
 from routers import geo
+import confirm_delivery
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ api.include_router(payments_split.router)
 api.include_router(admin_auth.router)
 api.include_router(listino.router)
 api.include_router(geo.router)
+api.include_router(confirm_delivery.router)
 api.include_router(provider_onboarding.router)
 api.include_router(catalog_routes.router)
 api.include_router(missions.router)

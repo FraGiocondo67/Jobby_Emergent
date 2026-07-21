@@ -7,6 +7,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
+import { ClientDeliveryQR } from "@/src/components/DeliveryConfirm";
 
 export default function RichiesteTab() {
   const { user } = useAuth();
@@ -220,6 +221,7 @@ function CustomerRequests() {
           </Pressable>
         </>
       ) : null}
+      {r.conferma_pending ? <ClientDeliveryQR refId={r.request_id} /> : null}
     </View>
   );
 

@@ -7,7 +7,7 @@ import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
-import PaymentSection from "@/src/components/PaymentSection";
+import { ClientDeliveryQR, EarnerConfirm } from "@/src/components/DeliveryConfirm";
 import StatusTimeline from "@/src/components/StatusTimeline";
 
 const STATE_LABEL: Record<string, string> = {
@@ -43,7 +43,9 @@ export default function ArtigianiDetail() {
   const act = async (fn: () => Promise<any>, after?: () => void) => {
     setBusy(true);
     try { await fn(); await load(); after?.(); } catch (e: any) {
-      Alert.alert(t("error"), String(e?.message || "").includes("expired") ? t("artQuoteExpired") : "");
+      const m = String(e?.message || "");
+      if (m.includes("insufficient_wallet")) Alert.alert("Fondi insufficienti", "Ricarica il portafoglio per confermare: l'importo viene bloccato a garanzia.", [{ text: "Annulla", style: "cancel" }, { text: "Ricarica", onPress: () => router.push("/wallet") }]);
+      else Alert.alert(t("error"), m.includes("expired") ? t("artQuoteExpired") : "");
     } finally { setBusy(false); }
   };
 
@@ -76,6 +78,9 @@ export default function ArtigianiDetail() {
         <View style={[styles.statusChip, r.stato === "annullata" && { backgroundColor: colors.error }]}><Text style={styles.statusText}>{STATE_LABEL[r.stato] || r.stato}</Text></View>
 
         {r.stato !== "annullata" ? <StatusTimeline stato={r.stato} paid={["settled", "released", "captured"].includes(r.pagamento_lavoro?.stato) || r.pagato === true} reviewed={!!r.recensione} /> : null}
+
+        {r.conferma_pending && isClient ? <ClientDeliveryQR refId={id as string} onReleased={load} /> : null}
+        {r.conferma_pending && isProvider ? <EarnerConfirm refId={id as string} onConfirmed={load} /> : null}
 
         <View style={[styles.card, shadow.card]}>
           <Text style={styles.cardH}>{cfg.mestiere}{cfg.urgente ? " · ⚡" : ""}</Text>
@@ -188,8 +193,8 @@ export default function ArtigianiDetail() {
 
         {isClient && (r.stato === "pubblicata" || r.stato === "in_matching" || r.stato === "con_proposte") ? (
           <Button testID="art-cancel" label={t("cancel")} variant="secondary" onPress={() => act(() => api.artCancelRichiesta(id), () => router.back())} style={{ marginTop: spacing.lg }} />) : null}
-        {isClient && r.provider_scelto && ["confermata", "in_corso", "completata"].includes(r.stato) ? (
-          <PaymentSection r={r} onDone={load} />) : null}
+        {isClient && r.provider_scelto && false ? (
+          <View />) : null}
       </ScrollView>
     </View>
   );

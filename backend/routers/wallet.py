@@ -12,6 +12,8 @@ ALLOWED_TOKENS = {"USDT_TRC", "USDT_ETH", "USDC_ETH", "XRP", "BTC"}
 
 @router.get("/wallet")
 async def get_wallet(user=Depends(get_current_user)):
+    from confirm_delivery import auto_release_expired
+    await auto_release_expired()
     await mature_holds(user["user_id"])
     u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
     txs = await db.transactions.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)

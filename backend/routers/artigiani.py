@@ -15,6 +15,8 @@ from core import db, now_utc, new_id, haversine
 from deps import get_current_user, require_admin
 from routers.notifications import push_notification
 import artigiani_config as A
+import wallet_escrow as we
+import confirm_delivery as cd
 
 router = APIRouter()
 
@@ -276,6 +278,8 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="not_found")
     if r["stato"] in ("completata", "recensita", "annullata"):
         raise HTTPException(status_code=400, detail="already_closed")
+    if (r.get("escrow") or {}).get("stato") == "held":
+        await we.refund(r, "Rimborso artigiani")
     await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"stato": "annullata", "updated_at": now_utc().isoformat()}})
     return {"stato": "annullata"}
 
@@ -370,6 +374,8 @@ async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
     is_diagnosi = r["config"]["modalita"] == "diagnosi"
     fee = await fee_pct()
     jobby_fee = round(prop["prezzo"] * fee / 100.0, 2)
+    # Blocca subito l'importo (diritto di chiamata o prezzo paniere) dal wallet del cliente.
+    await we.hold(r, prop["prezzo"], f"Blocco garanzia artigiani €{prop['prezzo']:.2f}")
     upd = {"stato": "confermata", "provider_scelto": body.provider_id, "prezzo_iniziale": prop["prezzo"],
            "chiamata_fee": prop["prezzo"] if is_diagnosi else 0, "chiamata_pagata": True,
            "jobby_fee": jobby_fee,
@@ -418,6 +424,10 @@ async def compose_preventivo(rid: str, body: PreventivoIn, user=Depends(get_curr
                                                 "completed_at": now_utc().isoformat(), "updated_at": now_utc().isoformat()}})
         await push_notification(r["cliente_id"], "artigiani_chiuso", "Intervento chiuso",
                                 f"Esito: {next(e['it'] for e in A.ESITI if e['id']==body.esito)}", "artigiani", rid)
+        r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+        feev = await fee_pct()
+        held = float((r2.get("escrow") or {}).get("held", r.get("chiamata_fee", 0)))
+        await cd.arm_or_release_richiesta(r2, round(held * (1 - feev / 100.0), 2), "Compenso artigiani")
         return {"stato": "completata", "esito": body.esito}
     totale = round(sum(v.qta * v.prezzo_unit for v in body.voci), 2)
     scomputo = float(r.get("chiamata_fee", 0)) if body.scomputo_chiamata else 0.0
@@ -448,6 +458,8 @@ async def accept_preventivo(rid: str, user=Depends(get_current_user)):
     if _parse(prev.get("scade_at", "")) and now_utc() > _parse(prev["scade_at"]):
         await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"preventivo.stato": "scaduto"}})
         raise HTTPException(status_code=400, detail="quote_expired")
+    # Blocca subito l'importo del lavoro dal wallet del cliente.
+    await we.hold(r, float(prev.get("da_pagare", 0)), f"Blocco lavoro artigiani €{float(prev.get('da_pagare', 0)):.2f}")
     await db.richieste.update_one({"richiesta_id": rid},
                                   {"$set": {"preventivo.stato": "accettato", "stato": "in_corso",
                                             "pagamento.stato": "lavoro_pagato", "pagamento.lavoro": prev["da_pagare"],
@@ -469,6 +481,10 @@ async def reject_preventivo(rid: str, user=Depends(get_current_user)):
                                   {"$set": {"preventivo.stato": "rifiutato", "stato": "completata",
                                             "importo_totale": r.get("chiamata_fee", 0), "esito": "preventivo_rifiutato",
                                             "completed_at": now_utc().isoformat(), "updated_at": now_utc().isoformat()}})
+    r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+    feev = await fee_pct()
+    held = float((r2.get("escrow") or {}).get("held", r.get("chiamata_fee", 0)))
+    await cd.arm_or_release_richiesta(r2, round(held * (1 - feev / 100.0), 2), "Diritto di chiamata")
     return {"stato": "completata", "preventivo": "rifiutato"}
 
 
@@ -503,6 +519,10 @@ async def approve_extra(rid: str, body: ExtraApprove, user=Depends(get_current_u
     r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
     if not r or r["cliente_id"] != user["user_id"]:
         raise HTTPException(status_code=404, detail="not_found")
+    if body.approve:
+        ex = next((e for e in r.get("extra", []) if e.get("extra_id") == body.extra_id), None)
+        if ex and ex.get("stato") == "pending":
+            await we.hold(r, float(ex.get("importo", 0)), f"Extra artigiani €{float(ex.get('importo', 0)):.2f}")
     await db.richieste.update_one({"richiesta_id": rid, "extra.extra_id": body.extra_id},
                                   {"$set": {"extra.$.stato": "approved" if body.approve else "rejected"}})
     return {"extra_id": body.extra_id, "stato": "approved" if body.approve else "rejected"}
@@ -537,6 +557,10 @@ async def complete(rid: str, body: CloseIn, user=Depends(get_current_user)):
             "created_at": now_utc().isoformat()})
     await push_notification(r["cliente_id"], "artigiani_completata", "Intervento completato",
                             f"Totale €{totale:.2f}. Garanzia 30 giorni attiva. Lascia una recensione.", "artigiani", rid)
+    r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+    feev = await fee_pct()
+    held = float((r2.get("escrow") or {}).get("held", totale))
+    await cd.arm_or_release_richiesta(r2, round(held * (1 - feev / 100.0), 2), "Compenso artigiani")
     return {"stato": "completata", "importo_totale": totale}
 
 

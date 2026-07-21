@@ -19,6 +19,8 @@ from deps import get_current_user, require_admin
 from routers.notifications import push_notification
 import babysitting_config as B
 from richieste_config import lf_round_nominale
+import wallet_escrow as we
+import confirm_delivery as cd
 
 router = APIRouter()
 
@@ -415,6 +417,8 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="not_found")
     if r["stato"] in ("completata", "recensita"):
         raise HTTPException(status_code=400, detail="already_done")
+    if (r.get("escrow") or {}).get("stato") == "held":
+        await we.refund(r, "Rimborso babysitting")
     await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"stato": "annullata", "updated_at": now_utc().isoformat()}})
     return {"stato": "annullata"}
 
@@ -517,10 +521,13 @@ async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
     upd = {
         "stato": "confermata", "provider_scelto": body.provider_id,
         "pagamento_fee": {"stato": "charged", "importo": prop["breakdown"]["jobby_fee"], "at": now_utc().isoformat()},
-        "pagamento_lavoro": ({"stato": "psp_pending", "importo": prop["price"]} if r["binario"] != "persona_lf"
+        "pagamento_lavoro": ({"stato": "held", "importo": prop["price"]} if r["binario"] != "persona_lf"
                              else {**lf, "stato": "lf"}),
         "prezzo_finale": prop["price"], "updated_at": now_utc().isoformat(),
     }
+    if r["binario"] != "persona_lf":
+        # Blocca subito l'importo stimato dal wallet del cliente.
+        await we.hold(r, prop["price"], f"Blocco garanzia babysitting €{prop['price']:.2f}")
     await db.richieste.update_one({"richiesta_id": rid}, {"$set": upd})
     await push_notification(body.provider_id, "babysitting_confermata", "Sei stata scelta!",
                             "Una famiglia ti ha scelto. Organizza l'incontro conoscitivo.", "babysitting", rid)
@@ -567,6 +574,8 @@ async def cancel_after_incontro(rid: str, user=Depends(get_current_user)):
                                   {"$inc": {"lf_borsellino": impegno, "lf_year_total": -nominale,
                                             "lf_year_hours": -float(r["config"].get("durata_ore", 0))}})
         refund = {"lf_restituito": impegno}
+    elif (r.get("escrow") or {}).get("stato") == "held":
+        await we.refund(r, "Garanzia primo incontro")
     fee = float((r.get("pagamento_fee") or {}).get("importo", 0))
     await db.richieste.update_one({"richiesta_id": rid},
                                   {"$set": {"stato": "annullata", "garanzia_incontro": True,
@@ -638,6 +647,13 @@ async def _finalize_fine(r: dict, auto: bool) -> dict:
     await db.richieste.update_one({"richiesta_id": rid}, {"$set": upd})
     await push_notification(r["cliente_id"], "babysitting_completata", "Servizio completato",
                             f"Ore certificate: {billable}h. Puoi lasciare una recensione.", "babysitting", rid)
+    if r["binario"] != "persona_lf":
+        final_gross = round(float(r.get("prezzo_finale", 0)) + extra_amount, 2)
+        r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+        collectable = await we.conguaglio(r2, final_gross)
+        r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
+        feev = await fee_pct()
+        await cd.arm_or_release_richiesta(r2, round(collectable * (1 - feev / 100.0), 2), "Compenso babysitting")
     r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
     return r
 

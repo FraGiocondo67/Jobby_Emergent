@@ -8,7 +8,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
-import PaymentSection from "@/src/components/PaymentSection";
+import { ClientDeliveryQR, EarnerConfirm } from "@/src/components/DeliveryConfirm";
 import StatusTimeline from "@/src/components/StatusTimeline";
 
 const STATE_LABEL: Record<string, string> = {
@@ -42,7 +42,8 @@ export default function DriverDetail() {
     setBusy(true);
     try { await fn(); await load(); after?.(); } catch (e: any) {
       const m = String(e?.message || "");
-      Alert.alert(t("error"), m.includes("ritocco") ? "Motivazione richiesta per aumentare il prezzo" : "");
+      if (m.includes("insufficient_wallet")) Alert.alert("Fondi insufficienti", "Ricarica il portafoglio per confermare: l'importo viene bloccato a garanzia.", [{ text: "Annulla", style: "cancel" }, { text: "Ricarica", onPress: () => router.push("/wallet") }]);
+      else Alert.alert(t("error"), m.includes("ritocco") ? "Motivazione richiesta per aumentare il prezzo" : "");
     } finally { setBusy(false); }
   };
 
@@ -65,6 +66,9 @@ export default function DriverDetail() {
         <View style={[styles.statusChip, r.stato === "annullata" && { backgroundColor: colors.error }]}><Text style={styles.statusText}>{STATE_LABEL[r.stato] || r.stato}</Text></View>
 
         {r.stato !== "annullata" ? <StatusTimeline stato={r.stato} paid={r.pagamento?.stato === "settled" || r.pagamento?.stato === "paid" || (r.stato !== "completata" && r.provider_scelto && !isTaxi)} reviewed={!!r.recensione} /> : null}
+
+        {r.conferma_pending && isClient ? <ClientDeliveryQR refId={id as string} onReleased={load} /> : null}
+        {r.conferma_pending && isProvider ? <EarnerConfirm refId={id as string} onConfirmed={load} /> : null}
 
         <View style={[styles.card, shadow.card]}>
           <Text style={styles.route}>📍 {r.partenza?.label}</Text>
@@ -219,8 +223,8 @@ export default function DriverDetail() {
         {isClient && (r.stato === "pubblicata" || r.stato === "in_matching" || r.stato === "con_proposte" || r.stato === "confermata") ? (
           <Button testID="drv-cancel" label={t("cancel")} variant="secondary" onPress={() => act(() => api.drvCancelRichiesta(id), () => router.back())} style={{ marginTop: spacing.lg }} />) : null}
         <Text style={styles.cancelNote}>ℹ️ {t("drvCancelRules")}</Text>
-        {isClient && r.provider_scelto && ["confermata", "in_corso", "completata"].includes(r.stato) ? (
-          <PaymentSection r={r} onDone={load} />) : null}
+        {isClient && r.provider_scelto && false ? (
+          <View />) : null}
       </ScrollView>
     </View>
   );
