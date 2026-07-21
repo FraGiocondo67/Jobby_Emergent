@@ -13,6 +13,7 @@ from core import db, now_utc, new_id, haversine
 from deps import get_current_user, require_admin
 from routers.notifications import push_notification
 import richieste_config as C
+import wallet_escrow as we
 
 router = APIRouter()
 
