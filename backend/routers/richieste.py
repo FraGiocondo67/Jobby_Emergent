@@ -46,6 +46,7 @@ from pydantic import BaseModel
 
 import lf_pg as LF
 import richieste_config as C
+import spec4_pg as S4
 import stripe_pg as SP
 from core_pg import db, now_iso, now_utc, notify, record_trust_event, to_geography_point, parse_scheduled_at
 from deps_pg import get_current_user, require_admin
@@ -344,30 +345,22 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="already_done")
 
     binario = brief.get("binario", "impresa")
+    settlement = None
     if brief.get("stato") in ("confermata", "in_corso"):
+        # BLOCCO 5 (spec4_pg.py): rimborso a scaglioni per ore-al-servizio al
+        # posto del rimborso 100% incondizionato — stesso endpoint, stessa
+        # missione, vedi routers/spec4.py per il resto (preview cancel-policy,
+        # punteggio privato cliente).
         pagamento = brief.get("pagamento_lavoro") or {}
-        if binario == "impresa" and pagamento.get("stato") == "held":
-            refund = SP.refund_payment_intent(pagamento["payment_intent_id"])
-            db.rpc("refund_escrow", {
-                "p_mission_id": rid, "p_reason": "cancellazione_cliente",
-                "p_gateway_transaction_id": refund["refund_id"],
-                "p_gateway_response": {}, "p_gateway_name": "stripe",
-            }).execute()
-            pagamento["stato"] = "refunded"
-            pagamento["refund_id"] = refund["refund_id"]
-            brief["pagamento_lavoro"] = pagamento
-        elif binario == "persona_lf" and pagamento.get("stato") == "lf_registrato":
-            provider_id = brief.get("provider_scelto")
-            if provider_id:
-                LF.record_usage(row["client_id"], provider_id,
-                                -float(pagamento.get("lf_nominale") or 0),
-                                -float(pagamento.get("lf_ore") or 0))
-            pagamento["stato"] = "annullato"
-            brief["pagamento_lavoro"] = pagamento
+        settlement = S4.apply_banded_cancellation(row, binario, pagamento)
+        pagamento.update(settlement["pagamento_updates"])
+        brief["pagamento_lavoro"] = pagamento
+        if settlement["strike"]:
+            S4.record_strike_if_late(row["client_id"], rid, settlement["tier"], S4.spec4_config())
 
     brief["stato"] = "annullata"
     db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
-    return {"stato": "annullata"}
+    return {"stato": "annullata", "settlement": settlement}
 
 
 # ---------------- provider side ----------------

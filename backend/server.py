@@ -8,7 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 from core import db, client, now_utc, new_id, MONGO_CONFIGURED
 from catalog import seed_categories, BOT_PROVIDERS
 from trust import recalc_provider_trust
-from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, richieste, provider_onboarding, babysitting, driver, artigiani
+from routers import auth, catalog_routes, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, richieste, provider_onboarding, babysitting, driver, artigiani
 from routers import dashboard
 from routers import spec4
 from routers import admin_auth
@@ -42,8 +42,13 @@ api.include_router(geo.router)
 api.include_router(confirm_delivery.router)
 api.include_router(provider_onboarding.router)
 api.include_router(catalog_routes.router)
-api.include_router(missions.router)
-api.include_router(bookings.router)
+# missions.py/bookings.py (motore di matching generico pre-Blocco2, con
+# provider "bot" simulati) RITIRATI nel Blocco 5 — decisione esplicita
+# dell'utente: le 4 verticali (Pulizie/Artigiani/Babysitting/Driver, Blocco
+# 2-4) coprono già gli stessi casi d'uso con flussi dedicati più ricchi e un
+# vero escrow Stripe Connect; questo motore generico sarebbe rimasto
+# duplicato e mai aggiornato. I file restano nel repo per riferimento
+# storico ma non sono più importati né esposti — vedi il loro docstring.
 api.include_router(wallet.router)
 api.include_router(chat.router)
 api.include_router(business.router)

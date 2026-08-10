@@ -1,3 +1,14 @@
+"""RITIRATO nel Blocco 5 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py. Questo era il motore di matching generico
+cross-categoria (con provider "bot" simulati, vedi simulate_accept()) usato
+PRIMA che le 4 verticali dedicate (Pulizie/Artigiani/Babysitting/Driver,
+Blocco 2-4, su Postgres con vero escrow Stripe Connect) esistessero.
+Decisione esplicita dell'utente: non riscriverlo su Postgres — duplicherebbe
+gli stessi casi d'uso con un modello più povero e mai aggiornato. File
+lasciato nel repo solo come riferimento storico (Mongo, non funzionante
+senza MONGO_URL). Se l'app Expo ha ancora schermate che chiamano queste
+route (/missions, /providers/nearby, ecc.), vanno ripuntate sulle 4
+verticali."""
 import random
 import asyncio
 from typing import Optional

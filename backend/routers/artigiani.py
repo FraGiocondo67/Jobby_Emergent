@@ -68,6 +68,7 @@ from pydantic import BaseModel
 
 import artigiani_config as A
 import lf_pg as LF
+import spec4_pg as S4
 import stripe_pg as SP
 # Costanti di massimale Libretto Famiglia (soglie legali INPS, non specifiche
 # di dominio): definite una sola volta in richieste_config.py (prima
@@ -458,32 +459,22 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="already_closed")
 
     binario = brief.get("binario", "impresa")
+    settlement = None
     if brief.get("stato") in ("confermata", "preventivo_inviato", "in_corso"):
+        # BLOCCO 5 (spec4_pg.py): rimborso a scaglioni per ore-al-servizio al
+        # posto del rimborso 100% incondizionato — spec4_pg gestisce anche il
+        # caso multi-hold (chiamata/preventivo/extra), distribuendo il
+        # rimborso proporzionalmente su ciascun PaymentIntent.
         pagamento = brief.get("pagamento") or {}
-        if binario == "impresa" and pagamento.get("stato") == "held" and pagamento.get("holds"):
-            # Ogni fase (chiamata/preventivo/extra) è un PaymentIntent Stripe
-            # separato e va rimborsata singolarmente; refund_escrow invece
-            # marca in UN colpo solo tutte le righe payments di tipo
-            # escrow_hold della missione come 'refunded' (stessa logica non
-            # per-riga di release_escrow, vedi commento in _finalize_release)
-            # — va quindi chiamata una sola volta dopo tutti i refund Stripe.
-            refund_ids = [SP.refund_payment_intent(h["payment_intent_id"])["refund_id"] for h in pagamento["holds"]]
-            db.rpc("refund_escrow", {
-                "p_mission_id": rid, "p_reason": "cancellazione_cliente",
-                "p_gateway_transaction_id": refund_ids[-1],
-                "p_gateway_response": {"refund_ids": refund_ids}, "p_gateway_name": "stripe",
-            }).execute()
-            pagamento["stato"] = "refunded"
-            brief["pagamento"] = pagamento
-        elif binario == "persona_lf" and pagamento.get("stato") == "lf_registrato" and brief.get("provider_scelto"):
-            LF.record_usage(row["client_id"], brief["provider_scelto"],
-                            -float(pagamento.get("totale_bloccato") or 0), 0.0)
-            pagamento["stato"] = "annullato"
-            brief["pagamento"] = pagamento
+        settlement = S4.apply_banded_cancellation(row, binario, pagamento)
+        pagamento.update(settlement["pagamento_updates"])
+        brief["pagamento"] = pagamento
+        if settlement["strike"]:
+            S4.record_strike_if_late(row["client_id"], rid, settlement["tier"], S4.spec4_config())
 
     brief["stato"] = "annullata"
     db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
-    return {"stato": "annullata"}
+    return {"stato": "annullata", "settlement": settlement}
 
 
 # ---------------- provider side ----------------

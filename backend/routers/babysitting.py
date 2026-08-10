@@ -62,6 +62,7 @@ from pydantic import BaseModel
 
 import babysitting_config as B
 import lf_pg as LF
+import spec4_pg as S4
 import stripe_pg as SP
 from richieste_config import (
     LF_COUPLE_CEILING_EUR, LF_FAMILY_ANNUAL_EUR, LF_PROVIDER_ANNUAL_EUR,
@@ -512,26 +513,22 @@ async def _cancel_with_refund(rid: str, row: dict, brief: dict) -> dict:
     generico e /incontro/cancel-refund (stessa operazione, due punti diversi
     del flusso in cui la famiglia può volerla invocare)."""
     binario = brief.get("binario", "piva")
+    settlement = None
     if brief.get("stato") in ("confermata", "in_corso"):
+        # BLOCCO 5 (spec4_pg.py): rimborso a scaglioni per ore-al-servizio al
+        # posto del rimborso 100% incondizionato — gestisce anche il caso
+        # multi-hold (holds per fase), distribuendo il rimborso
+        # proporzionalmente su ciascun PaymentIntent.
         pagamento = brief.get("pagamento_lavoro") or {}
-        if binario == "piva" and pagamento.get("stato") == "held" and pagamento.get("holds"):
-            refund_ids = [SP.refund_payment_intent(h["payment_intent_id"])["refund_id"] for h in pagamento["holds"]]
-            db.rpc("refund_escrow", {
-                "p_mission_id": rid, "p_reason": "cancellazione_famiglia",
-                "p_gateway_transaction_id": refund_ids[-1],
-                "p_gateway_response": {"refund_ids": refund_ids}, "p_gateway_name": "stripe",
-            }).execute()
-            pagamento["stato"] = "refunded"
-            brief["pagamento_lavoro"] = pagamento
-        elif binario == "persona_lf" and pagamento.get("stato") == "lf_registrato" and brief.get("provider_scelto"):
-            LF.record_usage(row["client_id"], brief["provider_scelto"],
-                            -float(pagamento.get("totale_bloccato") or 0), 0.0)
-            pagamento["stato"] = "annullato"
-            brief["pagamento_lavoro"] = pagamento
+        settlement = S4.apply_banded_cancellation(row, binario, pagamento)
+        pagamento.update(settlement["pagamento_updates"])
+        brief["pagamento_lavoro"] = pagamento
+        if settlement["strike"]:
+            S4.record_strike_if_late(row["client_id"], rid, settlement["tier"], S4.spec4_config())
 
     brief["stato"] = "annullata"
     db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
-    return {"stato": "annullata"}
+    return {"stato": "annullata", "settlement": settlement}
 
 
 @router.post("/babysitting/richieste/{rid}/cancel")

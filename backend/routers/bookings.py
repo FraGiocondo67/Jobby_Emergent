@@ -1,3 +1,8 @@
+"""RITIRATO nel Blocco 5 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, stessa decisione e stesse ragioni di
+routers/missions.py (vedi il suo docstring): ciclo di vita booking/escrow del
+vecchio motore di matching generico, superato dalle 4 verticali dedicate
+(Blocco 2-4). File lasciato nel repo solo come riferimento storico."""
 from fastapi import APIRouter, HTTPException, Depends
 
 from core import db, now_utc, new_id

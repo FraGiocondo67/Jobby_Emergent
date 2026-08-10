@@ -107,6 +107,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 import driver_config as D
+import spec4_pg as S4
 import stripe_pg as SP
 from core_pg import db, now_iso, now_utc, notify, haversine, record_trust_event, to_geography_point, parse_scheduled_at
 from deps_pg import get_current_user, require_admin
@@ -520,27 +521,34 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="already_closed")
     prezzo = float(brief.get("prezzo_finale", 0) or 0)
     outcome = _cancellation_outcome(_parse(brief.get("pickup_at", "")), prezzo)
-    # `outcome` (fascia/percentuale di driver_config.CANCELLATION) resta solo
-    # informativo — vedi docstring modulo. Il rimborso reale qui sotto è
-    # invece sempre integrale su quanto effettivamente bloccato, stesso
-    # comportamento delle altre tre verticali.
+    # BLOCCO 5 (spec4_pg.py): `outcome` (fascia/percentuale di
+    # driver_config.CANCELLATION — 4h/30min, non le soglie generiche di
+    # spec4_config usate dalle altre 3 verticali) ora pilota davvero il
+    # rimborso, invece di restare solo informativo come nel Blocco 2/3 (vedi
+    # docstring modulo). `outcome["charge"]` diventa indennizzo al driver
+    # (rilasciato per intero, JOBBY non trattiene fee su questa transazione
+    # — stessa scelta già documentata sopra per la fascia "<30min").
     pagamento = brief.get("pagamento") or {}
-    if pagamento.get("stato") == "held" and pagamento.get("holds"):
-        refund_ids = [SP.refund_payment_intent(h["payment_intent_id"])["refund_id"] for h in pagamento["holds"]]
-        db.rpc("refund_escrow", {
-            "p_mission_id": rid, "p_reason": "cancellazione_cliente",
-            "p_gateway_transaction_id": refund_ids[-1],
-            "p_gateway_response": {"refund_ids": refund_ids}, "p_gateway_name": "stripe",
-        }).execute()
-        pagamento["stato"] = "refunded"
+    settlement = None
+    if pagamento.get("stato") == "held" and (pagamento.get("holds") or pagamento.get("payment_intent_id")):
+        price_agreed = float(row.get("price_agreed") or prezzo or 0)
+        indennizzo = min(round(float(outcome.get("charge") or 0), 2), price_agreed)
+        refund_amount = round(price_agreed - indennizzo, 2)
+        settled = S4.settle_gateway_cancellation(row, pagamento, refund_amount, indennizzo, 0.0,
+                                                 f"driver_{outcome.get('band', 'na')}")
+        pagamento.update(settled["pagamento_updates"])
         brief["pagamento"] = pagamento
+        settlement = {"refund_amount": settled["refund_amount"], "indennizzo": settled["indennizzo"],
+                     "band": outcome.get("band")}
+        if indennizzo > 0:
+            S4.record_strike_if_late(row["client_id"], rid, "late", S4.spec4_config())
     brief["stato"] = "annullata"
     brief["cancellazione"] = outcome
     db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
     if brief.get("provider_scelto"):
         await notify(brief["provider_scelto"], "driver_annullata", "Corsa annullata",
                     "Il cliente ha annullato la corsa.", "driver", rid)
-    return outcome
+    return {**outcome, "settlement": settlement}
 
 
 # ---------------- lato provider ----------------

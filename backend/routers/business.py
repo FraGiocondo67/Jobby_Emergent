@@ -1,133 +1,209 @@
+"""BLOCCO 5 (migrazione Emergent -> Supabase/Render) — riscrittura Postgres di
+questo router. Sostituisce interamente la versione Mongo/Emergent.
+
+"Business" qui è un `profiles_provider` con `is_proximity_business = true`
+(colonna già esistente nello schema storico) — non un `role` separato: lo
+schema Postgres ha un enum `role` chiuso (client/provider/both/admin, senza
+"business", gap già segnalato nel Blocco 1) e questa è la soluzione più
+semplice che non richiede toccarlo, coerente con come `is_proximity_business`
+è già usata altrove nello schema.
+
+Flusso "preventivo su misura": il cliente descrive un bisogno direttamente a
+un business specifico (non un catalogo prodotti — per quello vedi
+routers/listino.py), il business risponde con prezzo/tempi. **Nessun
+pagamento qui**: esattamente come nel sistema Emergent originale, questo
+endpoint non tocca mai denaro (l'accordo economico avviene fuori piattaforma
+o via consegna diretta) — solo `listino.py` (ordini da catalogo, con importi
+noti lato server) usa l'escrow Stripe Connect del Blocco 3. Non è
+un'omissione: il vecchio `business.py` non aveva mai un passo di pagamento.
+
+Ogni richiesta è una riga `public.missions` (categoria proximity,
+`brief_answers` per il dettaglio) — stesso modello delle 4 verticali. La
+chat si attiva automaticamente appena `provider_id` è impostato (vedi
+routers/chat.py, Blocco 4): niente più `open_thread()` dedicato.
+"""
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 
-from core import db, now_utc, new_id, haversine, TREVISO
-from deps import get_current_user
-from models import BusinessRequestIn, BusinessResponseIn
-from routers.chat import open_thread
+from core_pg import db, notify, haversine, TREVISO, to_geography_point, parse_scheduled_at
+from deps_pg import get_current_user
 
 router = APIRouter()
 
 
+def _business_out(p: dict, u: dict, lat: float, lng: float) -> dict:
+    bd = p.get("business_data") or {}
+    blat, blng = bd.get("last_lat"), bd.get("last_lng")
+    dist = haversine(lat, lng, blat, blng) if blat is not None and blng is not None else None
+    return {
+        "user_id": u["id"], "name": bd.get("business_name") or u.get("full_name", ""),
+        "avatar_url": u.get("avatar_url", ""), "rating": p.get("avg_rating") or 0,
+        "trust_score": p.get("trust_score") or 0, "bio": p.get("bio", ""),
+        "service_mode": bd.get("service_mode", "both"), "distance_km": dist,
+        "skills": p.get("skills") or [], "business_photos": p.get("business_photos") or [],
+    }
+
+
 @router.get("/businesses")
-async def list_businesses(category: str, lat: float = TREVISO["lat"], lng: float = TREVISO["lng"], user=Depends(get_current_user)):
-    """Real registered businesses (no bots) that offer the given category, sorted by distance."""
-    biz = await db.users.find(
-        {"role": "business", "online": True, "is_bot": {"$ne": True}, "services": category,
-         "approval_status": {"$nin": ["rejected", "suspended"]}},
-        {"_id": 0}).to_list(300)
-    result = []
-    for b in biz:
-        dist = haversine(lat, lng, b.get("lat", TREVISO["lat"]), b.get("lng", TREVISO["lng"]))
-        result.append({
-            "user_id": b["user_id"], "name": b.get("business_name") or b["name"], "picture": b.get("picture", ""),
-            "rating": b.get("rating", 0), "reviews_count": b.get("reviews_count", 0), "bio": b.get("bio", ""),
-            "verified": b.get("verified", False), "trust_score": b.get("trust_score", 0),
-            "service_mode": b.get("service_mode", "both"), "distance_km": dist,
-            "lat": b.get("lat"), "lng": b.get("lng"),
-            "price_list": b.get("price_list", []), "business_photos": b.get("business_photos", []),
-            "approval_status": b.get("approval_status", "approved"),
-        })
-    result.sort(key=lambda x: x["distance_km"])
-    return result
+async def list_businesses(category: str, lat: float = TREVISO["lat"], lng: float = TREVISO["lng"],
+                          user=Depends(get_current_user)):
+    res = (
+        db.table("profiles_provider").select("*, users!inner(id, full_name, avatar_url)")
+        .eq("is_proximity_business", True).contains("skills", [category]).execute()
+    )
+    out = []
+    for p in (res.data or []):
+        u = p.get("users") or {}
+        out.append(_business_out(p, {"id": u.get("id"), "full_name": u.get("full_name"), "avatar_url": u.get("avatar_url")}, lat, lng))
+    out.sort(key=lambda x: x["distance_km"] if x["distance_km"] is not None else 999999)
+    return out
 
 
 @router.get("/businesses/detail/{business_id}")
 async def business_detail(business_id: str, user=Depends(get_current_user)):
-    b = await db.users.find_one({"user_id": business_id, "role": "business"}, {"_id": 0})
-    if not b:
+    res = (
+        db.table("profiles_provider").select("*, users!inner(id, full_name, avatar_url)")
+        .eq("user_id", business_id).eq("is_proximity_business", True).limit(1).execute()
+    )
+    if not res.data:
         raise HTTPException(status_code=404, detail="business_not_found")
-    return {
-        "user_id": b["user_id"], "name": b.get("business_name") or b["name"], "picture": b.get("picture", ""),
-        "rating": b.get("rating", 0), "reviews_count": b.get("reviews_count", 0), "bio": b.get("bio", ""),
-        "verified": b.get("verified", False), "trust_score": b.get("trust_score", 0),
-        "service_mode": b.get("service_mode", "both"), "address": b.get("address", ""),
-        "price_list": b.get("price_list", []), "services": b.get("services", []),
-        "business_photos": b.get("business_photos", []),
-        "approval_status": b.get("approval_status", "approved"),
-    }
+    p = res.data[0]
+    u = p.get("users") or {}
+    out = _business_out(p, {"id": u.get("id"), "full_name": u.get("full_name"), "avatar_url": u.get("avatar_url")},
+                        TREVISO["lat"], TREVISO["lng"])
+    bd = p.get("business_data") or {}
+    out["address"] = bd.get("address", "")
+    return out
+
+
+def _category_id(slug: str) -> str:
+    res = db.table("service_categories").select("id").eq("slug", slug).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=400, detail="invalid_category")
+    return res.data[0]["id"]
+
+
+class BusinessRequestIn(BaseModel):
+    business_id: str
+    category: str
+    note: str = ""
+    address: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    budget: Optional[float] = None
 
 
 @router.post("/business-requests")
 async def create_business_request(body: BusinessRequestIn, user=Depends(get_current_user)):
-    biz = await db.users.find_one({"user_id": body.business_id, "role": "business", "services": body.category}, {"_id": 0})
-    if not biz:
+    prov = (
+        db.table("profiles_provider").select("skills")
+        .eq("user_id", body.business_id).eq("is_proximity_business", True).limit(1).execute()
+    )
+    if not prov.data or body.category not in (prov.data[0].get("skills") or []):
         raise HTTPException(status_code=404, detail="business_not_found")
-    cat = await db.categories.find_one({"cat_id": body.category}, {"_id": 0})
-    label = cat["label"] if cat else {"it": body.category, "en": body.category}
-    rid = new_id("breq")
-    doc = {
-        "request_id": rid, "kind": "business_request", "client_id": user["user_id"], "client_name": user["name"],
-        "business_id": body.business_id, "business_name": biz.get("business_name") or biz["name"],
-        "business_picture": biz.get("picture", ""), "category": body.category, "category_label": label,
-        "note": body.note, "address": body.address, "lat": body.lat, "lng": body.lng,
-        "budget": body.budget,
-        "status": "pending", "response": None,
-        "created_at": now_utc().isoformat(), "updated_at": now_utc().isoformat(),
+
+    brief = {
+        "kind": "quote_request", "stato": "in_attesa_preventivo", "note": body.note,
+        "budget": body.budget, "response": None,
     }
-    await db.business_requests.insert_one(doc)
-    return {k: v for k, v in doc.items() if k != "_id"}
+    row = {
+        "client_id": user["id"], "provider_id": body.business_id, "category_id": _category_id(body.category),
+        "title": "Richiesta preventivo", "description": body.note,
+        "status": "published", "address": body.address,
+        "location": to_geography_point(body.lat, body.lng),
+        "scheduled_at": parse_scheduled_at(None),
+        "brief_answers": brief,
+    }
+    res = db.table("missions").insert(row).execute()
+    created = res.data[0]
+    await notify(body.business_id, "richiesta_invito", "Nuova richiesta di preventivo",
+                body.note[:120] or "Un cliente ha richiesto un preventivo.", "mission", created["id"])
+    return created
 
 
 @router.get("/business-requests")
 async def my_business_requests(user=Depends(get_current_user)):
-    return await db.business_requests.find({"client_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    res = (
+        db.table("missions").select("*").eq("client_id", user["id"])
+        .contains("brief_answers", {"kind": "quote_request"}).order("created_at", desc=True).limit(100).execute()
+    )
+    return res.data or []
 
 
 @router.get("/business-requests/incoming")
 async def incoming_business_requests(user=Depends(get_current_user)):
-    if user["role"] != "business":
-        return []
-    return await db.business_requests.find({"business_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    res = (
+        db.table("missions").select("*").eq("provider_id", user["id"])
+        .contains("brief_answers", {"kind": "quote_request"}).order("created_at", desc=True).limit(100).execute()
+    )
+    return res.data or []
+
+
+def _load(request_id: str, user_id: str) -> dict:
+    res = db.table("missions").select("*").eq("id", request_id).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    if (row.get("brief_answers") or {}).get("kind") != "quote_request":
+        raise HTTPException(status_code=404, detail="not_found")
+    if user_id not in (row["client_id"], row.get("provider_id")):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return row
 
 
 @router.get("/business-requests/{request_id}")
 async def get_business_request(request_id: str, user=Depends(get_current_user)):
-    r = await db.business_requests.find_one({"request_id": request_id}, {"_id": 0})
-    if not r:
-        raise HTTPException(status_code=404, detail="not_found")
-    if user["user_id"] not in (r["client_id"], r["business_id"]):
-        raise HTTPException(status_code=403, detail="forbidden")
-    return r
+    return _load(request_id, user["id"])
 
 
 @router.post("/business-requests/{request_id}/cancel")
 async def cancel_business_request(request_id: str, user=Depends(get_current_user)):
-    """Client cancels their own request while it is still pending (before shop confirmation)."""
-    r = await db.business_requests.find_one({"request_id": request_id}, {"_id": 0})
-    if not r:
-        raise HTTPException(status_code=404, detail="not_found")
-    if r["client_id"] != user["user_id"]:
+    row = _load(request_id, user["id"])
+    if row["client_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="forbidden")
-    if r["status"] != "pending":
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") != "in_attesa_preventivo":
         raise HTTPException(status_code=400, detail="cannot_cancel")
-    await db.business_requests.update_one({"request_id": request_id},
-                                          {"$set": {"status": "cancelled", "updated_at": now_utc().isoformat()}})
-    return {"status": "cancelled"}
+    brief["stato"] = "annullata"
+    db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", request_id).execute()
+    return {"stato": "annullata"}
+
+
+class BusinessResponseIn(BaseModel):
+    accept: bool
+    eta: str = ""
+    mode: str = "pickup"          # pickup | delivery
+    price: float = 0.0
+    delivery_cost: float = 0.0
+    note: str = ""
 
 
 @router.post("/business-requests/{request_id}/respond")
 async def respond_business_request(request_id: str, body: BusinessResponseIn, user=Depends(get_current_user)):
-    r = await db.business_requests.find_one({"request_id": request_id}, {"_id": 0})
-    if not r:
-        raise HTTPException(status_code=404, detail="not_found")
-    if r["business_id"] != user["user_id"]:
+    row = _load(request_id, user["id"])
+    if row["provider_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="forbidden")
-    if r["status"] != "pending":
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") != "in_attesa_preventivo":
         raise HTTPException(status_code=400, detail="already_handled")
+
     if not body.accept:
-        await db.business_requests.update_one({"request_id": request_id},
-                                              {"$set": {"status": "declined", "updated_at": now_utc().isoformat()}})
-        return {"status": "declined"}
+        brief["stato"] = "rifiutata"
+        db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", request_id).execute()
+        await notify(row["client_id"], "richiesta_annullata", "Preventivo rifiutato",
+                    "Il business non può soddisfare la richiesta.", "mission", request_id)
+        return {"stato": "rifiutata"}
+
+    # Nessun pagamento qui (vedi docstring modulo) — solo l'accordo su
+    # prezzo/tempi/modalità, l'incasso avviene fuori piattaforma.
     response = {"eta": body.eta, "mode": body.mode, "delivery_cost": round(body.delivery_cost, 2),
                 "price": round(body.price, 2), "note": body.note}
-    await db.business_requests.update_one({"request_id": request_id},
-                                          {"$set": {"status": "confirmed", "response": response, "updated_at": now_utc().isoformat()}})
-    # Open a chat thread and post the confirmation summary as the first message.
-    mode_txt = "Consegna a domicilio" if body.mode == "delivery" else "Ritiro in sede"
-    summary = (f"Richiesta confermata ✅\n{mode_txt}\nTempo: {body.eta or 'da concordare'}\n"
-               f"Prezzo: €{response['price']:.2f} + consegna €{response['delivery_cost']:.2f}"
-               + (f"\nNota: {body.note}" if body.note else ""))
-    await open_thread(r["client_id"], r["client_name"], r["business_id"], r["business_name"],
-                      r.get("business_picture", ""), first_message=summary)
-    return {"status": "confirmed", "response": response}
+    brief["response"] = response
+    brief["stato"] = "confermata"
+    db.table("missions").update({"brief_answers": brief}).eq("id", request_id).execute()
+    await notify(row["client_id"], "richiesta_confermata", "Preventivo confermato",
+                f"{('Consegna a domicilio' if body.mode == 'delivery' else 'Ritiro in sede')} — "
+                f"€{response['price']:.2f}" + (f" + consegna €{response['delivery_cost']:.2f}" if body.mode == "delivery" else ""),
+                "mission", request_id)
+    return {"stato": "confermata", "response": response}
