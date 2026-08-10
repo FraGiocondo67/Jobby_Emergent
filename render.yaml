@@ -1,0 +1,96 @@
+# render.yaml definitivo per il backend JOBBY (FastAPI) — Blocco 7.
+#
+# Verificato in questo blocco: il server si avvia e risponde correttamente
+# con le sole variabili Supabase impostate (SUPABASE_URL,
+# SUPABASE_SERVICE_ROLE_KEY, ADMIN_TOKEN) — nessuna MongoDB necessaria per il
+# boot (vedi core.py: MONGO_CONFIGURED salta init/seed se MONGO_URL manca,
+# client Mongo lazy quindi l'import non fallisce). Testato con
+# `TestClient(server.app)` in questo ambiente: startup event e /openapi.json
+# rispondono senza errori.
+#
+# ATTENZIONE — limite noto, non un gap silenzioso: 8 router restano ancora
+# Mongo-based e NON sono stati migrati in nessuno dei Blocchi 1-6
+# (wallet.py, admin_web.py, admin_auth.py, payments_stripe.py,
+# payments_services.py, payments_paypal.py, catalog_routes.py, dashboard.py)
+# — vedi backend/routers/*.py, cercabile con `grep -l "from core import"`.
+# Il server si avvia comunque, ma qualunque richiesta reale a un endpoint di
+# questi router fallirà con un timeout di connessione (Mongo client lazy
+# punta a `mongodb://localhost:27017`, irraggiungibile su Render). Nessuno di
+# questi endpoint è usato dalle 4 verticali migrate (Pulizie/Artigiani/
+# Babysitting/Driver) né da business/listino/spec4 — admin_web/admin_auth
+# saranno sostituiti da Retool (Blocco 6, in corso lato utente); wallet.py è
+# verosimilmente superato da stripe_pg.py/lf_pg.py (Blocco 3) ma non è stato
+# formalmente ritirato; dashboard.py/catalog_routes.py idem. Decisione se
+# ritirarli esplicitamente (come già fatto per missions.py/bookings.py nel
+# Blocco 5) rimandata a una conferma esplicita dell'utente, per non rischiare
+# di rompere qualcosa ancora in uso in locale prima che Retool sia pronto.
+#
+# Come usarlo:
+#   1. Su dashboard.render.com: New > Blueprint > collega il repo GitHub
+#      `Jobby_Emergent` (branch main) > Render legge questo file (deve stare
+#      nella ROOT del repo, non in backend/) e propone il servizio.
+#   2. Le variabili d'ambiente NON vanno mai committate: vanno inserite a
+#      mano nel pannello Render (Environment) dopo la creazione del servizio
+#      — valori reali forniti dall'utente, mai in questo file.
+#   3. Dopo il primo deploy riuscito, verificare GET /openapi.json e un
+#      endpoint pubblico (es. GET /api/geocode con query) per conferma.
+
+services:
+  - type: web
+    name: jobby-backend
+    runtime: python
+    region: frankfurt          # vicino a eu-west-1 (Supabase JOBBY) per ridurre la latenza
+    plan: starter               # always-on (il piano Free si "addormenta" dopo inattività)
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    branch: main                 # verificare sempre che sia il branch giusto prima del primo deploy
+    envVars:
+      # --- Supabase / Postgres (uniche OBBLIGATORIE per l'avvio, vedi core_pg.py) ---
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+      # --- Admin (token statico usato da admin_auth.py, Mongo-based — vedi nota sopra) ---
+      - key: ADMIN_TOKEN
+        sync: false
+
+      # --- AI dispute (Blocco 4) — opzionale: senza, dispute_ai.py usa il fallback euristico ---
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL      # opzionale, default "claude-sonnet-5" nel codice
+        sync: false
+
+      # --- Pagamenti (SDK diretti) — Stripe obbligatoria per le 4 verticali + listino ---
+      - key: STRIPE_API_KEY
+        sync: false
+      - key: STRIPE_CONNECT_SECRET_KEY
+        sync: false
+
+      # --- PayPal — solo se/quando si riattivano i router Mongo-based che lo usano ---
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_SECRET
+        sync: false
+      - key: PAYPAL_BASE
+        sync: false
+
+      # --- Mongo — OPZIONALE, non serve più per le route migrate (Blocco 1-6).
+      #     Da impostare SOLO se si vuole tenere in vita i pochi router ancora
+      #     Mongo-based (vedi nota sopra) puntandoli a un'istanza reale.
+      #     Senza, il server parte comunque (vedi verifica in cima al file).
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        sync: false
+
+# Rimosse rispetto alla bozza Blocco 0 (mai effettivamente usate nel codice —
+# verificato con grep su tutti gli os.environ del backend in questo blocco):
+#   SUPABASE_JWT_SECRET (l'auth usa db.auth.get_user(token) via client
+#   Supabase service-role, non un secret JWT separato — vedi deps_pg.py),
+#   RESEND_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN (mai importati/usati
+#   in nessun router, erano solo ipotesi nella bozza iniziale).
+# Rimosse rispetto all'originale Emergent (da NON riportare comunque):
+#   EMERGENT_SESSION_URL, EMERGENT_LLM_KEY, EXPO_PACKAGER_*, EMERGENT_PUSH_KEY
