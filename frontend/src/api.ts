@@ -1,16 +1,19 @@
-import { storage } from "@/src/utils/storage";
+// Blocco 1 (migrazione Emergent -> Supabase/Render): il token di sessione
+// non è più gestito a mano (storage custom + /auth/session) ma dalla sessione
+// Supabase Auth stessa (persistita via AsyncStorage da src/lib/supabase.ts).
+// getToken()/clearToken() restano come funzioni con lo stesso nome per non
+// dover toccare `request()`/`adminRequest()` qui sotto, ma ora sono thin
+// wrapper sopra supabase.auth invece che sopra uno storage proprietario.
+import { supabase } from "@/src/lib/supabase";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-const TOKEN_KEY = "jobby_session_token";
 
 export async function getToken() {
-  return await storage.getItem(TOKEN_KEY, null);
-}
-export async function setToken(t: string) {
-  await storage.setItem(TOKEN_KEY, t);
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 export async function clearToken() {
-  await storage.removeItem(TOKEN_KEY);
+  await supabase.auth.signOut();
 }
 
 // Global 401 handler — set by AuthProvider so an expired/invalid session
@@ -18,19 +21,6 @@ export async function clearToken() {
 let unauthorizedHandler: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: (() => void) | null) {
   unauthorizedHandler = fn;
-}
-
-// Auth intent (signup vs signin) persisted across the OAuth redirect (web reloads the page).
-const AUTH_MODE_KEY = "jobby_auth_mode";
-export async function setPendingAuthMode(mode: "signup" | "signin") {
-  await storage.setItem(AUTH_MODE_KEY, mode);
-}
-export async function getPendingAuthMode(): Promise<"signup" | "signin"> {
-  const m = await storage.getItem(AUTH_MODE_KEY, "signup");
-  return m === "signin" ? "signin" : "signup";
-}
-export async function clearPendingAuthMode() {
-  await storage.removeItem(AUTH_MODE_KEY);
 }
 
 async function request(path: string, options: RequestInit = {}) {
@@ -74,15 +64,12 @@ async function adminRequest(path: string, adminToken: string, options: RequestIn
 }
 
 export const api = {
-  createSession: (session_token: string, mode: "signup" | "signin" = "signup") =>
-    request("/auth/session", { method: "POST", body: JSON.stringify({ session_token, mode }) }),
-  register: (data: { email: string; password: string; name?: string }) =>
-    request("/auth/register", { method: "POST", body: JSON.stringify(data) }),
-  loginEmail: (data: { email: string; password: string }) =>
-    request("/auth/login", { method: "POST", body: JSON.stringify(data) }),
-  loginApple: (data: { identity_token: string; name?: string | null; email?: string | null }) =>
-    request("/auth/apple", { method: "POST", body: JSON.stringify(data) }),
-  loginDemo: () => request("/auth/demo", { method: "POST" }),
+  // Blocco 1: login/registrazione/Apple/demo non passano più dal backend
+  // (era /auth/register, /auth/login, /auth/apple, /auth/session, /auth/demo
+  // su Emergent) — li gestisce direttamente il client Supabase Auth, vedi
+  // src/context/AuthContext.tsx. Qui resta solo /auth/me, che legge il token
+  // già ottenuto da Supabase (via getToken() sopra) e restituisce i dati
+  // applicativi (users + profili) collegati a quell'utente.
   me: () => request("/auth/me"),
   logout: () => request("/auth/logout", { method: "POST" }),
   switchRole: (role: string) => request("/profile/switch-role", { method: "POST", body: JSON.stringify({ role }) }),

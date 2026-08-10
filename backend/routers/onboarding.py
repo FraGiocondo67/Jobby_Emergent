@@ -1,106 +1,128 @@
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+"""Blocco 1 — riscritto per Postgres. Sostituisce interamente la versione
+Mongo/Emergent di questo file.
 
-from core import db
-from deps import get_current_user
-from models import OnboardingIn, ImageIn
-from trust import recalc_provider_trust
+Endpoint di completamento onboarding: imposta il ruolo (client|provider|both)
+e crea/aggiorna il profilo Postgres corrispondente (profiles_client e/o
+profiles_provider).
+
+NOTA IMPORTANTE — semplificazione deliberata rispetto al modello Emergent:
+la versione Mongo permetteva fino a 2 ruoli tra client/provider/business
+(roles[] array, con vincolo "mai provider+business insieme"). Lo schema
+Postgres storico invece ha un `role` enum singolo (client|provider|both|admin)
+dove 'business' NON è un ruolo separato ma un flag `is_proximity_business`
+dentro profiles_provider. Questo endpoint segue lo schema Postgres esistente
+(già deciso da una sessione precedente, non da questa migrazione) — se serve
+davvero poter combinare client + business (non solo client + provider) va
+rivista la colonna `role` prima di andare oltre. Segnalato nel piano di
+migrazione.
+
+Le foto/documenti business (onboarding/business/photo, .../document) NON sono
+stati portati in questo blocco: nello schema Postgres esistono già le colonne
+`profiles_provider.documents` e `business_photos` (JSONB) ma l'endpoint di
+upload va scritto insieme al resto del profilo provider (Blocco 2), non qui.
+"""
+from fastapi import APIRouter, HTTPException, Depends
+
+from core_pg import db
+from deps_pg import get_current_user
+from models import OnboardingIn
 
 router = APIRouter()
 
-
-@router.post("/onboarding/business/photo")
-async def add_business_photo(body: ImageIn, user=Depends(get_current_user)):
-    photos = list(user.get("business_photos", []))
-    if len(photos) >= 4:
-        raise HTTPException(status_code=400, detail="max_photos")
-    if not body.image.strip():
-        raise HTTPException(status_code=400, detail="empty_image")
-    photos.append(body.image)
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"business_photos": photos}})
-    return {"business_photos": photos, "count": len(photos)}
-
-
-@router.delete("/onboarding/business/photo/{index}")
-async def delete_business_photo(index: int, user=Depends(get_current_user)):
-    photos = list(user.get("business_photos", []))
-    if 0 <= index < len(photos):
-        photos.pop(index)
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"business_photos": photos}})
-    return {"business_photos": photos, "count": len(photos)}
-
-
-@router.post("/onboarding/business/document")
-async def set_business_document(body: ImageIn, user=Depends(get_current_user)):
-    if not body.image.strip():
-        raise HTTPException(status_code=400, detail="empty_image")
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"license_document": body.image}})
-    return {"ok": True}
+VALID_ROLES = ("client", "provider", "both")
 
 
 @router.get("/onboarding/status")
 async def onboarding_status(user=Depends(get_current_user)):
+    has_client = bool(
+        db.table("profiles_client").select("id").eq("user_id", user["id"]).limit(1).execute().data
+    )
+    has_provider = bool(
+        db.table("profiles_provider").select("id").eq("user_id", user["id"]).limit(1).execute().data
+    )
     return {
-        "onboarding_completed": user.get("onboarding_completed", False),
-        "vat_number": user.get("vat_number", ""),
-        "has_license": bool(user.get("license_document")),
-        "photos_count": len(user.get("business_photos", [])),
+        "onboarding_completed": has_client or has_provider,
+        "role": user.get("role"),
+        "status": user.get("status"),
     }
 
 
 @router.post("/onboarding/complete")
 async def complete_onboarding(body: OnboardingIn, user=Depends(get_current_user)):
     role = body.role
-    if role not in ("client", "provider", "business"):
+    if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="invalid_role")
-    # #8 — vincolo multi-ruolo: max 2 profili e mai provider+business insieme.
-    owned = set(user.get("roles") or [user.get("role") or "client"])
-    if role not in owned:
-        if len(owned) >= 2:
-            raise HTTPException(status_code=400, detail="max_two_roles")
-        if (role == "provider" and "business" in owned) or (role == "business" and "provider" in owned):
-            raise HTTPException(status_code=400, detail="role_conflict")
-    upd = {"role": role, "onboarding_completed": True}
+
+    user_id = user["id"]
+    is_business = bool(body.business_name or body.vat_number)
+
+    user_updates = {"role": role}
     if body.name:
-        upd["name"] = body.name
+        user_updates["full_name"] = body.name
     if body.phone is not None:
-        upd["phone"] = body.phone
-    if body.address is not None:
-        upd["address"] = body.address
-    if body.lat is not None:
-        upd["lat"] = body.lat
-    if body.lng is not None:
-        upd["lng"] = body.lng
-    if role in ("provider", "business"):
-        if body.services is not None:
-            upd["services"] = body.services
+        user_updates["phone"] = body.phone
+    # I client sono auto-approvati; provider/business (anche col ruolo 'both')
+    # restano 'pending' finché il KYC non è approvato, a meno che lo status non
+    # sia già 'active' da un'approvazione precedente (es. utente che torna
+    # sull'onboarding per aggiungere un secondo ruolo).
+    if role in ("provider", "both") and user.get("status") != "active":
+        user_updates["status"] = "pending"
+    db.table("users").update(user_updates).eq("id", user_id).execute()
+
+    if role in ("client", "both"):
+        existing = db.table("profiles_client").select("id").eq("user_id", user_id).limit(1).execute()
+        payload = {}
+        if body.address is not None:
+            payload["address"] = body.address
         if body.radius_km is not None:
-            upd["radius_km"] = body.radius_km
-        if body.service_mode is not None:
-            upd["service_mode"] = body.service_mode
-    if role == "business":
+            payload["search_radius_km"] = int(body.radius_km)
+        if existing.data:
+            if payload:
+                db.table("profiles_client").update(payload).eq("user_id", user_id).execute()
+        else:
+            db.table("profiles_client").insert({"user_id": user_id, **payload}).execute()
+
+    if role in ("provider", "both"):
+        existing = (
+            db.table("profiles_provider")
+            .select("id, business_data")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        payload = {"is_proximity_business": is_business}
+        if body.radius_km is not None:
+            payload["operational_radius_km"] = int(body.radius_km)
+        if body.services is not None:
+            payload["skills"] = body.services
+
+        business_data = {}
+        if existing.data and existing.data[0].get("business_data"):
+            business_data = dict(existing.data[0]["business_data"])
         if body.business_name:
-            upd["business_name"] = body.business_name
+            business_data["business_name"] = body.business_name
         if body.vat_number is not None:
-            upd["vat_number"] = body.vat_number
-    # Clients are auto-approved; providers/businesses require admin approval unless previously approved.
-    upd["approval_status"] = "approved" if (role == "client" or user.get("provider_approved")) else "pending"
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": upd, "$addToSet": {"roles": role}})
-    if role in ("provider", "business"):
-        await recalc_provider_trust(user["user_id"])
-    return await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+            business_data["vat_number"] = body.vat_number
+        if body.service_mode is not None:
+            business_data["service_mode"] = body.service_mode
+        if business_data:
+            payload["business_data"] = business_data
 
+        # TODO (da verificare con un test reale prima del Blocco 2): `location`
+        # (colonna PostGIS geography) non è impostata qui. L'insert/update di
+        # una colonna geography via client REST (supabase-py) va confermato —
+        # serve un formato WKT tipo 'POINT(lng lat)' o una RPC dedicata.
+        # Lasciato esplicitamente TODO invece di scrivere codice non
+        # verificato per un campo delicato per il matching geografico.
+        if body.lat is not None and body.lng is not None:
+            payload.setdefault("business_data", business_data or {})
+            payload["business_data"]["last_lat"] = body.lat
+            payload["business_data"]["last_lng"] = body.lng
 
-class SwitchRoleIn(BaseModel):
-    role: str
+        if existing.data:
+            db.table("profiles_provider").update(payload).eq("user_id", user_id).execute()
+        else:
+            db.table("profiles_provider").insert({"user_id": user_id, **payload}).execute()
 
-
-@router.post("/profile/switch-role")
-async def switch_role(body: SwitchRoleIn, user=Depends(get_current_user)):
-    """#8 — passa tra i profili POSSEDUTI (non attiva profili nuovi)."""
-    roles = user.get("roles") or [user.get("role") or "client"]
-    if body.role not in roles:
-        raise HTTPException(status_code=400, detail="role_not_owned")
-    await db.users.update_one({"user_id": user["user_id"]},
-                              {"$set": {"role": body.role, "online": body.role != "client"}})
-    return await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+    refreshed = db.table("users").select("*").eq("id", user_id).limit(1).execute()
+    return {"user": refreshed.data[0] if refreshed.data else None}
