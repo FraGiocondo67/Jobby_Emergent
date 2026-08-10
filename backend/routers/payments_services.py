@@ -1,3 +1,10 @@
+"""RITIRATO nel Blocco 7 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, su conferma esplicita dell'utente. "Servizi
+di pagamento" (ricariche telefoniche/bollette/beneficiari, Mongo-based, mai
+collegato ad aggregatori reali) — la nuova categoria "servizi di pagamento"
+prevista dal piano resta esplicitamente fuori scope dal Blocco 3 in poi (mai
+riscritta su Postgres). File lasciato nel repo come riferimento storico
+(Mongo, non funzionante senza MONGO_URL)."""
 from fastapi import APIRouter, HTTPException, Depends, Query
 
 from core import db, now_utc, new_id

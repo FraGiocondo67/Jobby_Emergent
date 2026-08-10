@@ -1,4 +1,12 @@
-"""Spec 5 — Navigation, Home (two states), Wallet dashboard, Provider dashboard, support number."""
+"""RITIRATO nel Blocco 7 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, su conferma esplicita dell'utente. Dashboard
+Mongo-based (wallet/provider stats) — la dashboard admin passa a Retool
+(Blocco 6); l'equivalente lato app (home cliente/provider) va ricostruito
+sopra le tabelle Postgres se/quando serve, non riportato qui. File lasciato
+nel repo come riferimento storico (Mongo, non funzionante senza MONGO_URL).
+
+Docstring originale sotto, invariata: "Spec 5 — Navigation, Home (two
+states), Wallet dashboard, Provider dashboard, support number."."""
 from datetime import datetime, date
 from typing import Optional
 

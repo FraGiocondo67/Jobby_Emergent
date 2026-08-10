@@ -8,14 +8,21 @@ from starlette.middleware.cors import CORSMiddleware
 from core import db, client, now_utc, new_id, MONGO_CONFIGURED
 from catalog import seed_categories, BOT_PROVIDERS
 from trust import recalc_provider_trust
-from routers import auth, catalog_routes, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, richieste, provider_onboarding, babysitting, driver, artigiani
-from routers import dashboard
+from routers import auth, chat, business, onboarding, disputes, notifications, richieste, provider_onboarding, babysitting, driver, artigiani
 from routers import spec4
-from routers import admin_auth
 from routers import listino
 from routers import geo
 from routers import stripe_connect
 import confirm_delivery
+
+# BLOCCO 7 (migrazione Emergent -> Supabase/Render): 8 router Mongo-based mai
+# migrati RITIRATI su conferma esplicita dell'utente (stesso trattamento già
+# dato a missions.py/bookings.py nel Blocco 5) — wallet.py, admin_web.py,
+# admin_auth.py, payments_stripe.py, payments_services.py, payments_paypal.py,
+# catalog_routes.py, dashboard.py. Non più importati né esposti da questo
+# file; restano nel repo con un docstring di ritiro come riferimento storico
+# (vedi ciascun file). Nessun altro modulo del backend li importava (verificato
+# con grep prima del ritiro), quindi nessuna altra modifica necessaria.
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,8 +32,6 @@ app = FastAPI(title="JOBBY API")
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(onboarding.router)
-api.include_router(payments_services.router)
-api.include_router(payments_paypal.router)
 api.include_router(disputes.router)
 api.include_router(notifications.router)
 api.include_router(stripe_connect.router)
@@ -34,14 +39,11 @@ api.include_router(richieste.router)
 api.include_router(babysitting.router)
 api.include_router(driver.router)
 api.include_router(artigiani.router)
-api.include_router(dashboard.router)
 api.include_router(spec4.router)
-api.include_router(admin_auth.router)
 api.include_router(listino.router)
 api.include_router(geo.router)
 api.include_router(confirm_delivery.router)
 api.include_router(provider_onboarding.router)
-api.include_router(catalog_routes.router)
 # missions.py/bookings.py (motore di matching generico pre-Blocco2, con
 # provider "bot" simulati) RITIRATI nel Blocco 5 — decisione esplicita
 # dell'utente: le 4 verticali (Pulizie/Artigiani/Babysitting/Driver, Blocco
@@ -49,11 +51,8 @@ api.include_router(catalog_routes.router)
 # vero escrow Stripe Connect; questo motore generico sarebbe rimasto
 # duplicato e mai aggiornato. I file restano nel repo per riferimento
 # storico ma non sono più importati né esposti — vedi il loro docstring.
-api.include_router(wallet.router)
 api.include_router(chat.router)
 api.include_router(business.router)
-api.include_router(payments_stripe.router)
-api.include_router(admin_web.router)
 app.include_router(api)
 
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -108,8 +107,9 @@ async def startup():
     await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
     await db.categories.create_index("cat_id", unique=True)
     await seed_categories()
-    await db.admin_sessions.create_index("expires_at", expireAfterSeconds=0)
-    await admin_auth.seed_admin()
+    # `admin_sessions`/`admin_auth.seed_admin()` rimossi nel Blocco 7 —
+    # admin_auth.py è stato ritirato (vedi sopra), non serve più seedare
+    # l'admin Mongo-based.
     # Existing users (pre-onboarding feature) should not be forced through onboarding.
     await db.users.update_many({"onboarding_completed": {"$exists": False}}, {"$set": {"onboarding_completed": True}})
     # Wallet: ensure the blocked/pending balance field exists.

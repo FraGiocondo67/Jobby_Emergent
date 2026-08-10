@@ -1,3 +1,10 @@
+"""RITIRATO nel Blocco 7 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, su conferma esplicita dell'utente. Gestione
+categorie/manifesto Mongo-based — superata da `service_categories` Postgres
+più le tabelle admin-editabili del Blocco 2 (`artigiani_mestieri`/
+`artigiani_paniere`/`pulizie_extra`/`app_settings`), che diventeranno
+editabili da Retool (Blocco 6). File lasciato nel repo come riferimento
+storico (Mongo, non funzionante senza MONGO_URL)."""
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 

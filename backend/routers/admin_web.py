@@ -1,3 +1,9 @@
+"""RITIRATO nel Blocco 7 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, su conferma esplicita dell'utente. Backoffice
+HTML custom (stats/utenti/missioni/bookings Mongo-based, servito da
+`/api/admin/ui`), sostituito da **Retool** (Blocco 6, in costruzione lato
+utente seguendo `JOBBY_blocco6_spec_retool.md`). File lasciato nel repo come
+riferimento storico (Mongo, non funzionante senza MONGO_URL)."""
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel

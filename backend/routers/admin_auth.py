@@ -1,4 +1,14 @@
-"""JOBBY — Autenticazione del backoffice WEB (admin).
+"""RITIRATO nel Blocco 7 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, su conferma esplicita dell'utente (login
+bcrypt+TOTP custom sostituito dal login/SSO nativo di Retool, come già
+segnalato nella spec del Blocco 6). `server.py` non chiama più
+`admin_auth.seed_admin()` nello startup. File lasciato nel repo come
+riferimento storico (Mongo, non funzionante senza MONGO_URL). Docstring
+originale sotto, invariata.
+
+---
+
+JOBBY — Autenticazione del backoffice WEB (admin).
 
 Sostituisce il token statico con un vero login:
   • email + password (bcrypt)

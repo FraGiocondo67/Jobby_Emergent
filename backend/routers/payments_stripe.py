@@ -1,3 +1,10 @@
+"""RITIRATO nel Blocco 7 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, su conferma esplicita dell'utente. Wrapper
+Stripe per il top-up wallet (via `emergentintegrations`, già rimosso nel
+Blocco 1) — superato dal vero escrow Stripe Connect (`stripe_pg.py` +
+`routers/stripe_connect.py`, Blocco 3) che copre tutti i pagamenti reali
+delle 4 verticali + business/listino. File lasciato nel repo come
+riferimento storico (Mongo, non funzionante senza MONGO_URL)."""
 import os
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel

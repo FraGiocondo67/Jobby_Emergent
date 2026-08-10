@@ -1,3 +1,9 @@
+"""RITIRATO nel Blocco 7 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, su conferma esplicita dell'utente. PayPal
+Orders v2/Payouts Mongo-based — il Blocco 3 aveva già deciso esplicitamente
+"Stripe first, PayPal rimandato a un secondo giro" e non è mai stato
+riscritto su Postgres/`stripe_pg.py`-equivalente. File lasciato nel repo come
+riferimento storico (Mongo, non funzionante senza MONGO_URL)."""
 import os
 import httpx
 from fastapi import APIRouter, HTTPException, Depends, Request

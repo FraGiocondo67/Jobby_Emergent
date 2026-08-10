@@ -1,3 +1,11 @@
+"""RITIRATO nel Blocco 7 (migrazione Emergent -> Supabase/Render) — non più
+importato/esposto da server.py, su conferma esplicita dell'utente. Wallet
+interno Mongo-based (top-up, prelievo, USDT/BTC/XRP), mai attivato in
+produzione: il Blocco 3 ha deciso esplicitamente "nessun fallback a wallet
+interno", solo Stripe Connect reale (vedi stripe_pg.py/routers/
+stripe_connect.py) — questo file era già superato, semplicemente non era mai
+stato tolto da server.py. File lasciato nel repo come riferimento storico
+(Mongo, non funzionante senza MONGO_URL)."""
 from fastapi import APIRouter, HTTPException, Depends
 
 from core import db, now_utc, new_id
