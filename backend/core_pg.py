@@ -15,6 +15,7 @@ ancora migrati) sia SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY (per quelli già
 migrati).
 """
 import os
+import math
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -42,3 +43,60 @@ def now_utc() -> datetime:
 
 def now_iso() -> str:
     return now_utc().isoformat()
+
+
+def haversine(lat1, lng1, lat2, lng2) -> float:
+    """Distanza in km tra due punti — stessa formula di core.py (Mongo), copiata
+    qui (non importata da core.py) perché questo modulo non deve dipendere da
+    Mongo. Usata per il matching provider finché le scritture su
+    profiles_provider.location (PostGIS) non sono verificate in produzione —
+    vedi TODO in routers/onboarding.py (Blocco 1). Una volta che i provider
+    hanno davvero una `location` valorizzata, i router di Blocco 2 dovrebbero
+    passare a query PostGIS (ST_DWithin/ST_Distance, vedi la funzione SQL
+    find_providers_nearby già esistente) invece di calcolare la distanza in
+    Python su lat/lng letti a parte."""
+    if lat1 is None or lng1 is None or lat2 is None or lng2 is None:
+        return float("inf")
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+# Mappa tipo-notifica specifico di dominio (Mongo) -> valore più vicino
+# nell'enum Postgres `notification_type`, che è chiuso e più generico
+# (system, mission_request, mission_confirmed, mission_completed,
+# mission_cancelled, payment_received, review_received, new_message,
+# dispute_opened, dispute_resolved, kyc_update, trust_score_updated). Il
+# messaggio vero e proprio resta in chiaro in title/body; `data` porta il
+# tipo Mongo originale così il frontend può comunque distinguere i casi.
+_NOTIF_TYPE_MAP = {
+    "nuova_richiesta": "mission_request",
+    "artigiani_invito": "mission_request",
+    "artigiani_proposta": "mission_request",
+    "artigiani_confermata": "mission_confirmed",
+    "artigiani_accettato": "mission_confirmed",
+    "artigiani_preventivo": "mission_request",
+    "artigiani_extra": "mission_request",
+    "artigiani_chiuso": "mission_completed",
+    "artigiani_completata": "mission_completed",
+    "artigiani_garanzia": "system",
+    "artigiani_abilitazione": "kyc_update",
+}
+
+
+async def notify(user_id: str, kind: str, title: str, body: str, ref_type: str = "", ref_id: str = "") -> None:
+    """Inserisce una notifica in public.notifications. Solo insert — la lettura/
+    marcatura-come-letta resta nel router notifications.py (Mongo) finché non
+    viene migrato (Blocco 4); questo helper serve ai router di Blocco 2 che
+    hanno bisogno di notificare senza aspettare quella migrazione."""
+    if not user_id:
+        return
+    db.table("notifications").insert({
+        "user_id": user_id,
+        "type": _NOTIF_TYPE_MAP.get(kind, "system"),
+        "title": title,
+        "body": body,
+        "data": {"kind": kind, "ref_type": ref_type, "ref_id": ref_id},
+    }).execute()
