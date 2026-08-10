@@ -16,17 +16,27 @@ ricorrenze, flessibilita, binari, variation_reasons, ore_table) restano
 invece in richieste_config.py: sono tassonomia/logica di flusso a costo
 fisso, non un "menu" con prezzi admin-editabili come mestieri/paniere/extra.
 
-GAP DI ARCHITETTURA — GATING BLOCCO 3 (Wallet/pagamenti/escrow), stesso
-motivo già documentato in artigiani.py: `confirm`/`complete`/`review` (più i
-due endpoint del "borsellino" Libretto Famiglia, che nel sistema Emergent era
-un ledger simulato scritto direttamente su db.users, un'ulteriore variante
-del gap già noto) toccano soldi (wallet_escrow.py `we.hold`, confirm_delivery
-`cd.arm_or_release_richiesta`, o il borsellino INPS simulato) e restano stub
-espliciti (501) finché il Blocco 3 non decide come colmare il gap. Il resto
-del flusso (config, stima prezzi, creazione/lista/dettaglio/cancellazione
+BLOCCO 3 (Wallet/pagamenti/escrow) — `confirm`/`complete`/`review` e il
+"borsellino" Libretto Famiglia sono ora implementati (verticale di
+riferimento per il pattern, poi replicato su artigiani/babysitting/driver):
+
+- binario `impresa`: vero escrow Stripe Connect (vedi stripe_pg.py) —
+  `confirm` addebita la carta salvata del cliente (hold sul saldo JOBBY,
+  nessun transfer_data) e chiama `create_escrow_hold()`; `complete` trasferisce
+  il netto al connected account del provider e chiama `release_escrow()`;
+  `cancel` (se già confermata) rimborsa e chiama `refund_escrow()`. Nessun
+  fallback a wallet interno: il provider deve avere
+  `stripe_payouts_enabled=true` e il cliente una carta salvata
+  (`/pay/setup-card`) prima di poter confermare.
+- binario `persona_lf`: NON un vero escrow — solo il registro
+  `public.lf_ledger` (vedi lf_pg.py) che traccia i massimali INPS per coppia
+  famiglia-lavoratore; `confirm` verifica i tetti e registra l'uso,
+  `cancel` (se già confermata) lo storna, `complete` non tocca alcun gateway.
+
+Il resto del flusso (config, stima prezzi, creazione/lista/dettaglio
 richiesta, "in arrivo" lato provider, proposte, avvio lavoro, listino,
-amministrazione, il cruscotto cross-categoria /provider/jobs) è pienamente
-funzionante su Postgres.
+amministrazione, il cruscotto cross-categoria /provider/jobs) resta invariato
+dal Blocco 2.
 """
 from datetime import timedelta
 from typing import List, Optional
@@ -34,7 +44,9 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
+import lf_pg as LF
 import richieste_config as C
+import stripe_pg as SP
 from core_pg import db, now_iso, now_utc, notify
 from deps_pg import get_current_user, require_admin
 
@@ -43,21 +55,6 @@ router = APIRouter()
 STATI_APERTI = ("pubblicata", "in_matching", "con_proposte")
 _CATEGORY_SLUG = "housekeeping"     # "Pulizie" nello storico — slug ereditato, non rinominato
 _FEE_SETTING_KEY = "pulizie_fee_pct"
-
-_WALLET_GAP_MSG = (
-    "Endpoint non ancora implementato: richiede il sistema di blocco/rilascio "
-    "fondi (escrow) per Pulizie, incluso il borsellino Libretto Famiglia/INPS "
-    "(nel sistema Emergent era un saldo simulato scritto direttamente su "
-    "db.users, senza alcun gateway di pagamento reale dietro). Stesso gap "
-    "architetturale già documentato in routers/artigiani.py — vedi il "
-    "docstring di quel modulo e la sezione 4.6 del piano di migrazione. Va "
-    "presa una decisione di design esplicita nel Blocco 3 prima di "
-    "implementare questo endpoint."
-)
-
-
-def _wallet_gap_stub():
-    raise HTTPException(status_code=501, detail=_WALLET_GAP_MSG)
 
 
 # ---------------- models ----------------
@@ -343,10 +340,29 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
     brief = row.get("brief_answers") or {}
     if brief.get("stato") in ("completata", "recensita"):
         raise HTTPException(status_code=400, detail="already_done")
-    # NOTA: nessun refund escrow qui — come in artigiani.py, /confirm è uno
-    # stub (vedi sopra), quindi una richiesta non può mai arrivare a bloccare
-    # fondi in questo blocco. Quando /confirm sarà implementato (Blocco 3) va
-    # aggiunto qui il refund per lo stato 'confermata'/'in_corso'.
+
+    binario = brief.get("binario", "impresa")
+    if brief.get("stato") in ("confermata", "in_corso"):
+        pagamento = brief.get("pagamento_lavoro") or {}
+        if binario == "impresa" and pagamento.get("stato") == "held":
+            refund = SP.refund_payment_intent(pagamento["payment_intent_id"])
+            db.rpc("refund_escrow", {
+                "p_mission_id": rid, "p_reason": "cancellazione_cliente",
+                "p_gateway_transaction_id": refund["refund_id"],
+                "p_gateway_response": {}, "p_gateway_name": "stripe",
+            }).execute()
+            pagamento["stato"] = "refunded"
+            pagamento["refund_id"] = refund["refund_id"]
+            brief["pagamento_lavoro"] = pagamento
+        elif binario == "persona_lf" and pagamento.get("stato") == "lf_registrato":
+            provider_id = brief.get("provider_scelto")
+            if provider_id:
+                LF.record_usage(row["client_id"], provider_id,
+                                -float(pagamento.get("lf_nominale") or 0),
+                                -float(pagamento.get("lf_ore") or 0))
+            pagamento["stato"] = "annullato"
+            brief["pagamento_lavoro"] = pagamento
+
     brief["stato"] = "annullata"
     db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
     return {"stato": "annullata"}
@@ -439,10 +455,79 @@ async def propose(rid: str, body: ProposeIn, user=Depends(get_current_user)):
     return proposal
 
 
-# ---------------- client confirm + lifecycle — parzialmente STUB (Blocco 3, vedi docstring modulo) ----------------
+# ---------------- client confirm + lifecycle (Blocco 3 — vedi docstring modulo) ----------------
 @router.post("/pulizie/richieste/{rid}/confirm")
 async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") not in STATI_APERTI:
+        raise HTTPException(status_code=400, detail="not_open")
+    provider_id = body.provider_id
+    proposal = next((p for p in brief.get("proposte", []) if p.get("provider_id") == provider_id), None)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="proposal_not_found")
+
+    binario = brief.get("binario", "impresa")
+    pb = proposal.get("breakdown") or {}
+    amount = float(proposal.get("price") or pb.get("total_client") or 0)
+
+    if binario == "impresa":
+        prov_row = db.table("profiles_provider").select("stripe_payouts_enabled").eq("user_id", provider_id).limit(1).execute()
+        if not prov_row.data or not prov_row.data[0].get("stripe_payouts_enabled"):
+            raise HTTPException(status_code=400, detail="provider_not_onboarded")
+        customer_id = user.get("stripe_customer_id")
+        pm_id = user.get("default_payment_method_id")
+        if not customer_id or not pm_id:
+            raise HTTPException(status_code=400, detail="client_payment_method_missing")
+
+        # La variazione di prezzo (se presente) è lavoro extra per il provider,
+        # non tocca la fee JOBBY (calcolata sul listino base al momento della proposta).
+        delta = amount - float(pb.get("total_client") or amount)
+        fee = float(pb.get("jobby_fee") or 0)
+        payout = float(pb.get("provider_net") or 0) + delta
+
+        db.table("missions").update({
+            "provider_id": provider_id, "price_agreed": amount,
+            "platform_fee": fee, "provider_payout": payout,
+        }).eq("id", rid).execute()
+
+        charge = SP.charge_hold(customer_id, pm_id, amount, {"mission_id": rid, "category": "pulizie"})
+        db.rpc("create_escrow_hold", {
+            "p_mission_id": rid, "p_gateway_transaction_id": charge["payment_intent_id"],
+            "p_gateway_response": {"status": charge["status"]}, "p_gateway_name": "stripe",
+        }).execute()
+        brief["pagamento_lavoro"] = {"stato": "held", "payment_intent_id": charge["payment_intent_id"], "amount": amount}
+
+    elif binario == "persona_lf":
+        cfg = brief.get("config", {}) or {}
+        durata_ore = float(cfg.get("durata_ore") or brief.get("durata_ore") or 0)
+        nominale = float(pb.get("lf_nominale") or C.lf_round_nominale(amount))
+        LF.check_ceilings(
+            family_id=row["client_id"], worker_id=provider_id, add_nominale=nominale, add_hours=durata_ore,
+            couple_ceiling_eur=C.LF_COUPLE_CEILING_EUR, family_ceiling_eur=C.LF_FAMILY_ANNUAL_EUR,
+            worker_ceiling_eur=C.LF_PROVIDER_ANNUAL_EUR, worker_ceiling_hours=C.LF_PROVIDER_HOURS,
+        )
+        LF.record_usage(row["client_id"], provider_id, nominale, durata_ore)
+
+        db.table("missions").update({
+            "provider_id": provider_id, "price_agreed": nominale, "platform_fee": 0, "provider_payout": 0,
+        }).eq("id", rid).execute()
+        brief["pagamento_lavoro"] = {"stato": "lf_registrato", "lf_nominale": nominale, "lf_ore": durata_ore}
+    else:
+        raise HTTPException(status_code=400, detail="invalid_binario")
+
+    brief["stato"] = "confermata"
+    brief["provider_scelto"] = provider_id
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+
+    await notify(provider_id, "richiesta_confermata", "Richiesta confermata",
+                "Il cliente ha confermato la tua proposta.", "richiesta", rid)
+    await notify(row["client_id"], "richiesta_confermata", "Richiesta confermata",
+                "Hai confermato la richiesta.", "richiesta", rid)
+    return {"stato": "confermata", "pagamento_lavoro": brief["pagamento_lavoro"]}
 
 
 @router.post("/pulizie/richieste/{rid}/start")
@@ -464,7 +549,45 @@ async def start(rid: str, user=Depends(get_current_user)):
 
 @router.post("/pulizie/richieste/{rid}/complete")
 async def complete(rid: str, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    uid = user["id"]
+    if uid not in (row["client_id"], brief.get("provider_scelto")):
+        raise HTTPException(status_code=404, detail="not_found")
+    if brief.get("stato") != "in_corso":
+        raise HTTPException(status_code=400, detail="not_in_progress")
+
+    binario = brief.get("binario", "impresa")
+    if binario == "impresa":
+        pagamento = brief.get("pagamento_lavoro") or {}
+        if pagamento.get("stato") != "held":
+            raise HTTPException(status_code=400, detail="payment_not_held")
+        prov_row = db.table("profiles_provider").select("stripe_connect_account_id").eq("user_id", row["provider_id"]).limit(1).execute()
+        acct_id = prov_row.data[0].get("stripe_connect_account_id") if prov_row.data else None
+        if not acct_id:
+            raise HTTPException(status_code=400, detail="provider_not_onboarded")
+        payout = float(row.get("provider_payout") or 0)
+        transfer = SP.transfer_to_provider(acct_id, payout, {"mission_id": rid, "category": "pulizie"})
+        db.rpc("release_escrow", {
+            "p_mission_id": rid, "p_gateway_transaction_id": transfer["transfer_id"],
+            "p_gateway_response": {}, "p_gateway_name": "stripe",
+        }).execute()
+        pagamento["stato"] = "released"
+        pagamento["transfer_id"] = transfer["transfer_id"]
+        brief["pagamento_lavoro"] = pagamento
+    # persona_lf: nessuna azione gateway — l'uso è già stato registrato al confirm
+
+    brief["stato"] = "completata"
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(row["client_id"], "richiesta_completata", "Lavoro completato",
+                "Il lavoro è stato segnato come completato.", "richiesta", rid)
+    if brief.get("provider_scelto"):
+        await notify(brief["provider_scelto"], "richiesta_completata", "Lavoro completato",
+                    "Hai completato il lavoro.", "richiesta", rid)
+    return {"stato": "completata"}
 
 
 class ReviewIn(BaseModel):
@@ -474,22 +597,67 @@ class ReviewIn(BaseModel):
 
 @router.post("/pulizie/richieste/{rid}/review")
 async def review(rid: str, body: ReviewIn, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") != "completata":
+        raise HTTPException(status_code=400, detail="not_completed")
+    if not (1 <= body.rating <= 5):
+        raise HTTPException(status_code=400, detail="invalid_rating")
+    provider_id = brief.get("provider_scelto")
+    if not provider_id:
+        raise HTTPException(status_code=400, detail="no_provider")
+
+    db.table("reviews").insert({
+        "mission_id": rid, "reviewer_id": user["id"], "reviewee_id": provider_id,
+        "rating": body.rating, "comment": body.comment,
+    }).execute()
+
+    agg = db.table("reviews").select("rating").eq("reviewee_id", provider_id).execute()
+    ratings = [r["rating"] for r in (agg.data or [])]
+    if ratings:
+        new_avg = round(sum(ratings) / len(ratings), 2)
+        db.table("profiles_provider").update({"avg_rating": new_avg}).eq("user_id", provider_id).execute()
+
+    brief["recensione"] = {"rating": body.rating, "comment": body.comment, "at": now_iso()}
+    brief["stato"] = "recensita"
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+
+    await notify(provider_id, "richiesta_completata", "Nuova recensione",
+                f"Hai ricevuto {body.rating}★ dal cliente.", "richiesta", rid)
+    return brief["recensione"]
 
 
-# ---------------- Libretto Famiglia borsellino — STUB (Blocco 3, vedi docstring modulo) ----------------
-class LfTopupIn(BaseModel):
-    amount: float
-
-
+# ---------------- Libretto Famiglia borsellino (Blocco 3 — registro, non wallet) ----------------
 @router.get("/pulizie/lf/borsellino")
 async def lf_borsellino(user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    uid = user["id"]
+    family_total = LF.get_family_total(uid)
+    worker_totals = LF.get_worker_totals(uid)
+    return {
+        "as_family": {"nominale_used": round(family_total, 2), "ceiling_eur": C.LF_FAMILY_ANNUAL_EUR},
+        "as_worker": {
+            "nominale_used": round(worker_totals["nominale_used"], 2),
+            "hours_used": round(worker_totals["hours_used"], 2),
+            "ceiling_eur": C.LF_PROVIDER_ANNUAL_EUR, "ceiling_hours": C.LF_PROVIDER_HOURS,
+        },
+        "couple_ceiling_eur": C.LF_COUPLE_CEILING_EUR,
+    }
 
 
 @router.post("/pulizie/lf/topup")
-async def lf_topup(body: LfTopupIn, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+async def lf_topup():
+    # Decisione presa con l'utente (Blocco 3): il Libretto Famiglia non è un
+    # portafoglio — i compensi si muovono fuori JOBBY tramite voucher INPS, mai
+    # tramite un saldo pre-caricato. Endpoint del sistema Emergent (wallet
+    # simulato) rimosso: non ha equivalente nel nuovo modello a registro.
+    raise HTTPException(
+        status_code=410,
+        detail="Il Libretto Famiglia non è un portafoglio ricaricabile: i compensi si muovono fuori JOBBY "
+               "tramite voucher INPS. Vedi GET /pulizie/lf/borsellino per i massimali residui.",
+    )
 
 
 # ---------------- provider listino ----------------

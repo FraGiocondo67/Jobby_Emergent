@@ -8,13 +8,13 @@ from starlette.middleware.cors import CORSMiddleware
 from core import db, client, now_utc, new_id, MONGO_CONFIGURED
 from catalog import seed_categories, BOT_PROVIDERS
 from trust import recalc_provider_trust
-from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, payments_connect, richieste, provider_onboarding, babysitting, driver, artigiani
+from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, richieste, provider_onboarding, babysitting, driver, artigiani
 from routers import dashboard
 from routers import spec4
-from routers import payments_split
 from routers import admin_auth
 from routers import listino
 from routers import geo
+from routers import stripe_connect
 import confirm_delivery
 
 logging.basicConfig(level=logging.INFO)
@@ -29,14 +29,13 @@ api.include_router(payments_services.router)
 api.include_router(payments_paypal.router)
 api.include_router(disputes.router)
 api.include_router(notifications.router)
-api.include_router(payments_connect.router)
+api.include_router(stripe_connect.router)
 api.include_router(richieste.router)
 api.include_router(babysitting.router)
 api.include_router(driver.router)
 api.include_router(artigiani.router)
 api.include_router(dashboard.router)
 api.include_router(spec4.router)
-api.include_router(payments_split.router)
 api.include_router(admin_auth.router)
 api.include_router(listino.router)
 api.include_router(geo.router)
