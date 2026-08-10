@@ -5,7 +5,7 @@ from fastapi import FastAPI, APIRouter, Request
 from starlette.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
-from core import db, client, now_utc, new_id
+from core import db, client, now_utc, new_id, MONGO_CONFIGURED
 from catalog import seed_categories, BOT_PROVIDERS
 from trust import recalc_provider_trust
 from routers import auth, catalog_routes, missions, bookings, wallet, chat, admin_web, business, payments_stripe, onboarding, payments_services, payments_paypal, disputes, notifications, payments_connect, richieste, provider_onboarding, babysitting, driver, artigiani
@@ -59,9 +59,17 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 @app.middleware("http")
 async def demo_readonly_guard(request: Request, call_next):
-    """Demo accounts can browse but cannot perform write actions (except auth)."""
+    """Demo accounts can browse but cannot perform write actions (except auth).
+
+    Blocco 1 (fix): se MONGO_URL non è configurato, questo controllo va
+    saltato del tutto — `db.user_sessions` è un concetto del vecchio sistema
+    di sessioni Mongo-based, non esiste per gli utenti Supabase Auth del
+    Blocco 1, e senza Mongo raggiungibile la query qui sotto si limiterebbe
+    ad appendere/fallire su ogni singola richiesta POST (inclusa
+    /api/onboarding/complete, che è già Postgres e non ha nulla a che fare
+    col concetto di account demo)."""
     path = request.url.path
-    if request.method not in SAFE_METHODS and path.startswith("/api/") and not path.startswith("/api/auth/"):
+    if MONGO_CONFIGURED and request.method not in SAFE_METHODS and path.startswith("/api/") and not path.startswith("/api/auth/"):
         authz = request.headers.get("authorization", "")
         if authz.startswith("Bearer "):
             token = authz.split(" ", 1)[1]
@@ -75,6 +83,21 @@ async def demo_readonly_guard(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup():
+    # Blocco 1 (fix): con MONGO_URL non configurato (scelta dell'utente: niente
+    # Mongo nemmeno temporaneo, si va dritti su Supabase) saltiamo tutto
+    # l'init/seed Mongo qui sotto — altrimenti il server non parte nemmeno per
+    # testare le route Postgres già migrate (auth/onboarding, Blocco 1). I
+    # router non ancora migrati (missions, wallet, chat, ecc.) restano quindi
+    # non funzionanti finché non vengono riscritti per Postgres nei prossimi
+    # blocchi — è lo stato ibrido già documentato nel piano di migrazione, non
+    # una novità introdotta da questo fix.
+    if not MONGO_CONFIGURED:
+        logger.warning(
+            "MONGO_URL non configurato: salto init/seed MongoDB all'avvio. "
+            "Le route Postgres del Blocco 1 (/api/auth/*, /api/onboarding/*) "
+            "funzionano; tutte le altre route (ancora Mongo-based) no."
+        )
+        return
     await db.users.create_index("email", unique=True)
     await db.users.create_index("user_id", unique=True)
     await db.user_sessions.create_index("session_token", unique=True)
