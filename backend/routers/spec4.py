@@ -13,8 +13,17 @@ suoi limiti):
 
 TOLTO rispetto al vecchio spec4.py (fuori scope, decisione utente): no-show,
 segnalazione ritardo, pausa/ripresa ricorrenza, tutta la Fase B recensioni
-(create/delete/reply/listing — già gestita da review() nelle 4 verticali),
-coda di moderazione recensioni (rimandata al Blocco 6, Retool).
+(create/delete/reply/listing — già gestita da review() nelle 4 verticali).
+
+BLOCCO 6: aggiunta la coda di moderazione recensioni, allora rimandata
+esplicitamente qui. `review()` nelle 4 verticali scrive sempre
+`brief_answers.recensione = {rating, comment, at}` (stesso identico shape in
+richieste.py/artigiani.py/babysitting.py/driver.py, verificato) senza le
+chiavi `moderato`/`hidden` — questo modulo le aggiunge sopra, non tocca
+`review()`. `GET /admin/reviews/pending` filtra in Python (stesso pattern già
+accettato altrove nel progetto per condizioni su chiavi jsonb non
+indicizzate, es. `admin_renewals` in provider_onboarding.py) — va bene per i
+volumi attuali, da rivedere se diventa un collo di bottiglia reale.
 
 IMPORTANTE — integrazione con gli endpoint di cancellazione già esistenti:
 `POST /pulizie|artigiani|babysitting|driver/richieste/{rid}/cancel` (Blocco
@@ -119,6 +128,49 @@ async def admin_get_config(_=Depends(require_admin)):
 @router.post("/admin/spec4/config")
 async def admin_set_config(body: dict, _=Depends(require_admin)):
     return S4.set_spec4_config(body)
+
+
+@router.get("/admin/reviews/pending")
+async def admin_reviews_pending(_=Depends(require_admin)):
+    """Coda di moderazione recensioni, cross-verticale (vedi docstring
+    modulo) — sostituisce il vecchio `/admin/spec4/moderation` legato solo a
+    `db.richieste`."""
+    res = (
+        db.table("missions").select("id, category_id, brief_answers, client_id, provider_id,"
+                                    " users!missions_client_id_fkey(full_name), service_categories(name_it)")
+        .not_.is_("brief_answers->recensione", "null").order("created_at", desc=True).limit(300).execute()
+    )
+    out = []
+    for row in (res.data or []):
+        brief = row.get("brief_answers") or {}
+        rev = brief.get("recensione") or {}
+        if rev.get("moderato"):
+            continue
+        cliente = row.get("users") or {}
+        categoria = row.get("service_categories") or {}
+        out.append({"mission_id": row["id"], "rating": rev.get("rating"), "comment": rev.get("comment"),
+                    "cliente_nome": cliente.get("full_name"), "categoria": categoria.get("name_it"), "at": rev.get("at")})
+    return out
+
+
+class ModerateReviewIn(BaseModel):
+    action: str   # approve | hide
+
+
+@router.post("/admin/reviews/{mission_id}/moderate")
+async def admin_moderate_review(mission_id: str, body: ModerateReviewIn, _=Depends(require_admin)):
+    if body.action not in ("approve", "hide"):
+        raise HTTPException(status_code=400, detail="bad_action")
+    mission = _load_mission(mission_id)
+    brief = mission.get("brief_answers") or {}
+    rev = brief.get("recensione")
+    if not rev:
+        raise HTTPException(status_code=404, detail="no_review")
+    rev["moderato"] = True
+    rev["hidden"] = (body.action == "hide")
+    brief["recensione"] = rev
+    db.table("missions").update({"brief_answers": brief}).eq("id", mission_id).execute()
+    return {"ok": True, "action": body.action}
 
 
 @router.get("/admin/spec4/reliability")

@@ -1,25 +1,81 @@
-"""JOBBY — Spec 2: provider onboarding (registration, phone OTP, 3 tracks,
-Libretto Famiglia guided flow, availability, fee, 5-state machine, admin approval)."""
-import os
-import random
-from datetime import datetime, date, timedelta
+"""BLOCCO 6 (migrazione Emergent -> Supabase/Render) — riscrittura Postgres di
+questo router. Sostituisce interamente la versione Mongo/Emergent. Era rimasto
+indietro dal Blocco 1 (segnalato più volte nel piano) — fino a questo blocco
+non esisteva alcun modo, né da app né da admin, di completare/approvare
+davvero un profilo provider su Postgres.
 
-import requests
+Rapporto con `routers/onboarding.py` (Blocco 1): quel router gestisce la
+scelta iniziale del ruolo (`client`/`provider`/`both`) e crea la riga
+`profiles_provider` con `is_proximity_business`/`skills`/`business_data`
+essenziali — questo router **completa** quel profilo con i dati KYC/fiscali
+(documenti, IBAN, tipo profilo fiscale, disponibilità) e gestisce
+l'approvazione admin. Non duplica la logica ruolo/business: si aspetta che
+`profiles_provider` esista già (creata da `/onboarding/complete`).
+
+Semplificazione strutturale rispetto al vecchio Mongo: il vecchio modello
+aveva `roles[]` con vincolo "max 2, mai provider+business insieme" perché
+"business" era un ruolo a sé. Nello schema Postgres (già deciso prima di
+questa migrazione, poi confermato nel Blocco 5) `role` è un enum chiuso
+(client/provider/both/admin) e "business" è ortogonale — un flag
+`is_proximity_business` su `profiles_provider`, non un ruolo. Questo router
+quindi non ha più bisogno di alcuna logica di conflitto ruoli: si limita ad
+arricchire il profilo provider che esiste già.
+
+Dove vivono i dati (niente tabelle nuove, solo colonne già esistenti nello
+schema storico ma mai scritte da nessun router fino ad ora):
+- `profiles_provider.fiscal_data` (jsonb, NUOVO USO): profile_type
+  (impresa/piva/persona_lf — categoria fiscale, INDIPENDENTE dal binario che
+  ogni verticale usa per il matching, vedi sotto), dob, codice_fiscale, iban,
+  condizione_soggettiva.
+- `profiles_provider.documents` (jsonb): stessa convenzione già usata da
+  artigiani.py/babysitting.py/driver.py (chiavi prefissate, verified
+  booleani) — qui id_document_front/id_document_back/selfie_document/
+  presentation_photo, più lf_delega_signed/lf_delega_name/lf_delega_at/
+  lf_inps_registered, submitted_at, onboarding_waitlisted.
+- `profiles_provider.business_data` (jsonb, Blocco 1/5): vat_number/
+  business_name/last_lat/last_lng — riusa esattamente le chiavi già scritte
+  da onboarding.py, non introduce un secondo posto per lo stesso dato.
+- `profiles_provider.bio`/`time_slots`/`kyc_status`/`kyc_verified_at`:
+  colonne dedicate già esistenti, mai scritte finora.
+- `profiles_provider.location` (PostGIS): scritta qui con
+  `core_pg.to_geography_point()` (stesso helper verificato nel Blocco 5 per
+  `missions.location`) — chiude il TODO lasciato esplicitamente aperto in
+  `onboarding.py` dal Blocco 1 ("da verificare... lasciato TODO invece di
+  scrivere codice non verificato").
+
+NOTA — `profile_type` (impresa/piva/persona_lf, categoria fiscale KYC) è
+DIVERSO dal `binario` che client/provider scelgono per-verticale in
+richieste.py/artigiani.py/babysitting.py/driver.py (letto da
+`p_binario` nelle RPC `*_compatible_providers`, mai da questo file) — il
+vecchio Mongo derivava il ruolo "business" da profile_type=='impresa', qui
+NON più: sono due concetti ortogonali, coerente con la nota sopra.
+
+MIGLIORAMENTO deliberato rispetto al vecchio comportamento: la
+"sospensione volontaria" del provider (pausa temporanea, non un
+provvedimento admin) NON tocca più `users.status` (che blocca l'intero
+accesso via `deps_pg.get_current_user` — un self-suspend avrebbe reso
+impossibile anche il self-resume, dato che l'utente sospeso riceve 403 dal
+gate di autenticazione prima ancora di raggiungere l'endpoint: bug latente
+mai emerso nel vecchio Mongo perché mai testato end-to-end). Usa invece
+`profiles_provider.availability_status` (online/offline/busy, colonna
+dedicata già esistente) — più corretto semanticamente e non rischia di
+autobloccare l'utente.
+
+FUORI SCOPE (non riportato, nessun consumer noto): verifica email via OTP
+reale (Resend) — già disattivata "per ora" nel vecchio sistema (auto-verify
+senza invio codice), stesso comportamento mantenuto qui. Se serve attivarla
+davvero è lavoro nuovo, non porting.
+"""
+from datetime import datetime, timedelta
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel
 
-from core import db, now_utc
-from deps import get_current_user, require_admin
-from routers.notifications import push_notification
+from core_pg import db, now_iso, notify, to_geography_point
+from deps_pg import get_current_user, require_admin
 
 router = APIRouter()
-
-# --- Resend (Email OTP verification) ---
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-RESEND_FROM = os.environ.get("RESEND_FROM", "JOBBY <verifica@yobbyfree.it>")
-RESEND_BASE = "https://api.resend.com/emails"
-OTP_TTL_MIN = 10
 
 DEFAULT_FEE = {"visit_fixed_total": 8.0, "provider_share": 4.0, "client_share": 4.0,
                "recurring_total": 6.0, "recurring_after_month": 1}
@@ -35,114 +91,73 @@ CONDIZIONI = [
 ]
 
 
-def _send_email(to: str, subject: str, html: str):
-    if not RESEND_API_KEY:
-        raise HTTPException(status_code=503, detail="email_not_configured")
-    try:
-        r = requests.post(
-            RESEND_BASE,
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-            json={"from": RESEND_FROM, "to": [to], "subject": subject, "html": html},
-            timeout=15,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"resend_unreachable: {e}")
-    if r.status_code not in (200, 201, 202):
-        detail = "resend_error"
-        try:
-            detail = r.json().get("message") or detail
-        except Exception:
-            pass
-        raise HTTPException(status_code=400, detail=f"resend_error: {detail}")
+def _provider_row(user_id: str) -> dict:
+    res = db.table("profiles_provider").select("*").eq("user_id", user_id).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=400, detail="complete_onboarding_first")
+    return res.data[0]
 
 
-def _otp_email_html(code: str) -> str:
-    return (
-        f"<div style='font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px'>"
-        f"<h2 style='color:#1a1a1a'>JOBBY — Verifica email</h2>"
-        f"<p style='font-size:15px;color:#444'>Il tuo codice di verifica è:</p>"
-        f"<div style='font-size:34px;font-weight:bold;letter-spacing:8px;color:#2563eb;"
-        f"background:#eff4ff;border-radius:12px;padding:18px;text-align:center;margin:16px 0'>{code}</div>"
-        f"<p style='font-size:13px;color:#888'>Il codice scade tra {OTP_TTL_MIN} minuti. "
-        f"Se non hai richiesto questa verifica, ignora questa email.</p></div>"
-    )
+def _save_documents(user_id: str, documents: dict) -> None:
+    db.table("profiles_provider").update({"documents": documents}).eq("user_id", user_id).execute()
 
 
-def provider_state(u: dict) -> str:
-    """5 human states derived from the user doc."""
-    if not u.get("role") in ("provider", "business"):
+def provider_state(user: dict, provider: Optional[dict]) -> str:
+    """7 stati derivati, stessa semantica del vecchio Mongo — vedi docstring
+    modulo per dove vive ciascun campo nel nuovo schema."""
+    if user.get("role") not in ("provider", "both"):
         return "client"
-    appr = u.get("approval_status", "pending")
-    if appr == "suspended":
+    if not provider:
+        return "incompleto"
+    documents = provider.get("documents") or {}
+    fiscal = provider.get("fiscal_data") or {}
+    status = user.get("status", "pending")
+    if status == "suspended":
         return "sospeso"
-    if appr == "rejected":
+    if status == "rejected":
         return "rifiutato"
-    if appr == "waitlist":
+    if documents.get("onboarding_waitlisted"):
         return "waitlist"
-    if appr == "approved":
-        if u.get("provider_profile_type") == "persona_lf" and u.get("lf_inps_registered") is not True:
+    if status == "active":
+        if fiscal.get("profile_type") == "persona_lf" and not documents.get("lf_inps_registered"):
             return "attivo_inps_pending"
         return "attivo"
-    # pending
-    return "in_verifica" if u.get("onboarding_completed") else "incompleto"
+    return "in_verifica" if documents.get("submitted_at") else "incompleto"
 
 
-# ---------------- email OTP (Resend) ----------------
+# ---------------- email verification (disattivata "per ora", vedi docstring) ----------------
 class EmailIn(BaseModel):
-    email: EmailStr
-
-
-class VerifyIn(BaseModel):
-    email: EmailStr
-    code: str
+    email: str
 
 
 @router.post("/email/send-otp")
 async def send_otp(body: EmailIn, user=Depends(get_current_user)):
-    # #3 — verifica email DISATTIVATA per ora: l'email si considera verificata
-    # subito, senza invio codice (integrazione reale in un momento successivo).
     email = body.email.strip().lower()
-    await db.users.update_one({"user_id": user["user_id"]},
-                              {"$set": {"email": email, "email_verified": True}})
+    db.table("users").update({"email": email, "is_email_verified": True}).eq("id", user["id"]).execute()
     return {"status": "verified", "auto_verified": True}
 
 
 @router.post("/email/verify-otp")
-async def verify_otp(body: VerifyIn, user=Depends(get_current_user)):
-    email = body.email.strip().lower()
-    rec = await db.otp_requests.find_one({"user_id": user["user_id"], "email": email})
-    if not rec or not rec.get("code"):
-        raise HTTPException(status_code=400, detail="no_pending_verification")
-    try:
-        expired = now_utc() > datetime.fromisoformat(rec["expires_at"])
-    except Exception:
-        expired = False
-    if expired:
-        await db.otp_requests.delete_one({"_id": rec["_id"]})
-        raise HTTPException(status_code=400, detail="code_expired")
-    if body.code.strip() != rec["code"]:
-        raise HTTPException(status_code=400, detail="invalid_code")
-    await db.otp_requests.delete_one({"_id": rec["_id"]})
-    await db.users.update_one({"user_id": user["user_id"]},
-                              {"$set": {"contact_email": email, "email_verified": True}})
-    return {"verified": True}
+async def verify_otp(user=Depends(get_current_user)):
+    # Nessun OTP reale da verificare (vedi send_otp) — endpoint tenuto per
+    # compatibilità con eventuali chiamate residue lato app.
+    return {"verified": bool(user.get("is_email_verified"))}
 
 
-# ---------------- provider profile / tracks ----------------
+# ---------------- provider profile ----------------
 def _is_adult(dob_str: str) -> bool:
     try:
         d = datetime.fromisoformat(dob_str).date()
     except Exception:
         return False
-    today = date.today()
+    today = datetime.now().date()
     age = today.year - d.year - ((today.month, today.day) < (d.month, d.day))
     return age >= 18
 
 
 class ProfileIn(BaseModel):
-    profile_type: str            # impresa | piva | persona_lf
+    profile_type: str            # impresa | piva | persona_lf (categoria fiscale, vedi docstring)
     dob: str                     # YYYY-MM-DD
-    name: Optional[str] = None
     business_name: Optional[str] = None
     vat_number: Optional[str] = None
     codice_fiscale: Optional[str] = None
@@ -152,7 +167,6 @@ class ProfileIn(BaseModel):
     iban: Optional[str] = None
     bio: Optional[str] = None
     condizione_soggettiva: Optional[str] = None
-    role: Optional[str] = None    # ruolo scelto dall'utente (provider|business); ha priorità sul tipo profilo
 
 
 @router.post("/onboarding/provider/profile")
@@ -161,30 +175,30 @@ async def set_profile(body: ProfileIn, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="invalid_profile_type")
     if not _is_adult(body.dob):
         raise HTTPException(status_code=400, detail="minor_not_allowed")
-    # Il ruolo è deciso dalla scelta dell'utente (Professionista vs Attività di prossimità).
-    # Il tipo profilo (impresa/piva/persona_lf) è solo legale/fiscale.
-    if body.role in ("provider", "business"):
-        role = body.role
-    else:
-        role = "business" if body.profile_type == "impresa" else "provider"
-    # #8 — vincolo multi-ruolo: max 2 profili e mai provider+business insieme.
-    owned = set(user.get("roles") or [user.get("role") or "client"])
-    if role not in owned:
-        if len(owned) >= 2:
-            raise HTTPException(status_code=400, detail="max_two_roles")
-        if (role == "provider" and "business" in owned) or (role == "business" and "provider" in owned):
-            raise HTTPException(status_code=400, detail="role_conflict")
-    upd = {"role": role, "provider_profile_type": body.profile_type, "dob": body.dob}
-    for k in ("name", "business_name", "vat_number", "codice_fiscale", "address", "iban", "bio", "condizione_soggettiva"):
-        v = getattr(body, k)
-        if v is not None:
-            upd[k] = v
+    provider = _provider_row(user["id"])
+
+    fiscal = dict(provider.get("fiscal_data") or {})
+    fiscal.update({"profile_type": body.profile_type, "dob": body.dob, "codice_fiscale": body.codice_fiscale,
+                   "iban": body.iban, "condizione_soggettiva": body.condizione_soggettiva})
+    business_data = dict(provider.get("business_data") or {})
+    if body.business_name:
+        business_data["business_name"] = body.business_name
+    if body.vat_number is not None:
+        business_data["vat_number"] = body.vat_number
+    if body.address is not None:
+        business_data["address"] = body.address
     if body.lat is not None:
-        upd["lat"] = body.lat
+        business_data["last_lat"] = body.lat
     if body.lng is not None:
-        upd["lng"] = body.lng
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": upd, "$addToSet": {"roles": role}})
-    return {"ok": True, "role": role}
+        business_data["last_lng"] = body.lng
+
+    upd = {"fiscal_data": fiscal, "business_data": business_data}
+    if body.bio is not None:
+        upd["bio"] = body.bio
+    if body.lat is not None and body.lng is not None:
+        upd["location"] = to_geography_point(body.lat, body.lng)
+    db.table("profiles_provider").update(upd).eq("user_id", user["id"]).execute()
+    return {"ok": True, "profile_type": body.profile_type}
 
 
 class DocIn(BaseModel):
@@ -198,7 +212,10 @@ async def upload_doc(body: DocIn, user=Depends(get_current_user)):
              "selfie": "selfie_document", "presentation": "presentation_photo"}.get(body.kind)
     if not field or not body.image.strip():
         raise HTTPException(status_code=400, detail="invalid_document")
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {field: body.image}})
+    provider = _provider_row(user["id"])
+    documents = dict(provider.get("documents") or {})
+    documents[field] = body.image
+    _save_documents(user["id"], documents)
     return {"ok": True}
 
 
@@ -211,9 +228,10 @@ class DelegaIn(BaseModel):
 async def sign_delega(body: DelegaIn, user=Depends(get_current_user)):
     if not body.signature_name.strip():
         raise HTTPException(status_code=400, detail="empty_signature")
-    await db.users.update_one({"user_id": user["user_id"]},
-                              {"$set": {"lf_delega_signed": True, "lf_delega_name": body.signature_name.strip(),
-                                        "lf_delega_at": now_utc().isoformat()}})
+    provider = _provider_row(user["id"])
+    documents = dict(provider.get("documents") or {})
+    documents.update({"lf_delega_signed": True, "lf_delega_name": body.signature_name.strip(), "lf_delega_at": now_iso()})
+    _save_documents(user["id"], documents)
     return {"lf_delega_signed": True}
 
 
@@ -223,7 +241,10 @@ class InpsIn(BaseModel):
 
 @router.post("/onboarding/lf/inps")
 async def set_inps(body: InpsIn, user=Depends(get_current_user)):
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"lf_inps_registered": body.registered}})
+    provider = _provider_row(user["id"])
+    documents = dict(provider.get("documents") or {})
+    documents["lf_inps_registered"] = body.registered
+    _save_documents(user["id"], documents)
     return {"lf_inps_registered": body.registered}
 
 
@@ -234,89 +255,111 @@ class AvailabilityIn(BaseModel):
 
 @router.put("/onboarding/availability")
 async def set_availability(body: AvailabilityIn, user=Depends(get_current_user)):
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"availability": body.availability}})
+    _provider_row(user["id"])
+    db.table("profiles_provider").update({"time_slots": body.availability}).eq("user_id", user["id"]).execute()
     return {"availability": body.availability}
 
 
 # ---------------- config (fee + price ranges) ----------------
-async def get_fee_config() -> dict:
-    s = await db.settings.find_one({"key": "onboarding_fee"})
-    return {**DEFAULT_FEE, **(s.get("value") if s else {})}
-
-
-async def get_price_ranges() -> dict:
-    s = await db.settings.find_one({"key": "price_ranges"})
-    return {**DEFAULT_PRICE_RANGES, **(s.get("value") if s else {})}
+def _setting(key: str, default: dict) -> dict:
+    res = db.table("app_settings").select("value").eq("key", key).limit(1).execute()
+    if res.data and isinstance(res.data[0].get("value"), dict):
+        return {**default, **res.data[0]["value"]}
+    return dict(default)
 
 
 @router.get("/onboarding/config")
 async def onboarding_config(user=Depends(get_current_user)):
-    return {"fee": await get_fee_config(), "price_ranges": await get_price_ranges(), "condizioni": CONDIZIONI}
+    return {"fee": _setting("onboarding_fee", DEFAULT_FEE), "price_ranges": _setting("price_ranges", DEFAULT_PRICE_RANGES),
+            "condizioni": CONDIZIONI}
 
 
 # ---------------- finalize + status ----------------
 @router.post("/onboarding/provider/submit")
 async def submit_provider(user=Depends(get_current_user)):
-    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
-    if not u.get("email_verified"):
+    provider = _provider_row(user["id"])
+    if not user.get("is_email_verified"):
         raise HTTPException(status_code=400, detail="email_not_verified")
-    if not u.get("provider_profile_type"):
+    fiscal = provider.get("fiscal_data") or {}
+    if not fiscal.get("profile_type"):
         raise HTTPException(status_code=400, detail="profile_incomplete")
-    appr = "approved" if u.get("provider_approved") else "pending"
-    await db.users.update_one({"user_id": user["user_id"]},
-                              {"$set": {"onboarding_completed": True, "approval_status": appr,
-                                        "submitted_at": now_utc().isoformat()}})
-    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
-    u["provider_state"] = provider_state(u)
-    return u
+    documents = dict(provider.get("documents") or {})
+    documents["submitted_at"] = now_iso()
+    upd = {"documents": documents}
+    if provider.get("kyc_status") in (None, "not_started"):
+        upd["kyc_status"] = "pending"
+    db.table("profiles_provider").update(upd).eq("user_id", user["id"]).execute()
+    provider["documents"] = documents
+    return {"ok": True, "provider_state": provider_state(user, provider)}
 
 
 @router.get("/onboarding/provider/status")
 async def provider_status(user=Depends(get_current_user)):
-    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    res = db.table("profiles_provider").select("*").eq("user_id", user["id"]).limit(1).execute()
+    provider = res.data[0] if res.data else None
+    documents = (provider or {}).get("documents") or {}
+    fiscal = (provider or {}).get("fiscal_data") or {}
     return {
-        "provider_state": provider_state(u),
-        "profile_type": u.get("provider_profile_type"),
-        "email_verified": u.get("email_verified", False),
-        "onboarding_completed": u.get("onboarding_completed", False),
-        "lf_delega_signed": u.get("lf_delega_signed", False),
-        "lf_inps_registered": u.get("lf_inps_registered", False),
-        "has_id": bool(u.get("id_document_front")),
-        "has_selfie": bool(u.get("selfie_document")),
-        "iban": u.get("iban", ""),
+        "provider_state": provider_state(user, provider),
+        "profile_type": fiscal.get("profile_type"),
+        "email_verified": bool(user.get("is_email_verified")),
+        "onboarding_completed": bool(documents.get("submitted_at")),
+        "lf_delega_signed": bool(documents.get("lf_delega_signed")),
+        "lf_inps_registered": bool(documents.get("lf_inps_registered")),
+        "has_id": bool(documents.get("id_document_front")),
+        "has_selfie": bool(documents.get("selfie_document")),
+        "iban": fiscal.get("iban", ""),
     }
 
 
-# ---------------- voluntary suspend ----------------
+# ---------------- voluntary pause (vedi MIGLIORAMENTO nel docstring modulo) ----------------
 class SuspendIn(BaseModel):
     suspend: bool
 
 
 @router.post("/provider/suspend")
 async def self_suspend(body: SuspendIn, user=Depends(get_current_user)):
-    if user.get("role") not in ("provider", "business"):
+    if user.get("role") not in ("provider", "both"):
         raise HTTPException(status_code=403, detail="providers_only")
-    if body.suspend:
-        await db.users.update_one({"user_id": user["user_id"]},
-                                  {"$set": {"approval_status": "suspended", "self_suspended": True}})
-    else:
-        # resume only if it was a voluntary suspension
-        if user.get("self_suspended"):
-            await db.users.update_one({"user_id": user["user_id"]},
-                                      {"$set": {"approval_status": "approved", "self_suspended": False}})
-    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
-    return {"provider_state": provider_state(u)}
+    _provider_row(user["id"])
+    status = "offline" if body.suspend else "online"
+    db.table("profiles_provider").update({"availability_status": status}).eq("user_id", user["id"]).execute()
+    return {"availability_status": status}
 
 
 # ---------------- admin: approval + fee config ----------------
 @router.get("/admin/onboarding/pending")
 async def admin_pending(_=Depends(require_admin)):
-    users = await db.users.find(
-        {"role": {"$in": ["provider", "business"]}, "approval_status": {"$in": ["pending", "waitlist"]}},
-        {"_id": 0, "password_hash": 0}).sort("submitted_at", -1).to_list(200)
-    for u in users:
-        u["provider_state"] = provider_state(u)
-    return users
+    # Filtro su users.status fatto in Python, non con .eq()/.in_() su una
+    # colonna della relazione embedded — pattern non usato altrove in questo
+    # progetto con supabase-py, meglio non introdurlo qui non verificato
+    # (stesso approccio pragmatico già usato in admin_reviews_pending/
+    # admin_renewals per condizioni su dati annidati).
+    res = (
+        db.table("profiles_provider").select("*, users!inner(id, full_name, email, role, status, is_email_verified)")
+        .order("created_at", desc=True).limit(1000).execute()
+    )
+    out = []
+    for p in (res.data or []):
+        u = p.pop("users", None) or {}
+        if u.get("status") != "pending":
+            continue
+        documents = p.get("documents") or {}
+        # Solo chi ha davvero completato il submit (submitted_at) o è in
+        # lista d'attesa è "in coda" — gli altri sono ancora "incompleto" e
+        # non serve mostrarli in questa lista.
+        if not (documents.get("submitted_at") or documents.get("onboarding_waitlisted")):
+            continue
+        out.append({**u, "provider_state": provider_state(u, p), "business_name": (p.get("business_data") or {}).get("business_name"),
+                    "vat_number": (p.get("business_data") or {}).get("vat_number"), "codice_fiscale": (p.get("fiscal_data") or {}).get("codice_fiscale"),
+                    "iban": (p.get("fiscal_data") or {}).get("iban"), "provider_profile_type": (p.get("fiscal_data") or {}).get("profile_type"),
+                    "address": (p.get("business_data") or {}).get("address"), "id_document_front": documents.get("id_document_front"),
+                    "id_document_back": documents.get("id_document_back"), "selfie_document": documents.get("selfie_document"),
+                    "presentation_photo": documents.get("presentation_photo"), "casellario_doc": documents.get("casellario_doc"),
+                    "casellario_verified": documents.get("casellario_verified"), "contact_email": u.get("email"),
+                    "email_verified": u.get("is_email_verified"), "lf_delega_signed": documents.get("lf_delega_signed"),
+                    "lf_inps_registered": documents.get("lf_inps_registered"), "user_id": u.get("id")})
+    return out
 
 
 class AdminDecisionIn(BaseModel):
@@ -325,29 +368,46 @@ class AdminDecisionIn(BaseModel):
 
 @router.post("/admin/onboarding/{user_id}/decision")
 async def admin_decision(user_id: str, body: AdminDecisionIn, _=Depends(require_admin)):
-    u = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    if not u:
+    ures = db.table("users").select("*").eq("id", user_id).limit(1).execute()
+    if not ures.data:
         raise HTTPException(status_code=404, detail="not_found")
-    upd = {}
-    msg = ""
+    provider = _provider_row(user_id)
+    documents = dict(provider.get("documents") or {})
+    user_upd, provider_upd, msg = {}, {}, ""
+
     if body.action == "approve":
-        upd = {"approval_status": "approved", "provider_approved": True}
+        user_upd = {"status": "active"}
+        provider_upd = {"kyc_status": "approved", "kyc_verified_at": now_iso()}
+        documents["onboarding_waitlisted"] = False
         msg = "Il tuo profilo è stato approvato: ora puoi ricevere richieste!"
     elif body.action == "suspend":
-        upd = {"approval_status": "suspended"}; msg = "Il tuo profilo è stato sospeso. Ti contatteremo."
+        user_upd = {"status": "suspended"}
+        msg = "Il tuo profilo è stato sospeso. Ti contatteremo."
     elif body.action == "reject":
-        upd = {"approval_status": "rejected"}; msg = "La tua registrazione non è stata approvata."
+        user_upd = {"status": "rejected"}
+        provider_upd = {"kyc_status": "rejected"}
+        msg = "La tua registrazione non è stata approvata."
     elif body.action == "waitlist":
-        upd = {"approval_status": "waitlist"}; msg = "Sei in lista d'attesa: ti avvisiamo appena apriamo nella tua zona."
+        documents["onboarding_waitlisted"] = True
+        msg = "Sei in lista d'attesa: ti avvisiamo appena apriamo nella tua zona."
     elif body.action == "convert_lf":
-        upd = {"provider_profile_type": "persona_lf", "role": "provider", "approval_status": "pending"}
+        fiscal = dict(provider.get("fiscal_data") or {})
+        fiscal["profile_type"] = "persona_lf"
+        provider_upd = {"fiscal_data": fiscal, "kyc_status": "pending"}
+        user_upd = {"status": "pending"}
         msg = "Ti abbiamo proposto il percorso Libretto Famiglia."
     else:
         raise HTTPException(status_code=400, detail="invalid_action")
-    await db.users.update_one({"user_id": user_id}, {"$set": upd})
-    await push_notification(user_id, "onboarding", "Aggiornamento profilo", msg, "profile", user_id)
-    u = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    return {"user_id": user_id, "provider_state": provider_state(u)}
+
+    if user_upd:
+        db.table("users").update(user_upd).eq("id", user_id).execute()
+    provider_upd["documents"] = documents
+    db.table("profiles_provider").update(provider_upd).eq("user_id", user_id).execute()
+    await notify(user_id, "kyc_update", "Aggiornamento profilo", msg, "profile", user_id)
+
+    ures2 = db.table("users").select("*").eq("id", user_id).limit(1).execute()
+    pres2 = db.table("profiles_provider").select("*").eq("user_id", user_id).limit(1).execute()
+    return {"user_id": user_id, "provider_state": provider_state(ures2.data[0], pres2.data[0] if pres2.data else None)}
 
 
 class FeeConfigIn(BaseModel):
@@ -359,11 +419,11 @@ class FeeConfigIn(BaseModel):
 
 @router.post("/admin/onboarding/fee")
 async def admin_set_fee(body: FeeConfigIn, _=Depends(require_admin)):
-    await db.settings.update_one({"key": "onboarding_fee"}, {"$set": {"value": body.dict()}}, upsert=True)
-    return await get_fee_config()
+    db.table("app_settings").upsert({"key": "onboarding_fee", "value": body.dict()}).execute()
+    return _setting("onboarding_fee", DEFAULT_FEE)
 
 
-# ==================== Spec 9 — trigger IDV scritto + promemoria rinnovi ====================
+# ==================== trigger IDV scritto + promemoria rinnovi ====================
 def _iso_week_key(dt: datetime) -> str:
     y, w, _ = dt.isocalendar()
     return f"{y}-W{w:02d}"
@@ -371,22 +431,25 @@ def _iso_week_key(dt: datetime) -> str:
 
 @router.get("/admin/idv-trigger")
 async def admin_idv_trigger(_=Depends(require_admin)):
-    """Monitora il volume settimanale di registrazioni persone fisiche vs soglia scritta."""
-    s = await db.settings.find_one({"key": "idv_config"})
-    cfg = {"weekly_threshold": 15, "consecutive_weeks": 3, "multi_area": False, "provider": "manual"}
-    if s and isinstance(s.get("value"), dict):
-        cfg.update(s["value"])
-    # persone fisiche = provider senza business_name
-    users = await db.users.find({"role": "provider", "$or": [{"business_name": {"$in": [None, ""]}}, {"business_name": {"$exists": False}}]},
-                                {"_id": 0, "created_at": 1}).to_list(5000)
+    """Monitora il volume settimanale di registrazioni persone fisiche
+    (provider senza business_name in business_data) vs soglia scritta."""
+    cfg = _setting("idv_config", {"weekly_threshold": 15, "consecutive_weeks": 3, "multi_area": False, "provider": "manual"})
+    res = (
+        db.table("profiles_provider").select("created_at, business_data, users!inner(role)")
+        .eq("users.role", "provider").limit(5000).execute()
+    )
     counts: dict = {}
-    for u in users:
-        ca = u.get("created_at")
+    for p in (res.data or []):
+        bd = p.get("business_data") or {}
+        if bd.get("business_name"):
+            continue
+        ca = p.get("created_at")
         if not ca:
             continue
         try:
             dt = datetime.fromisoformat(str(ca).replace("Z", ""))
-            counts[_iso_week_key(dt)] = counts.get(_iso_week_key(dt), 0) + 1
+            key = _iso_week_key(dt)
+            counts[key] = counts.get(key, 0) + 1
         except Exception:
             pass
     now = datetime.now()
@@ -404,35 +467,41 @@ async def admin_idv_trigger(_=Depends(require_admin)):
 
 @router.post("/admin/idv-config")
 async def admin_idv_config(body: dict, _=Depends(require_admin)):
-    s = await db.settings.find_one({"key": "idv_config"})
-    cur = {"weekly_threshold": 15, "consecutive_weeks": 3, "multi_area": False, "provider": "manual"}
-    if s and isinstance(s.get("value"), dict):
-        cur.update(s["value"])
+    cur = _setting("idv_config", {"weekly_threshold": 15, "consecutive_weeks": 3, "multi_area": False, "provider": "manual"})
     for k in ("weekly_threshold", "consecutive_weeks", "multi_area", "provider"):
         if k in body:
             cur[k] = body[k]
-    await db.settings.update_one({"key": "idv_config"}, {"$set": {"value": cur}}, upsert=True)
+    db.table("app_settings").upsert({"key": "idv_config", "value": cur}).execute()
     return cur
 
 
 @router.get("/admin/renewals")
 async def admin_renewals(_=Depends(require_admin)):
-    """Casellari e documenti in scadenza (o scaduti) entro N giorni."""
+    """Casellari in scadenza (o scaduti) entro N giorni — filtrato in Python
+    sullo stesso jsonb documents letto per la verifica (stesso limite già
+    accettato altrove nel progetto: niente query indicizzata su una chiave
+    jsonb per un volume che oggi non lo giustifica)."""
     horizon_days = 60
     now = datetime.now()
+    res = (
+        db.table("profiles_provider").select("user_id, documents, business_data, users!inner(full_name)")
+        .limit(2000).execute()
+    )
     out = []
-    cur = db.users.find({"casellario_expires": {"$exists": True, "$ne": None}},
-                        {"_id": 0, "user_id": 1, "name": 1, "business_name": 1, "casellario_expires": 1, "casellario_verified": 1})
-    for u in await cur.to_list(2000):
-        exp = u.get("casellario_expires")
+    for p in (res.data or []):
+        documents = p.get("documents") or {}
+        exp = documents.get("casellario_expires")
+        if not exp:
+            continue
         try:
             dt = datetime.fromisoformat(str(exp).replace("Z", ""))
             days = (dt.replace(tzinfo=None) - now).days
         except Exception:
             continue
         if days <= horizon_days:
-            out.append({"user_id": u["user_id"], "name": u.get("business_name") or u.get("name"),
+            u = p.get("users") or {}
+            out.append({"user_id": p["user_id"], "name": (p.get("business_data") or {}).get("business_name") or u.get("full_name"),
                         "type": "casellario", "expires_at": exp, "days_left": days,
-                        "expired": days < 0, "verified": bool(u.get("casellario_verified"))})
+                        "expired": days < 0, "verified": bool(documents.get("casellario_verified"))})
     out.sort(key=lambda x: x["days_left"])
     return {"horizon_days": horizon_days, "items": out}
