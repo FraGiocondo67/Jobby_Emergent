@@ -4,6 +4,10 @@ aiohttp-retry==2.9.1
 aiosignal==1.4.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
+# anthropic: aggiunto nel Blocco 4 al posto di emergentintegrations/EMERGENT_LLM_KEY
+# (vedi nota più sotto) — dispute_ai.py ora chiama l'SDK ufficiale Anthropic
+# direttamente con ANTHROPIC_API_KEY (.env.example).
+anthropic==0.121.0
 anyio==4.14.2
 ast_serialize==0.6.0
 attrs==26.1.0
@@ -27,9 +31,10 @@ email-validator==2.3.0
 # lo usano, non più a livello di modulo) così il server si avvia comunque;
 # le route di checkout/webhook Stripe via wrapper Emergent in quel router
 # restano non funzionanti finché non vengono riscritte con l'SDK `stripe`
-# diretto nel Blocco 3. dispute_ai.py importa questo pacchetto in modo già
-# differito (solo se EMERGENT_LLM_KEY è valorizzata, che non lo è più) — non
-# richiede alcuna modifica.
+# diretto (payments_stripe.py resta comunque fuori scope, vedi Blocco 5 —
+# le verticali Blocco 2/3 non lo usano). dispute_ai.py, che lo importava in
+# modo differito, è stato riscritto nel Blocco 4 per usare l'SDK `anthropic`
+# diretto (vedi voce più sopra) — non dipende più da questo pacchetto.
 fastapi==0.110.1
 fastuuid==0.14.0
 filelock==3.30.0

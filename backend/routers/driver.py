@@ -108,7 +108,7 @@ from pydantic import BaseModel
 
 import driver_config as D
 import stripe_pg as SP
-from core_pg import db, now_iso, now_utc, notify, haversine
+from core_pg import db, now_iso, now_utc, notify, haversine, record_trust_event
 from deps_pg import get_current_user, require_admin
 
 router = APIRouter()
@@ -965,6 +965,11 @@ async def review(rid: str, body: ReviewIn, user=Depends(get_current_user)):
     brief["recensione"] = {"rating": body.rating, "comment": body.comment, "at": now_iso()}
     brief["stato"] = "recensita"
     db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+
+    # Blocco 4: fa scattare recalculate_trust_score (vedi core_pg.record_trust_event).
+    record_trust_event(provider_id, "review_received", round((body.rating - 3) * 2, 2),
+                       dimension="quality", notes=f"Recensione {body.rating}★ su richiesta driver {rid}")
+
     await notify(provider_id, "driver_completata", "Nuova recensione",
                 f"Hai ricevuto {body.rating}★ dal cliente.", "driver", rid)
     return brief["recensione"]

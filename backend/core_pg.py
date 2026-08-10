@@ -107,14 +107,20 @@ _NOTIF_TYPE_MAP = {
     "driver_noshow": "system",
     "driver_completata": "mission_completed",
     "driver_auth": "kyc_update",
+    # Blocco 4 (dispute/claims/chat)
+    "claim_opened": "dispute_opened",
+    "claim_escalated": "dispute_opened",
+    "claim_dismissed": "dispute_resolved",
+    "claim_resolved": "dispute_resolved",
+    "dispute_resolved": "dispute_resolved",
+    "chat_message": "new_message",
 }
 
 
 async def notify(user_id: str, kind: str, title: str, body: str, ref_type: str = "", ref_id: str = "") -> None:
-    """Inserisce una notifica in public.notifications. Solo insert — la lettura/
-    marcatura-come-letta resta nel router notifications.py (Mongo) finché non
-    viene migrato (Blocco 4); questo helper serve ai router di Blocco 2 che
-    hanno bisogno di notificare senza aspettare quella migrazione."""
+    """Inserisce una notifica in public.notifications. Scritto nel Blocco 2
+    per i router già migrati; il lato lettura/marcatura-come-letta è stato
+    migrato a sua volta nel Blocco 4 (routers/notifications.py)."""
     if not user_id:
         return
     db.table("notifications").insert({
@@ -123,4 +129,48 @@ async def notify(user_id: str, kind: str, title: str, body: str, ref_type: str =
         "title": title,
         "body": body,
         "data": {"kind": kind, "ref_type": ref_type, "ref_id": ref_id},
+    }).execute()
+
+
+# ---------------- trust score (Blocco 4) ----------------
+# Il motore di calcolo (recalculate_trust_score / recalculate_client_trust_score)
+# esisteva già nello schema Postgres storico (vedi piano di migrazione, sezione
+# 4.5), con un trigger AFTER INSERT su trust_events/client_trust_events che lo
+# richiama automaticamente — ma prima del Blocco 4 NESSUN router inseriva mai
+# righe in quelle due tabelle, quindi il trigger non scattava mai e il
+# punteggio restava sempre a 0 per chiunque, anche con recensioni/missioni
+# reali. Questi due helper chiudono il cerchio: vanno richiamati nei punti del
+# dominio dove succede qualcosa che deve incidere sul trust score (per ora:
+# review() nelle 4 verticali, risoluzione dispute in routers/disputes.py).
+#
+# `delta`/`score_after` qui sono solo annotazioni per l'audit trail in
+# trust_events/client_trust_events (colonne NOT NULL) — valori di primo
+# calibraggio, non derivati dal modello Emergent originale (che usava un
+# motore Python separato, non questo schema, e non è più disponibile per
+# confronto). Il punteggio vero (profiles_provider.trust_score /
+# profiles_client.trust_score) viene ricalcolato da zero dalla funzione SQL a
+# partire dai dati reali (recensioni, dispute, kyc, ecc.), non da questi due
+# campi: se le costanti sotto si rivelano scalate male, si possono correggere
+# senza alcun impatto sui punteggi già calcolati.
+def record_trust_event(provider_id: str, event_type: str, delta: float, dimension: str = "", notes: str = "") -> None:
+    if not provider_id:
+        return
+    prov = db.table("profiles_provider").select("trust_score").eq("user_id", provider_id).limit(1).execute()
+    before = float(prov.data[0]["trust_score"]) if prov.data and prov.data[0].get("trust_score") is not None else 0.0
+    after = max(0.0, min(100.0, before + delta))
+    db.table("trust_events").insert({
+        "provider_id": provider_id, "event_type": event_type, "delta": delta,
+        "score_before": before, "score_after": after, "dimension": dimension, "notes": notes,
+    }).execute()
+
+
+def record_client_trust_event(client_id: str, event_type: str, delta: float, dimension: str = "", notes: str = "") -> None:
+    if not client_id:
+        return
+    cli = db.table("profiles_client").select("trust_score").eq("user_id", client_id).limit(1).execute()
+    before = float(cli.data[0]["trust_score"]) if cli.data and cli.data[0].get("trust_score") is not None else 0.0
+    after = max(0.0, min(100.0, before + delta))
+    db.table("client_trust_events").insert({
+        "client_id": client_id, "event_type": event_type, "delta": delta,
+        "score_before": before, "score_after": after, "dimension": dimension, "notes": notes,
     }).execute()
