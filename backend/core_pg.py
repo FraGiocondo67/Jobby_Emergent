@@ -45,6 +45,42 @@ def now_iso() -> str:
     return now_utc().isoformat()
 
 
+# ---------------- missions: colonne NOT NULL senza default (Blocco 5, fix) ----------------
+# Scoperto durante il Blocco 5 ispezionando lo schema live: `missions.location`
+# (geography, PostGIS) e `missions.scheduled_at` (timestamptz) sono NOT NULL
+# senza alcun default e SENZA alcun trigger che le popoli — ma nessuno dei
+# quattro endpoint di creazione richiesta (Pulizie/Artigiani/Babysitting/
+# Driver, tutti Blocco 2) le scriveva nell'insert. Bug pre-esistente, non
+# introdotto in questo blocco: ogni `POST .../richieste` avrebbe sempre
+# fallito con una violazione NOT NULL — non ancora scoperto perché nessuno
+# aveva ancora esercitato la creazione di una richiesta end-to-end. Corretto
+# qui coi due helper sotto, richiamati da tutti e quattro i router.
+def to_geography_point(lat, lng) -> str:
+    """WKT accettato direttamente dal cast implicito text->geography di
+    Postgres (verificato via query diretta prima di usarlo qui: `select
+    'POINT(lng lat)'::geography` funziona) — nessuna RPC dedicata necessaria.
+    Fallback su Treviso (centro operativo storico) se lat/lng mancano, per
+    non far fallire comunque l'insert su un campo NOT NULL."""
+    if lat is None or lng is None:
+        lat, lng = TREVISO["lat"], TREVISO["lng"]
+    return f"POINT({lng} {lat})"
+
+
+def parse_scheduled_at(value) -> str:
+    """Converte la stringa data/ora inserita dall'utente (spesso opzionale —
+    es. `data_ora`/`pickup_at` nei 4 router verticali) in un timestamp ISO
+    valido per `missions.scheduled_at`. Se vuota o non interpretabile, usa
+    "adesso" come approssimazione ragionevole per una richiesta senza data
+    esplicita (es. Artigiani "il prima possibile")."""
+    if value:
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return dt.isoformat()
+        except Exception:
+            pass
+    return now_iso()
+
+
 def haversine(lat1, lng1, lat2, lng2) -> float:
     """Distanza in km tra due punti — stessa formula di core.py (Mongo), copiata
     qui (non importata da core.py) perché questo modulo non deve dipendere da

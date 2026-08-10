@@ -108,7 +108,7 @@ from pydantic import BaseModel
 
 import driver_config as D
 import stripe_pg as SP
-from core_pg import db, now_iso, now_utc, notify, haversine, record_trust_event
+from core_pg import db, now_iso, now_utc, notify, haversine, record_trust_event, to_geography_point, parse_scheduled_at
 from deps_pg import get_current_user, require_admin
 
 router = APIRouter()
@@ -467,6 +467,8 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
         "client_id": user["id"], "category_id": _category_id(),
         "title": f"Driver — {body.tipo.upper()}", "description": body.note,
         "status": "published", "address": body.partenza.label or "",
+        "location": to_geography_point(body.partenza.lat, body.partenza.lng),
+        "scheduled_at": parse_scheduled_at(body.pickup_at),
         "platform_fee_pct": await fee_pct(),
         "brief_answers": brief,
     }

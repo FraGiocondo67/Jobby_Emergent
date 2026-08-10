@@ -47,7 +47,7 @@ from pydantic import BaseModel
 import lf_pg as LF
 import richieste_config as C
 import stripe_pg as SP
-from core_pg import db, now_iso, now_utc, notify, record_trust_event
+from core_pg import db, now_iso, now_utc, notify, record_trust_event, to_geography_point, parse_scheduled_at
 from deps_pg import get_current_user, require_admin
 
 router = APIRouter()
@@ -289,6 +289,8 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
         "client_id": user["id"], "category_id": _category_id(),
         "title": "Pulizie", "description": body.note,
         "status": "published" if body.publish else "draft", "address": body.indirizzo,
+        "location": to_geography_point(body.lat, body.lng),
+        "scheduled_at": parse_scheduled_at(body.data_ora),
         "platform_fee_pct": await fee_pct(),
         "brief_answers": brief,
     }

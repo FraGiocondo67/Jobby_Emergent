@@ -3,13 +3,19 @@
 - POST /api/geocode          {query}          -> {lat, lng, label}
 - POST /api/reverse-geocode  {lat, lng}       -> {label}
 Usato da tutte le schermate con indirizzo manuale o "posizione attuale".
+
+BLOCCO 5 (migrazione Emergent -> Supabase/Render): questo router non tocca
+Mongo in nessun punto (nessun `db.*`, solo chiamate HTTP dirette a Nominatim)
+— l'unica modifica necessaria è l'autenticazione, spostata su
+Supabase/Postgres (`deps_pg`) invece del vecchio `session_token` Mongo-based
+(`deps`), per coerenza con tutti gli altri router già migrati.
 """
 import requests
 from typing import Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from deps import get_current_user
+from deps_pg import get_current_user
 
 router = APIRouter()
 
