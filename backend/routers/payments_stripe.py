@@ -2,8 +2,6 @@ import os
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
-from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
-
 from core import db, now_utc, new_id
 from deps import get_current_user
 
@@ -24,10 +22,20 @@ class OriginIn(BaseModel):
     origin_url: str
 
 
-def _client(request: Request) -> StripeCheckout:
+def _stripe(request: Request):
+    """Import differito (non a livello di modulo): `emergentintegrations` non è
+    su PyPI pubblico e non viene più installato (vedi requirements.txt). Blocco 1
+    lascia questo router così com'è (è Mongo-based, non ancora migrato — la
+    sostituzione con l'SDK `stripe` diretto è pianificata per il Blocco 3, vedi
+    punto 3 della tabella "legami da rimuovere" nel piano di migrazione). Fino ad
+    allora il modulo si importa senza errori; solo queste route (checkout/webhook
+    Stripe via wrapper Emergent) falliscono se effettivamente chiamate.
+    Ritorna (client, classe CheckoutSessionRequest) — serve entrambi ai chiamanti."""
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
-    return StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    client = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    return client, CheckoutSessionRequest
 
 
 @router.post("/wallet/topup/checkout")
@@ -36,7 +44,7 @@ async def create_topup_checkout(body: CheckoutIn, request: Request, user=Depends
         raise HTTPException(status_code=400, detail="invalid_package")
     amount = TOPUP_PACKAGES[body.package_id]
     origin = body.origin_url.rstrip("/")
-    stripe = _client(request)
+    stripe, CheckoutSessionRequest = _stripe(request)
     req = CheckoutSessionRequest(
         amount=amount,
         currency="eur",
@@ -65,7 +73,7 @@ async def pay_booking(booking_id: str, body: OriginIn, request: Request, user=De
         return {"already_paid": True}
     amount = round(float(b["total"]), 2)  # server-side amount from DB
     origin = body.origin_url.rstrip("/")
-    stripe = _client(request)
+    stripe, CheckoutSessionRequest = _stripe(request)
     req = CheckoutSessionRequest(
         amount=amount,
         currency="eur",
@@ -114,14 +122,14 @@ async def _settle_if_paid(session_id: str, status) -> dict:
 
 @router.get("/payments/status/{session_id}")
 async def payment_status(session_id: str, request: Request, user=Depends(get_current_user)):
-    stripe = _client(request)
+    stripe, _ = _stripe(request)
     status = await stripe.get_checkout_status(session_id)
     return await _settle_if_paid(session_id, status)
 
 
 @router.get("/wallet/topup/status/{session_id}")
 async def topup_status(session_id: str, request: Request, user=Depends(get_current_user)):
-    stripe = _client(request)
+    stripe, _ = _stripe(request)
     status = await stripe.get_checkout_status(session_id)
     return await _settle_if_paid(session_id, status)
 
@@ -130,7 +138,7 @@ async def topup_status(session_id: str, request: Request, user=Depends(get_curre
 async def stripe_webhook(request: Request):
     body = await request.body()
     sig = request.headers.get("Stripe-Signature", "")
-    stripe = _client(request)
+    stripe, _ = _stripe(request)
     try:
         event = await stripe.handle_webhook(body, sig)
     except Exception:

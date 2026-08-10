@@ -21,7 +21,15 @@ distro==1.9.0
 dnspython==2.8.0
 ecdsa==0.19.2
 email-validator==2.3.0
-emergentintegrations==0.2.0
+# emergentintegrations==0.2.0  # RIMOSSO (Blocco 1): non è su PyPI pubblico,
+# pip non riesce a installarlo fuori dall'ambiente Emergent. L'import in
+# routers/payments_stripe.py è stato reso differito (dentro le funzioni che
+# lo usano, non più a livello di modulo) così il server si avvia comunque;
+# le route di checkout/webhook Stripe via wrapper Emergent in quel router
+# restano non funzionanti finché non vengono riscritte con l'SDK `stripe`
+# diretto nel Blocco 3. dispute_ai.py importa questo pacchetto in modo già
+# differito (solo se EMERGENT_LLM_KEY è valorizzata, che non lo è più) — non
+# richiede alcuna modifica.
 fastapi==0.110.1
 fastuuid==0.14.0
 filelock==3.30.0
@@ -58,7 +66,11 @@ jq==1.12.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 librt==0.13.0
-litellm @ https://customer-assets.emergentagent.com/internal-asset/library/litellm-1.80.0-py3-none-any.whl#sha256=adf398c513273de9341f61822296c6b2145f7f2dc4a69daf3ac04829f5bde3f8
+# litellm era qui come wheel ospitato privatamente da Emergent (non
+# raggiungibile fuori da quella piattaforma — vedi punto 4 della tabella
+# "legami da rimuovere" nel piano di migrazione). RIMOSSO nel Blocco 1: era
+# una sotto-dipendenza solo di emergentintegrations (rimosso qui sopra),
+# nessun modulo del backend lo importa direttamente.
 markdown-it-py==4.2.0
 markdown2==2.5.5
 MarkupSafe==3.0.3
