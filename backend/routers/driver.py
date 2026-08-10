@@ -50,19 +50,46 @@ alcuna chiamata di rimborso/penale reale, per lo stesso motivo già documentato
 nelle altre tre verticali — /confirm è uno stub, quindi nessuna richiesta può
 arrivare a bloccare fondi in questo blocco.
 
-GAP DI ARCHITETTURA — GATING BLOCCO 3 (Wallet/pagamenti/escrow), stesso motivo
-già documentato nelle altre tre verticali: `confirm` (we.hold), `extra/
-approve` (we.hold sull'approvazione), `noshow` (we.release_richiesta),
-`complete` (we.conguaglio + cd.arm_or_release_richiesta), `pay` (settlement
-tassametro TAXI — nel sistema Mongo `_credit_provider` scriveva
-wallet_balance/transactions direttamente, bypassando wallet_escrow/
-confirm_delivery, ma resta comunque un movimento di denaro reale) e `review`
-(raggiungibile solo da 'completata', quindi stubbato per coerenza con le
-altre verticali) restano stub espliciti (501) finché il Blocco 3 non decide
-come colmare il gap. Il resto del flusso (config, geocode, estimate, listino,
-veicoli, autorizzazione, creazione/lista/dettaglio/cancellazione richiesta,
-"in arrivo" lato provider, proposte, partenza/tracking, creazione extra,
-amministrazione) è pienamente funzionante su Postgres.
+BLOCCO 3 (Wallet/pagamenti/escrow) — `confirm`, `extra/approve`, `noshow`,
+`complete`, `pay` e `review` sono ora implementati sullo stesso layer di
+routers/richieste.py (Pulizie, verticale di riferimento — vedi
+stripe_pg.py per il dettaglio del pattern). Qui NON esiste un binario
+Libretto Famiglia (solo impresa/P.IVA, come già notato sopra): un solo
+percorso, sempre Stripe Connect.
+
+Particolarità di questo dominio rispetto alle altre tre verticali:
+- **NCC**: il prezzo è noto al momento della proposta — stesso pattern a
+  hold singolo di Pulizie (`confirm` blocca l'intero importo).
+- **TAXI**: il prezzo finale dipende dal tassametro ufficiale, noto solo a
+  fine corsa — `confirm` qui NON blocca nulla (non c'è ancora un importo).
+  `complete(meter_amount)` chiude la corsa e registra la lettura finale,
+  portando la richiesta in uno stato intermedio `in_pagamento`; è `pay` a
+  bloccare e rilasciare l'importo del tassametro (+ eventuali extra già
+  approvati durante la corsa). `review` resta bloccata (richiede stato
+  `completata`) finché `pay` non chiude il pagamento.
+- **extra** (attesa/fermata/cambio, entrambi i sottotipi): l'approvazione
+  blocca l'importo subito, durante la corsa (stesso pattern extra di
+  artigiani.py), non aspetta il completamento.
+- **noshow**: nessuna regola esplicita nel sistema Emergent per l'importo
+  della penale — trattato qui come cancellazione tardiva a addebito pieno
+  (fascia "<30min" di `driver_config.CANCELLATION`): se la corsa aveva già
+  un importo bloccato (NCC) viene rilasciato per intero al driver; per TAXI
+  (dove non c'è ancora un hold) si addebita una penale minima pari alla
+  tariffa minima del tassametro (`TAXI_TARIFFA.min_corsa`) — assunzione di
+  prodotto esplicita, non presente nel sistema Emergent, da validare.
+- **cancel_richiesta**: ora rimborsa per intero quanto eventualmente già
+  bloccato (stesso comportamento delle altre tre verticali). **Semplifi-
+  cazione deliberata**: le fasce di `driver_config.CANCELLATION` (rimborso
+  parziale/trattenuta in base al preavviso) restano solo un valore
+  INFORMATIVO restituito al chiamante (`outcome`, come già nel Blocco 2) —
+  non pilotano ancora un rimborso parziale reale, che richiederebbe una RPC
+  di refund parziale non ancora scritta. Da riprendere in un giro successivo
+  se serve applicarle davvero.
+
+Il resto del flusso (config, geocode, estimate, listino, veicoli,
+autorizzazione, creazione/lista/dettaglio richiesta, "in arrivo" lato
+provider, proposte, partenza/tracking, creazione extra, amministrazione)
+resta invariato dal Blocco 2.
 
 NOTA: la categoria service_categories 'driver' risulta attualmente
 is_active=false nel database (verificato via query prima di scrivere questo
@@ -80,6 +107,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 import driver_config as D
+import stripe_pg as SP
 from core_pg import db, now_iso, now_utc, notify, haversine
 from deps_pg import get_current_user, require_admin
 
@@ -88,20 +116,6 @@ router = APIRouter()
 STATI_APERTI = ("pubblicata", "in_matching", "con_proposte")
 _CATEGORY_SLUG = "driver"
 _FEE_SETTING_KEY = "driver_fee_pct"
-
-_WALLET_GAP_MSG = (
-    "Endpoint non ancora implementato: richiede il sistema di blocco/rilascio "
-    "fondi (escrow) per Driver, incluso il settlement del tassametro TAXI a "
-    "fine corsa. Stesso gap architetturale già documentato in "
-    "routers/artigiani.py, routers/richieste.py e routers/babysitting.py — "
-    "vedi il docstring di questo modulo e la sezione 4.6 del piano di "
-    "migrazione. Va presa una decisione di design esplicita nel Blocco 3 "
-    "prima di implementare questo endpoint."
-)
-
-
-def _wallet_gap_stub():
-    raise HTTPException(status_code=501, detail=_WALLET_GAP_MSG)
 
 
 def _category_id() -> str:
@@ -504,11 +518,20 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="already_closed")
     prezzo = float(brief.get("prezzo_finale", 0) or 0)
     outcome = _cancellation_outcome(_parse(brief.get("pickup_at", "")), prezzo)
-    # NOTA: nessuna chiamata escrow qui (rimborso/penale) — come nelle altre
-    # tre verticali, /confirm è uno stub (vedi docstring modulo), quindi una
-    # richiesta non può mai arrivare a bloccare fondi in questo blocco.
-    # `outcome` resta puramente informativo (fascia/percentuale) finché il
-    # Blocco 3 non implementa il movimento di denaro reale.
+    # `outcome` (fascia/percentuale di driver_config.CANCELLATION) resta solo
+    # informativo — vedi docstring modulo. Il rimborso reale qui sotto è
+    # invece sempre integrale su quanto effettivamente bloccato, stesso
+    # comportamento delle altre tre verticali.
+    pagamento = brief.get("pagamento") or {}
+    if pagamento.get("stato") == "held" and pagamento.get("holds"):
+        refund_ids = [SP.refund_payment_intent(h["payment_intent_id"])["refund_id"] for h in pagamento["holds"]]
+        db.rpc("refund_escrow", {
+            "p_mission_id": rid, "p_reason": "cancellazione_cliente",
+            "p_gateway_transaction_id": refund_ids[-1],
+            "p_gateway_response": {"refund_ids": refund_ids}, "p_gateway_name": "stripe",
+        }).execute()
+        pagamento["stato"] = "refunded"
+        brief["pagamento"] = pagamento
     brief["stato"] = "annullata"
     brief["cancellazione"] = outcome
     db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
@@ -627,14 +650,104 @@ async def propose(rid: str, body: ProposeIn, user=Depends(get_current_user)):
     return proposal
 
 
-# ---------------- conferma + esecuzione — confirm è STUB (Blocco 3, vedi docstring modulo) ----------------
+# ---------------- conferma + esecuzione (Blocco 3 — vedi docstring modulo) ----------------
+async def _add_hold(rid: str, brief: dict, kind: str, amount: float, client: dict, provider_id: str) -> dict:
+    """Stesso pattern di artigiani.py's _add_hold (vedi quel modulo per il
+    dettaglio commentato) — qui un solo binario, sempre Stripe Connect."""
+    if amount <= 0:
+        return brief
+    pagamento = brief.get("pagamento") or {}
+    if pagamento.get("stato") != "held":
+        pagamento = {"holds": [], "totale_bloccato": 0.0, "fee_totale": 0.0, "payout_totale": 0.0, "stato": "held"}
+
+    prov_row = db.table("profiles_provider").select("stripe_payouts_enabled").eq("user_id", provider_id).limit(1).execute()
+    if not prov_row.data or not prov_row.data[0].get("stripe_payouts_enabled"):
+        raise HTTPException(status_code=400, detail="provider_not_onboarded")
+    customer_id = client.get("stripe_customer_id")
+    pm_id = client.get("default_payment_method_id")
+    if not customer_id or not pm_id:
+        raise HTTPException(status_code=400, detail="client_payment_method_missing")
+
+    pct = await fee_pct()
+    jobby_fee = round(amount * pct / 100.0, 2)
+    payout = round(amount - jobby_fee, 2)
+
+    db.table("missions").update({"provider_id": provider_id, "price_agreed": amount}).eq("id", rid).execute()
+    charge = SP.charge_hold(customer_id, pm_id, amount, {"mission_id": rid, "category": "driver", "kind": kind})
+    db.rpc("create_escrow_hold", {
+        "p_mission_id": rid, "p_gateway_transaction_id": charge["payment_intent_id"],
+        "p_gateway_response": {"status": charge["status"], "kind": kind}, "p_gateway_name": "stripe",
+    }).execute()
+
+    pagamento["holds"].append({"kind": kind, "amount": amount, "payment_intent_id": charge["payment_intent_id"], "at": now_iso()})
+    pagamento["totale_bloccato"] = round(pagamento["totale_bloccato"] + amount, 2)
+    pagamento["fee_totale"] = round(pagamento["fee_totale"] + jobby_fee, 2)
+    pagamento["payout_totale"] = round(pagamento["payout_totale"] + payout, 2)
+    db.table("missions").update({
+        "price_agreed": pagamento["totale_bloccato"], "platform_fee": pagamento["fee_totale"], "provider_payout": pagamento["payout_totale"],
+    }).eq("id", rid).execute()
+
+    brief["pagamento"] = pagamento
+    return brief
+
+
+async def _finalize_release(rid: str, brief: dict) -> dict:
+    """Rilascia il totale bloccato in tutte le fasi al driver. release_escrow
+    marca 'released' TUTTE le righe payments di tipo escrow_hold della
+    missione in un colpo solo — va chiamata una sola volta."""
+    pagamento = brief.get("pagamento") or {}
+    provider_id = brief.get("provider_scelto")
+    if pagamento.get("stato") == "held":
+        prov_row = db.table("profiles_provider").select("stripe_connect_account_id").eq("user_id", provider_id).limit(1).execute()
+        acct_id = prov_row.data[0].get("stripe_connect_account_id") if prov_row.data else None
+        if not acct_id:
+            raise HTTPException(status_code=400, detail="provider_not_onboarded")
+        payout = float(pagamento.get("payout_totale") or 0)
+        if payout > 0:
+            transfer = SP.transfer_to_provider(acct_id, payout, {"mission_id": rid, "category": "driver"})
+            db.rpc("release_escrow", {
+                "p_mission_id": rid, "p_gateway_transaction_id": transfer["transfer_id"],
+                "p_gateway_response": {}, "p_gateway_name": "stripe",
+            }).execute()
+            pagamento["transfer_id"] = transfer["transfer_id"]
+        pagamento["stato"] = "released"
+        brief["pagamento"] = pagamento
+    brief["stato"] = "completata"
+    return brief
+
+
 class ConfirmIn(BaseModel):
     provider_id: str
 
 
 @router.post("/driver/richieste/{rid}/confirm")
 async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") not in STATI_APERTI:
+        raise HTTPException(status_code=400, detail="not_open")
+    provider_id = body.provider_id
+    proposal = next((p for p in brief.get("proposte", []) if p.get("provider_id") == provider_id), None)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="proposal_not_found")
+
+    brief["provider_scelto"] = provider_id
+    if brief.get("tipo") != "taxi":
+        # NCC: prezzo noto ora, si blocca subito.
+        amount = float(proposal.get("prezzo") or 0)
+        brief = await _add_hold(rid, brief, "corsa", amount, user, provider_id)
+    # TAXI: nessun hold qui — il tassametro decide l'importo a fine corsa (vedi /pay).
+    brief["stato"] = "confermata"
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+
+    await notify(provider_id, "driver_confermata", "Corsa confermata",
+                "Il cliente ha confermato la tua proposta.", "driver", rid)
+    await notify(row["client_id"], "driver_confermata", "Corsa confermata",
+                "Hai confermato la corsa.", "driver", rid)
+    return {"stato": "confermata", "pagamento": brief.get("pagamento")}
 
 
 @router.post("/driver/richieste/{rid}/depart")
@@ -712,12 +825,52 @@ class ExtraApprove(BaseModel):
 
 @router.post("/driver/richieste/{rid}/extra/approve")
 async def approve_extra(rid: str, body: ExtraApprove, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    extras = brief.get("extra") or []
+    extra = next((e for e in extras if e["extra_id"] == body.extra_id), None)
+    if not extra or extra.get("stato") != "pending":
+        raise HTTPException(status_code=404, detail="extra_not_found")
+
+    if body.approve:
+        brief = await _add_hold(rid, brief, "extra", float(extra["importo"]), user, brief["provider_scelto"])
+        extra["stato"] = "approvato"
+    else:
+        extra["stato"] = "rifiutato"
+    brief["extra"] = [extra if e["extra_id"] == extra["extra_id"] else e for e in extras]
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(brief["provider_scelto"], "driver_extra", "Extra " + ("approvato" if body.approve else "rifiutato"),
+                f"Il cliente ha {'approvato' if body.approve else 'rifiutato'} l'extra: {extra['tipo']}", "driver", rid)
+    return extra
 
 
 @router.post("/driver/richieste/{rid}/noshow")
 async def noshow(rid: str, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    # Segnalato dal driver: il passeggero non si è presentato. Nessuna regola
+    # esplicita nel sistema Emergent per l'importo della penale — vedi
+    # docstring modulo per l'assunzione di prodotto adottata qui.
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or (res.data[0].get("brief_answers") or {}).get("provider_scelto") != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") not in ("confermata", "in_corso"):
+        raise HTTPException(status_code=400, detail="not_active")
+
+    if (brief.get("pagamento") or {}).get("stato") != "held":
+        client_res = db.table("users").select("*").eq("id", row["client_id"]).limit(1).execute()
+        client = client_res.data[0] if client_res.data else {"id": row["client_id"]}
+        penale = D.TAXI_TARIFFA["min_corsa"]
+        brief = await _add_hold(rid, brief, "penale_noshow", penale, client, user["id"])
+    brief = await _finalize_release(rid, brief)
+    brief["noshow"] = True
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(row["client_id"], "driver_noshow", "Corsa chiusa per mancata presentazione",
+                "Il driver ha segnalato che non ti sei presentato. La corsa è stata chiusa.", "driver", rid)
+    return {"stato": "completata", "noshow": True}
 
 
 class CompleteIn(BaseModel):
@@ -726,12 +879,57 @@ class CompleteIn(BaseModel):
 
 @router.post("/driver/richieste/{rid}/complete")
 async def complete(rid: str, body: CompleteIn, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    uid = user["id"]
+    if uid not in (row["client_id"], brief.get("provider_scelto")):
+        raise HTTPException(status_code=404, detail="not_found")
+    if brief.get("stato") != "in_corso":
+        raise HTTPException(status_code=400, detail="not_in_progress")
+
+    if brief.get("tipo") == "taxi":
+        if body.meter_amount is None or body.meter_amount <= 0:
+            raise HTTPException(status_code=400, detail="meter_amount_required")
+        brief["taxi_meter_finale"] = round(float(body.meter_amount), 2)
+        brief["stato"] = "in_pagamento"
+        await notify(row["client_id"], "driver_completata", "Corsa terminata",
+                    f"Importo tassametro: €{brief['taxi_meter_finale']:.2f}. Completa il pagamento.", "driver", rid)
+    else:
+        brief = await _finalize_release(rid, brief)
+        await notify(row["client_id"], "driver_completata", "Corsa completata",
+                    "La corsa è stata completata.", "driver", rid)
+        if brief.get("provider_scelto"):
+            await notify(brief["provider_scelto"], "driver_completata", "Corsa completata",
+                        "Hai completato la corsa.", "driver", rid)
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    return {"stato": brief["stato"]}
 
 
 @router.post("/driver/richieste/{rid}/pay")
 async def pay_taxi(rid: str, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("tipo") != "taxi":
+        raise HTTPException(status_code=400, detail="not_taxi")
+    if brief.get("stato") != "in_pagamento":
+        raise HTTPException(status_code=400, detail="not_ready")
+    meter = float(brief.get("taxi_meter_finale") or 0)
+    if meter <= 0:
+        raise HTTPException(status_code=400, detail="invalid_meter")
+
+    brief = await _add_hold(rid, brief, "tassametro", meter, user, brief["provider_scelto"])
+    brief = await _finalize_release(rid, brief)
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    if brief.get("provider_scelto"):
+        await notify(brief["provider_scelto"], "driver_completata", "Pagamento ricevuto",
+                    "Il cliente ha completato il pagamento della corsa.", "driver", rid)
+    return {"stato": "completata"}
 
 
 class ReviewIn(BaseModel):
@@ -741,7 +939,35 @@ class ReviewIn(BaseModel):
 
 @router.post("/driver/richieste/{rid}/review")
 async def review(rid: str, body: ReviewIn, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") != "completata":
+        raise HTTPException(status_code=400, detail="not_completed")
+    if not (1 <= body.rating <= 5):
+        raise HTTPException(status_code=400, detail="invalid_rating")
+    provider_id = brief.get("provider_scelto")
+    if not provider_id:
+        raise HTTPException(status_code=400, detail="no_provider")
+
+    db.table("reviews").insert({
+        "mission_id": rid, "reviewer_id": user["id"], "reviewee_id": provider_id,
+        "rating": body.rating, "comment": body.comment,
+    }).execute()
+    agg = db.table("reviews").select("rating").eq("reviewee_id", provider_id).execute()
+    ratings = [r["rating"] for r in (agg.data or [])]
+    if ratings:
+        new_avg = round(sum(ratings) / len(ratings), 2)
+        db.table("profiles_provider").update({"avg_rating": new_avg}).eq("user_id", provider_id).execute()
+
+    brief["recensione"] = {"rating": body.rating, "comment": body.comment, "at": now_iso()}
+    brief["stato"] = "recensita"
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(provider_id, "driver_completata", "Nuova recensione",
+                f"Hai ricevuto {body.rating}★ dal cliente.", "driver", rid)
+    return brief["recensione"]
 
 
 # ---------------- amministrazione ----------------

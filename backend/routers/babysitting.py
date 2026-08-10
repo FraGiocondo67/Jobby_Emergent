@@ -31,19 +31,27 @@ il certificato del casellario giudiziario in profiles_provider.documents
 casellario_expires) — stessa convenzione "documents" già usata da artigiani.py
 per le abilitazioni.
 
-GAP DI ARCHITETTURA — GATING BLOCCO 3 (Wallet/pagamenti/escrow), stesso
-motivo già documentato in artigiani.py e richieste.py: `confirm`,
-`incontro/cancel-refund`, `fine/confirm` (che chiude il consuntivo e innesca
-il pagamento) e `review` toccano soldi — inclusi i movimenti sul borsellino
-Libretto Famiglia/INPS, che nel sistema Emergent era un saldo simulato
-scritto direttamente su db.users, la stessa variante del gap già vista in
-richieste.py — e restano stub espliciti (501) finché il Blocco 3 non decide
-come colmare il gap. Tutto il resto (schede bambino, profilo, casellario,
-listino, config/estimate, creazione/lista/dettaglio/cancellazione richiesta,
-"in arrivo" lato provider, proposte, pianificazione incontro, codici
-inizio/fine come semplici transizioni di stato, emergenza, richiesta/
-decisione aggiunta bambino, amministrazione) è pienamente funzionante su
-Postgres.
+BLOCCO 3 (Wallet/pagamenti/escrow) — `confirm`, `incontro/cancel-refund`,
+`fine/confirm` e `review` sono ora implementati sullo stesso layer di
+routers/richieste.py (Pulizie, verticale di riferimento — vedi
+stripe_pg.py/lf_pg.py per il dettaglio del pattern). Nota di nomenclatura:
+qui il binario "impresa" di Pulizie/Artigiani si chiama **`piva`** (stessa
+semantica — vero escrow Stripe Connect), `persona_lf` è invariato (registro
+Libretto Famiglia, non un vero escrow). Come in artigiani.py, i soldi possono
+essere bloccati in più fasi (l'importo base al `confirm`, un eventuale
+supplemento se la famiglia aggiunge un bambino durante il lavoro accettato
+dalla babysitter) — vedi `_add_hold()`/`_finalize_release()`, stesso pattern
+del preventivo/extra di Artigiani. **Semplificazione deliberata**: il
+consuntivo ore finale (`fine/confirm`) non ricalcola un "conguaglio" in base
+alle ore effettivamente lavorate rispetto a quelle preventivate — rilascia
+semplicemente il totale già bloccato, stessa scelta di non toccare soldi
+oltre al gap già fatta per Driver (Blocco 2, vedi sezione 0 del piano).
+
+Il resto del flusso (schede bambino, profilo, casellario, listino,
+config/estimate, creazione/lista/dettaglio richiesta, "in arrivo" lato
+provider, proposte, pianificazione incontro, codici inizio/fine come
+transizioni di stato, emergenza, richiesta aggiunta bambino, amministrazione)
+resta invariato dal Blocco 2.
 """
 import random
 from datetime import datetime, timedelta
@@ -53,7 +61,12 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 import babysitting_config as B
-from richieste_config import lf_round_nominale
+import lf_pg as LF
+import stripe_pg as SP
+from richieste_config import (
+    LF_COUPLE_CEILING_EUR, LF_FAMILY_ANNUAL_EUR, LF_PROVIDER_ANNUAL_EUR,
+    LF_PROVIDER_HOURS, lf_round_nominale,
+)
 from core_pg import db, now_iso, now_utc, notify
 from deps_pg import get_current_user, require_admin
 
@@ -62,21 +75,6 @@ router = APIRouter()
 STATI_APERTI = ("pubblicata", "in_matching", "con_proposte")
 _CATEGORY_SLUG = "babysitting"
 _FEE_SETTING_KEY = "babysitting_fee_pct"
-
-_WALLET_GAP_MSG = (
-    "Endpoint non ancora implementato: richiede il sistema di blocco/rilascio "
-    "fondi (escrow) per Babysitting, incluso il borsellino Libretto Famiglia/"
-    "INPS (nel sistema Emergent era un saldo simulato scritto direttamente su "
-    "db.users, senza alcun gateway di pagamento reale dietro). Stesso gap "
-    "architetturale già documentato in routers/artigiani.py e "
-    "routers/richieste.py — vedi il docstring di questo modulo e la sezione "
-    "4.6 del piano di migrazione. Va presa una decisione di design esplicita "
-    "nel Blocco 3 prima di implementare questo endpoint."
-)
-
-
-def _wallet_gap_stub():
-    raise HTTPException(status_code=501, detail=_WALLET_GAP_MSG)
 
 
 def _parse(dt: str) -> Optional[datetime]:
@@ -506,6 +504,34 @@ async def get_richiesta(rid: str, user=Depends(get_current_user)):
     return out
 
 
+async def _cancel_with_refund(rid: str, row: dict, brief: dict) -> dict:
+    """Annulla la richiesta, rimborsando/stornando quanto già bloccato (se
+    la richiesta era già stata confermata). Condivisa tra il /cancel
+    generico e /incontro/cancel-refund (stessa operazione, due punti diversi
+    del flusso in cui la famiglia può volerla invocare)."""
+    binario = brief.get("binario", "piva")
+    if brief.get("stato") in ("confermata", "in_corso"):
+        pagamento = brief.get("pagamento_lavoro") or {}
+        if binario == "piva" and pagamento.get("stato") == "held" and pagamento.get("holds"):
+            refund_ids = [SP.refund_payment_intent(h["payment_intent_id"])["refund_id"] for h in pagamento["holds"]]
+            db.rpc("refund_escrow", {
+                "p_mission_id": rid, "p_reason": "cancellazione_famiglia",
+                "p_gateway_transaction_id": refund_ids[-1],
+                "p_gateway_response": {"refund_ids": refund_ids}, "p_gateway_name": "stripe",
+            }).execute()
+            pagamento["stato"] = "refunded"
+            brief["pagamento_lavoro"] = pagamento
+        elif binario == "persona_lf" and pagamento.get("stato") == "lf_registrato" and brief.get("provider_scelto"):
+            LF.record_usage(row["client_id"], brief["provider_scelto"],
+                            -float(pagamento.get("totale_bloccato") or 0), 0.0)
+            pagamento["stato"] = "annullato"
+            brief["pagamento_lavoro"] = pagamento
+
+    brief["stato"] = "annullata"
+    db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
+    return {"stato": "annullata"}
+
+
 @router.post("/babysitting/richieste/{rid}/cancel")
 async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
     res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
@@ -515,12 +541,7 @@ async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
     brief = row.get("brief_answers") or {}
     if brief.get("stato") in ("completata", "recensita"):
         raise HTTPException(status_code=400, detail="already_done")
-    # NOTA: nessun refund escrow/borsellino qui — come in artigiani.py/
-    # richieste.py, /confirm è uno stub (vedi sopra), quindi una richiesta non
-    # può mai arrivare a bloccare fondi in questo blocco.
-    brief["stato"] = "annullata"
-    db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
-    return {"stato": "annullata"}
+    return await _cancel_with_refund(rid, row, brief)
 
 
 # ---------------- provider side ----------------
@@ -612,14 +633,122 @@ async def propose(rid: str, body: ProposeIn, user=Depends(get_current_user)):
     return proposal
 
 
-# ---------------- confirm + incontro — STUB (Blocco 3, vedi docstring modulo) ----------------
+# ---------------- confirm + incontro (Blocco 3 — vedi docstring modulo) ----------------
+async def _add_hold(rid: str, brief: dict, kind: str, amount: float, client: dict, provider_id: str) -> dict:
+    """Stesso pattern di artigiani.py's _add_hold — vedi quel modulo per il
+    dettaglio commentato. Qui il binario Stripe si chiama `piva`."""
+    if amount <= 0:
+        return brief
+    binario = brief.get("binario", "piva")
+    pagamento = brief.get("pagamento_lavoro") or {}
+    if pagamento.get("stato") not in ("held", "lf_registrato"):
+        pagamento = {"holds": [], "totale_bloccato": 0.0, "fee_totale": 0.0, "payout_totale": 0.0, "stato": "held"}
+
+    if binario == "piva":
+        prov_row = db.table("profiles_provider").select("stripe_payouts_enabled").eq("user_id", provider_id).limit(1).execute()
+        if not prov_row.data or not prov_row.data[0].get("stripe_payouts_enabled"):
+            raise HTTPException(status_code=400, detail="provider_not_onboarded")
+        customer_id = client.get("stripe_customer_id")
+        pm_id = client.get("default_payment_method_id")
+        if not customer_id or not pm_id:
+            raise HTTPException(status_code=400, detail="client_payment_method_missing")
+
+        pct = await fee_pct()
+        jobby_fee = round(amount * pct / 100.0, 2)
+        payout = round(amount - jobby_fee, 2)
+
+        db.table("missions").update({"provider_id": provider_id, "price_agreed": amount}).eq("id", rid).execute()
+        charge = SP.charge_hold(customer_id, pm_id, amount, {"mission_id": rid, "category": "babysitting", "kind": kind})
+        db.rpc("create_escrow_hold", {
+            "p_mission_id": rid, "p_gateway_transaction_id": charge["payment_intent_id"],
+            "p_gateway_response": {"status": charge["status"], "kind": kind}, "p_gateway_name": "stripe",
+        }).execute()
+
+        pagamento["holds"].append({"kind": kind, "amount": amount, "payment_intent_id": charge["payment_intent_id"], "at": now_iso()})
+        pagamento["totale_bloccato"] = round(pagamento["totale_bloccato"] + amount, 2)
+        pagamento["fee_totale"] = round(pagamento["fee_totale"] + jobby_fee, 2)
+        pagamento["payout_totale"] = round(pagamento["payout_totale"] + payout, 2)
+        pagamento["stato"] = "held"
+        db.table("missions").update({
+            "price_agreed": pagamento["totale_bloccato"], "platform_fee": pagamento["fee_totale"], "provider_payout": pagamento["payout_totale"],
+        }).eq("id", rid).execute()
+
+    elif binario == "persona_lf":
+        durata_ore = float((brief.get("config") or {}).get("durata_ore") or 0) if kind == "base" else 0.0
+        nominale = lf_round_nominale(amount)
+        LF.check_ceilings(
+            family_id=client["id"], worker_id=provider_id, add_nominale=nominale, add_hours=durata_ore,
+            couple_ceiling_eur=LF_COUPLE_CEILING_EUR, family_ceiling_eur=LF_FAMILY_ANNUAL_EUR,
+            worker_ceiling_eur=LF_PROVIDER_ANNUAL_EUR, worker_ceiling_hours=LF_PROVIDER_HOURS,
+        )
+        LF.record_usage(client["id"], provider_id, nominale, durata_ore)
+        pagamento["holds"].append({"kind": kind, "nominale": nominale, "at": now_iso()})
+        pagamento["totale_bloccato"] = round(pagamento["totale_bloccato"] + nominale, 2)
+        pagamento["stato"] = "lf_registrato"
+        db.table("missions").update({"provider_id": provider_id, "price_agreed": pagamento["totale_bloccato"]}).eq("id", rid).execute()
+    else:
+        raise HTTPException(status_code=400, detail="invalid_binario")
+
+    brief["pagamento_lavoro"] = pagamento
+    return brief
+
+
+async def _finalize_release(rid: str, brief: dict) -> dict:
+    """Rilascia il totale bloccato in tutte le fasi al provider (piva) o non
+    fa nulla sul gateway (persona_lf, l'uso è già registrato)."""
+    binario = brief.get("binario", "piva")
+    pagamento = brief.get("pagamento_lavoro") or {}
+    provider_id = brief.get("provider_scelto")
+
+    if binario == "piva" and pagamento.get("stato") == "held":
+        prov_row = db.table("profiles_provider").select("stripe_connect_account_id").eq("user_id", provider_id).limit(1).execute()
+        acct_id = prov_row.data[0].get("stripe_connect_account_id") if prov_row.data else None
+        if not acct_id:
+            raise HTTPException(status_code=400, detail="provider_not_onboarded")
+        payout = float(pagamento.get("payout_totale") or 0)
+        if payout > 0:
+            transfer = SP.transfer_to_provider(acct_id, payout, {"mission_id": rid, "category": "babysitting"})
+            db.rpc("release_escrow", {
+                "p_mission_id": rid, "p_gateway_transaction_id": transfer["transfer_id"],
+                "p_gateway_response": {}, "p_gateway_name": "stripe",
+            }).execute()
+            pagamento["transfer_id"] = transfer["transfer_id"]
+        pagamento["stato"] = "released"
+        brief["pagamento_lavoro"] = pagamento
+
+    brief["stato"] = "completata"
+    return brief
+
+
 class ConfirmIn(BaseModel):
     provider_id: str
 
 
 @router.post("/babysitting/richieste/{rid}/confirm")
 async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") not in STATI_APERTI:
+        raise HTTPException(status_code=400, detail="not_open")
+    provider_id = body.provider_id
+    proposal = next((p for p in brief.get("proposte", []) if p.get("provider_id") == provider_id), None)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="proposal_not_found")
+
+    amount = float(proposal.get("price") or (proposal.get("breakdown") or {}).get("total_client") or 0)
+    brief["provider_scelto"] = provider_id
+    brief = await _add_hold(rid, brief, "base", amount, user, provider_id)
+    brief["stato"] = "confermata"
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+
+    await notify(provider_id, "babysitting_confermata", "Richiesta confermata",
+                "La famiglia ha confermato la tua disponibilità.", "babysitting", rid)
+    await notify(row["client_id"], "babysitting_confermata", "Richiesta confermata",
+                "Hai confermato la babysitter.", "babysitting", rid)
+    return {"stato": "confermata", "pagamento_lavoro": brief.get("pagamento_lavoro")}
 
 
 class IncontroIn(BaseModel):
@@ -651,7 +780,18 @@ async def set_incontro(rid: str, body: IncontroIn, user=Depends(get_current_user
 
 @router.post("/babysitting/richieste/{rid}/incontro/cancel-refund")
 async def cancel_after_incontro(rid: str, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") in ("completata", "recensita", "annullata"):
+        raise HTTPException(status_code=400, detail="already_done")
+    result = await _cancel_with_refund(rid, row, brief)
+    if brief.get("provider_scelto"):
+        await notify(brief["provider_scelto"], "babysitting_annullata", "Richiesta annullata",
+                    "La famiglia ha annullato dopo l'incontro conoscitivo.", "babysitting", rid)
+    return result
 
 
 # ---------------- doppio codice inizio/fine + consuntivo ----------------
@@ -711,10 +851,24 @@ async def fine_start(rid: str, user=Depends(get_current_user)):
 
 @router.post("/babysitting/richieste/{rid}/fine/confirm")
 async def fine_confirm(rid: str, body: CodeIn, user=Depends(get_current_user)):
-    # Chiude il consuntivo ore ed innesca il pagamento (we.conguaglio +
-    # cd.arm_or_release_richiesta lato P.IVA, comunicazione INPS lato LF) —
-    # stesso gap wallet del resto del modulo, vedi docstring in cima al file.
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if not brief.get("fine") or not brief["fine"].get("provider_at"):
+        raise HTTPException(status_code=400, detail="no_end")
+    if brief.get("stato") != "in_corso":
+        raise HTTPException(status_code=400, detail="not_in_progress")
+
+    brief["fine"]["confirmed_at"] = now_iso()
+    brief["consuntivo"] = {"confermato_at": now_iso()}
+    brief = await _finalize_release(rid, brief)
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    if brief.get("provider_scelto"):
+        await notify(brief["provider_scelto"], "babysitting_completata", "Attività completata",
+                    "La famiglia ha confermato la fine dell'attività.", "babysitting", rid)
+    return {"stato": "completata"}
 
 
 class ReviewIn(BaseModel):
@@ -724,7 +878,35 @@ class ReviewIn(BaseModel):
 
 @router.post("/babysitting/richieste/{rid}/review")
 async def review(rid: str, body: ReviewIn, user=Depends(get_current_user)):
-    _wallet_gap_stub()
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") != "completata":
+        raise HTTPException(status_code=400, detail="not_completed")
+    if not (1 <= body.rating <= 5):
+        raise HTTPException(status_code=400, detail="invalid_rating")
+    provider_id = brief.get("provider_scelto")
+    if not provider_id:
+        raise HTTPException(status_code=400, detail="no_provider")
+
+    db.table("reviews").insert({
+        "mission_id": rid, "reviewer_id": user["id"], "reviewee_id": provider_id,
+        "rating": body.rating, "comment": body.comment,
+    }).execute()
+    agg = db.table("reviews").select("rating").eq("reviewee_id", provider_id).execute()
+    ratings = [r["rating"] for r in (agg.data or [])]
+    if ratings:
+        new_avg = round(sum(ratings) / len(ratings), 2)
+        db.table("profiles_provider").update({"avg_rating": new_avg}).eq("user_id", provider_id).execute()
+
+    brief["recensione"] = {"rating": body.rating, "comment": body.comment, "at": now_iso()}
+    brief["stato"] = "recensita"
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(provider_id, "babysitting_completata", "Nuova recensione",
+                f"Hai ricevuto {body.rating}★ dalla famiglia.", "babysitting", rid)
+    return brief["recensione"]
 
 
 # ---------------- emergenza + aggiunta bambino ----------------
@@ -811,6 +993,13 @@ async def add_child_decision(rid: str, body: AddChildDecisionIn, user=Depends(ge
     brief["config"] = cfg
     brief["supplemento_applicato"] = supp
     brief["bambini"] = list(brief.get("bambini", [])) + [reqc["card_id"]]
+    # Il bambino aggiuntivo comporta un supplemento reale sul compenso: si
+    # blocca subito (stessa logica dell'extra approvato di artigiani.py), non
+    # si aspetta fine/confirm — coerente col fatto che qui l'accettazione è
+    # già una decisione vincolante della babysitter.
+    client_res = db.table("users").select("*").eq("id", row["client_id"]).limit(1).execute()
+    client = client_res.data[0] if client_res.data else {"id": row["client_id"]}
+    brief = await _add_hold(rid, brief, "supplemento", supp, client, user["id"])
     db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
     await notify(row["client_id"], "babysitting_add_child", "Bambino aggiunto",
                 f"La babysitter ha accettato (+€{supp:.2f}).", "babysitting", rid)
