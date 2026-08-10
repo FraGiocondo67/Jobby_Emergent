@@ -43,20 +43,18 @@ fonttools==4.63.0
 fpdf2==2.8.7
 frozenlist==1.8.0
 fsspec==2026.6.0
-google-ai-generativelanguage==0.6.15
-google-api-core==2.31.0
-google-api-python-client==2.198.0
-google-auth==2.55.2
-google-auth-httplib2==0.4.0
-google-genai==2.12.0
-google-generativeai==0.8.6
-googleapis-common-protos==1.75.0
-grpcio==1.82.1
-grpcio-status==1.71.2
+# google-ai-generativelanguage/google-api-core/google-api-python-client/
+# google-auth/google-auth-httplib2/google-genai/google-generativeai/
+# googleapis-common-protos/grpcio/grpcio-status/proto-plus RIMOSSI (Blocco 7):
+# residuo del requirements.txt originale Emergent, mai importati da nessun
+# modulo di questo backend (verificato con grep — dispute_ai.py usa l'SDK
+# `anthropic` diretto dal Blocco 4, non un SDK Google). Causavano un errore
+# di build su Render (conflitto di versione grpcio-status/google-api-core
+# specifico per Python 3.14, l'ambiente di build di Render — non riprodotto
+# in questo sandbox che usa Python 3.11, da cui il fix arriva solo ora).
 h11==0.16.0
 hf-xet==1.5.1
 httpcore==1.0.9
-httplib2==0.32.0
 httpx==0.28.1
 huggingface_hub==1.23.0
 idna==3.18
@@ -86,7 +84,6 @@ multidict==6.7.1
 mypy==2.3.0
 mypy_extensions==1.1.0
 numpy==2.4.6
-oauthlib==3.3.1
 openai==1.99.9
 packaging==26.2
 pandas==3.0.3
@@ -96,8 +93,6 @@ pillow==12.3.0
 platformdirs==4.10.0
 pluggy==1.6.0
 propcache==0.5.2
-proto-plus==1.28.1
-protobuf==5.29.6
 pyasn1==0.6.4
 pyasn1_modules==0.4.2
 pycodestyle==2.14.0

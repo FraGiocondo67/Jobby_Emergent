@@ -8,22 +8,13 @@
 # `TestClient(server.app)` in questo ambiente: startup event e /openapi.json
 # rispondono senza errori.
 #
-# ATTENZIONE — limite noto, non un gap silenzioso: 8 router restano ancora
-# Mongo-based e NON sono stati migrati in nessuno dei Blocchi 1-6
-# (wallet.py, admin_web.py, admin_auth.py, payments_stripe.py,
-# payments_services.py, payments_paypal.py, catalog_routes.py, dashboard.py)
-# — vedi backend/routers/*.py, cercabile con `grep -l "from core import"`.
-# Il server si avvia comunque, ma qualunque richiesta reale a un endpoint di
-# questi router fallirà con un timeout di connessione (Mongo client lazy
-# punta a `mongodb://localhost:27017`, irraggiungibile su Render). Nessuno di
-# questi endpoint è usato dalle 4 verticali migrate (Pulizie/Artigiani/
-# Babysitting/Driver) né da business/listino/spec4 — admin_web/admin_auth
-# saranno sostituiti da Retool (Blocco 6, in corso lato utente); wallet.py è
-# verosimilmente superato da stripe_pg.py/lf_pg.py (Blocco 3) ma non è stato
-# formalmente ritirato; dashboard.py/catalog_routes.py idem. Decisione se
-# ritirarli esplicitamente (come già fatto per missions.py/bookings.py nel
-# Blocco 5) rimandata a una conferma esplicita dell'utente, per non rischiare
-# di rompere qualcosa ancora in uso in locale prima che Retool sia pronto.
+# AGGIORNAMENTO Blocco 7: gli 8 router Mongo-based rimasti (wallet.py,
+# admin_web.py, admin_auth.py, payments_stripe.py, payments_services.py,
+# payments_paypal.py, catalog_routes.py, dashboard.py) sono stati RITIRATI
+# su conferma esplicita dell'utente — non più importati/esposti da
+# server.py, stesso trattamento già dato a missions.py/bookings.py nel
+# Blocco 5. `admin_web`/`admin_auth` saranno sostituiti da Retool (Blocco 6,
+# in corso lato utente). Restano nel repo come riferimento storico.
 #
 # Come usarlo:
 #   1. Su dashboard.render.com: New > Blueprint > collega il repo GitHub
@@ -47,13 +38,24 @@ services:
     autoDeploy: true
     branch: main                 # verificare sempre che sia il branch giusto prima del primo deploy
     envVars:
+      # --- Versione Python (aggiunta dopo il primo deploy fallito su Render) ---
+      # Senza questa, Render usava di default Python 3.14 (bleeding edge), per
+      # cui google-api-core/grpcio-status andavano in conflitto irrisolvibile
+      # — quelle dipendenze (mai usate da nessun modulo, residuo Emergent) sono
+      # state rimosse da requirements.txt, ma è comunque più sicuro fissare la
+      # stessa versione verificata in sviluppo.
+      - key: PYTHON_VERSION
+        value: 3.11.15
+
       # --- Supabase / Postgres (uniche OBBLIGATORIE per l'avvio, vedi core_pg.py) ---
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
 
-      # --- Admin (token statico usato da admin_auth.py, Mongo-based — vedi nota sopra) ---
+      # --- Admin (token statico letto da core.py, usato da confirm_delivery.py
+      #     — admin_auth.py/admin_web.py sono stati RITIRATI nel Blocco 7,
+      #     non serve più per il vecchio backoffice) ---
       - key: ADMIN_TOKEN
         sync: false
 
