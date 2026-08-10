@@ -1,40 +1,82 @@
-"""JOBBY — Spec 6 Babysitting subsystem.
+"""Blocco 2 (migrazione Emergent -> Supabase/Render) — riscrittura Postgres di
+questo router. Sostituisce interamente la versione Mongo/Emergent (Spec 6 —
+Babysitting: schede bambino a doppia visibilità, profilo babysitter esteso,
+incontro conoscitivo, doppio codice inizio/fine con auto-conferma, ore minime
+garantite + extra, doppio binario Libretto Famiglia/INPS vs P.IVA).
 
-Reuses the `richieste` engine (state machine, dual-track IMPRESA-PIVA / PERSONA_LF,
-payments, reviews) with the centre of gravity shifted from the price list to the
-person: extended babysitter profile, child cards with two visibility levels,
-meet-and-greet after paid confirmation, double start/end code with auto-confirm,
-minimum guaranteed hours + overtime consuntivo, ripetizioni as an extra.
+Stesse convenzioni già stabilite in routers/artigiani.py e routers/richieste.py
+(Blocco 2 — leggere quei moduli per il contesto completo): le "richieste"
+Babysitting sono righe di public.missions (category_id = service_categories
+dove slug='babysitting'), stato di dettaglio del flusso in
+missions.brief_answers (jsonb). Le schede bambino restano invece una tabella
+Postgres dedicata (public.child_cards, con RLS "solo la propria famiglia"),
+non jsonb dentro missions, perché servono due livelli di visibilità
+indipendenti dal ciclo di vita della richiesta (dati generici sempre visibili
+ai provider compatibili, scheda completa sbloccata solo al provider
+confermato) — la stessa scelta già fatta dal sistema Mongo (collection
+dedicata, non embedded).
+
+Le costanti di dominio (school_levels, subjects, languages, certifications,
+age_bands, availability_slots, ricorrenze, guided_questions, binari,
+emergency_numbers) restano in babysitting_config.py: sono tassonomia/logica
+di flusso a costo fisso, non un "menu" con prezzi admin-editabili come
+mestieri/paniere/pulizie_extra — stessa distinzione già applicata alle altre
+verticali di questo blocco.
+
+Il profilo esteso babysitter (esperienza, lingue, certificazioni,
+presentazione) e il listino prezzi vivono entrambi sotto
+profiles_provider.price_list->'babysitting' (chiavi 'profile' e 'listino');
+il certificato del casellario giudiziario in profiles_provider.documents
+(chiavi casellario_doc/casellario_verified/casellario_uploaded_at/
+casellario_expires) — stessa convenzione "documents" già usata da artigiani.py
+per le abilitazioni.
+
+GAP DI ARCHITETTURA — GATING BLOCCO 3 (Wallet/pagamenti/escrow), stesso
+motivo già documentato in artigiani.py e richieste.py: `confirm`,
+`incontro/cancel-refund`, `fine/confirm` (che chiude il consuntivo e innesca
+il pagamento) e `review` toccano soldi — inclusi i movimenti sul borsellino
+Libretto Famiglia/INPS, che nel sistema Emergent era un saldo simulato
+scritto direttamente su db.users, la stessa variante del gap già vista in
+richieste.py — e restano stub espliciti (501) finché il Blocco 3 non decide
+come colmare il gap. Tutto il resto (schede bambino, profilo, casellario,
+listino, config/estimate, creazione/lista/dettaglio/cancellazione richiesta,
+"in arrivo" lato provider, proposte, pianificazione incontro, codici
+inizio/fine come semplici transizioni di stato, emergenza, richiesta/
+decisione aggiunta bambino, amministrazione) è pienamente funzionante su
+Postgres.
 """
-import math
 import random
-from datetime import timedelta, datetime
-from typing import Optional, List
+from datetime import datetime, timedelta
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from core import db, now_utc, new_id, haversine
-from deps import get_current_user, require_admin
-from routers.notifications import push_notification
 import babysitting_config as B
 from richieste_config import lf_round_nominale
-import wallet_escrow as we
-import confirm_delivery as cd
+from core_pg import db, now_iso, now_utc, notify
+from deps_pg import get_current_user, require_admin
 
 router = APIRouter()
 
-STATES_OPEN = ("pubblicata", "in_matching", "con_proposte")
-CAT = {"categoria": "FAMIGLIA", "servizio": "BABYSITTING"}
+STATI_APERTI = ("pubblicata", "in_matching", "con_proposte")
+_CATEGORY_SLUG = "babysitting"
+_FEE_SETTING_KEY = "babysitting_fee_pct"
+
+_WALLET_GAP_MSG = (
+    "Endpoint non ancora implementato: richiede il sistema di blocco/rilascio "
+    "fondi (escrow) per Babysitting, incluso il borsellino Libretto Famiglia/"
+    "INPS (nel sistema Emergent era un saldo simulato scritto direttamente su "
+    "db.users, senza alcun gateway di pagamento reale dietro). Stesso gap "
+    "architetturale già documentato in routers/artigiani.py e "
+    "routers/richieste.py — vedi il docstring di questo modulo e la sezione "
+    "4.6 del piano di migrazione. Va presa una decisione di design esplicita "
+    "nel Blocco 3 prima di implementare questo endpoint."
+)
 
 
-# ---------------- settings ----------------
-async def fee_pct() -> float:
-    s = await db.settings.find_one({"key": "babysitting_fee_pct"})
-    try:
-        return float(s["value"]) if s else B.DEFAULT_FEE_PCT
-    except Exception:
-        return B.DEFAULT_FEE_PCT
+def _wallet_gap_stub():
+    raise HTTPException(status_code=501, detail=_WALLET_GAP_MSG)
 
 
 def _parse(dt: str) -> Optional[datetime]:
@@ -48,11 +90,11 @@ def _round_quarter(hours: float) -> float:
     return round(round(hours * 60 / B.ROUNDING_MIN) * B.ROUNDING_MIN / 60.0, 2)
 
 
-# ---------------- child cards (schede bambino) ----------------
+# ---------------- schede bambino ----------------
 class ChildIn(BaseModel):
     nome: str
-    eta_mesi: int                       # age in months (>=12 to be requestable)
-    sesso: str = ""                     # m | f | ""
+    eta_mesi: int
+    sesso: str = ""
     abitudini: str = ""
     allergie: str = ""
     note: str = ""
@@ -60,14 +102,17 @@ class ChildIn(BaseModel):
 
 
 def _child_public(c: dict) -> dict:
-    return {k: c.get(k) for k in ("card_id", "nome", "eta_mesi", "sesso", "abitudini",
-                                  "allergie", "note", "consenso", "created_at")}
+    return {
+        "card_id": c["id"], "nome": c.get("nome"), "eta_mesi": c.get("eta_mesi"), "sesso": c.get("sesso"),
+        "abitudini": c.get("abitudini"), "allergie": c.get("allergie"), "note": c.get("note"),
+        "consenso": c.get("consenso"), "created_at": c.get("created_at"),
+    }
 
 
 @router.get("/babysitting/children")
 async def list_children(user=Depends(get_current_user)):
-    cards = await db.child_cards.find({"family_id": user["user_id"]}, {"_id": 0}).sort("created_at", 1).to_list(50)
-    return cards
+    res = db.table("child_cards").select("*").eq("family_id", user["id"]).order("created_at").limit(50).execute()
+    return [_child_public(c) for c in (res.data or [])]
 
 
 @router.post("/babysitting/children")
@@ -76,27 +121,23 @@ async def create_child(body: ChildIn, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="consent_required")
     if not body.nome.strip():
         raise HTTPException(status_code=400, detail="name_required")
-    cid = new_id("child")
-    doc = {"card_id": cid, "family_id": user["user_id"], **body.dict(),
-           "created_at": now_utc().isoformat()}
-    await db.child_cards.insert_one(doc)
-    return _child_public(doc)
+    res = db.table("child_cards").insert({**body.dict(), "family_id": user["id"]}).execute()
+    return _child_public(res.data[0])
 
 
 @router.put("/babysitting/children/{cid}")
 async def update_child(cid: str, body: ChildIn, user=Depends(get_current_user)):
-    c = await db.child_cards.find_one({"card_id": cid, "family_id": user["user_id"]})
-    if not c:
+    existing = db.table("child_cards").select("id").eq("id", cid).eq("family_id", user["id"]).limit(1).execute()
+    if not existing.data:
         raise HTTPException(status_code=404, detail="not_found")
-    await db.child_cards.update_one({"card_id": cid}, {"$set": body.dict()})
-    c = await db.child_cards.find_one({"card_id": cid}, {"_id": 0})
-    return _child_public(c)
+    res = db.table("child_cards").update(body.dict()).eq("id", cid).execute()
+    return _child_public(res.data[0])
 
 
 @router.delete("/babysitting/children/{cid}")
 async def delete_child(cid: str, user=Depends(get_current_user)):
-    res = await db.child_cards.delete_one({"card_id": cid, "family_id": user["user_id"]})
-    if res.deleted_count == 0:
+    res = db.table("child_cards").delete().eq("id", cid).eq("family_id", user["id"]).execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="not_found")
     return {"deleted": True}
 
@@ -110,8 +151,7 @@ def _age_band(eta_mesi: int) -> str:
     return "over14"
 
 
-def _generic_children(cards: list) -> list:
-    """First visibility level — no name/photo/details, only what a provider needs to accept."""
+def _generic_children(cards: List[dict]) -> List[dict]:
     out = []
     for c in cards:
         band = next((b for b in B.AGE_BANDS if b["id"] == _age_band(c.get("eta_mesi", 12))), None)
@@ -123,7 +163,7 @@ def _generic_children(cards: list) -> list:
     return out
 
 
-# ---------------- babysitter extended profile (Spec 6 §3) ----------------
+# ---------------- profilo babysitter esteso ----------------
 class BsProfileIn(BaseModel):
     esperienza_anni: int = 0
     fasce_eta: List[str] = []
@@ -131,25 +171,43 @@ class BsProfileIn(BaseModel):
     certificazioni: List[str] = []
     materie: List[str] = []
     livelli: List[str] = []
-    presentazione: dict = {}            # {perche, pomeriggio, genitori}
+    presentazione: dict = {}
     disponibilita: List[str] = []
+
+
+def _price_list(user_id: str) -> tuple:
+    """Ritorna (price_list_dict, provider_row) per user_id, o ({}, None) se il
+    profilo provider non esiste ancora."""
+    row = db.table("profiles_provider").select("*").eq("user_id", user_id).limit(1).execute()
+    if not row.data:
+        return {}, None
+    pl = row.data[0].get("price_list")
+    return (pl if isinstance(pl, dict) else {}), row.data[0]
 
 
 @router.get("/babysitting/profile")
 async def get_bs_profile(user=Depends(get_current_user)):
-    p = user.get("bs_profile") or {}
-    return {"bs_profile": p, "casellario": {
-        "uploaded": bool(user.get("casellario_doc")),
-        "verified": bool(user.get("casellario_verified")),
-        "expires_at": user.get("casellario_expires"),
+    pl, prow = _price_list(user["id"])
+    bs = pl.get("babysitting", {})
+    documents = (prow or {}).get("documents") or {}
+    return {"bs_profile": bs.get("profile") or {}, "casellario": {
+        "uploaded": bool(documents.get("casellario_doc")),
+        "verified": bool(documents.get("casellario_verified")),
+        "expires_at": documents.get("casellario_expires"),
     }}
 
 
 @router.put("/babysitting/profile")
 async def set_bs_profile(body: BsProfileIn, user=Depends(get_current_user)):
-    if user.get("role") not in ("provider", "business"):
+    if user.get("role") not in ("provider", "both"):
         raise HTTPException(status_code=403, detail="providers_only")
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"bs_profile": body.dict()}})
+    pl, prow = _price_list(user["id"])
+    if prow is None:
+        raise HTTPException(status_code=400, detail="provider_profile_missing")
+    bs = dict(pl.get("babysitting", {}))
+    bs["profile"] = body.dict()
+    pl["babysitting"] = bs
+    db.table("profiles_provider").update({"price_list": pl}).eq("user_id", user["id"]).execute()
     return {"bs_profile": body.dict()}
 
 
@@ -161,28 +219,36 @@ class CasellarioIn(BaseModel):
 async def upload_casellario(body: CasellarioIn, user=Depends(get_current_user)):
     if not body.image.strip():
         raise HTTPException(status_code=400, detail="invalid_document")
-    await db.users.update_one({"user_id": user["user_id"]},
-                              {"$set": {"casellario_doc": body.image, "casellario_verified": False,
-                                        "casellario_uploaded_at": now_utc().isoformat()}})
+    row = db.table("profiles_provider").select("documents").eq("user_id", user["id"]).limit(1).execute()
+    if not row.data:
+        raise HTTPException(status_code=400, detail="provider_profile_missing")
+    documents = dict(row.data[0].get("documents") or {})
+    documents["casellario_doc"] = body.image
+    documents["casellario_verified"] = False
+    documents["casellario_uploaded_at"] = now_iso()
+    db.table("profiles_provider").update({"documents": documents}).eq("user_id", user["id"]).execute()
     return {"uploaded": True}
 
 
-# ---------------- provider listino (Spec 6 §8) ----------------
+# ---------------- listino provider ----------------
 class BsListino(BaseModel):
     binario: str = "persona_lf"
     tariffa_oraria: float = 10.0
     tariffa_ripetizioni: dict = {"elementari": 12.0, "medie": 16.0, "superiori": 20.0}
     materie: List[str] = []
-    maggiorazione_serale_pct: float = 0.0     # after 20:00
+    maggiorazione_serale_pct: float = 0.0
     maggiorazione_festiva_pct: float = 0.0
-    supplemento_bambino: float = 0.0          # per additional child (optional)
+    supplemento_bambino: float = 0.0
     raggio_km: float = 15.0
     minimo_ore: float = 2.0
 
 
 @router.get("/babysitting/listino")
 async def get_listino(user=Depends(get_current_user)):
-    return {"bs_binario": user.get("bs_binario", "persona_lf"), "listino": user.get("bs_listino")}
+    pl, _ = _price_list(user["id"])
+    bs = pl.get("babysitting", {})
+    lst = bs.get("listino")
+    return {"bs_binario": (lst or {}).get("binario", "persona_lf"), "listino": lst}
 
 
 class BsListinoIn(BaseModel):
@@ -192,20 +258,27 @@ class BsListinoIn(BaseModel):
 
 @router.put("/babysitting/listino")
 async def set_listino(body: BsListinoIn, user=Depends(get_current_user)):
-    if user.get("role") not in ("provider", "business"):
+    if user.get("role") not in ("provider", "both"):
         raise HTTPException(status_code=403, detail="providers_only")
+    row = db.table("profiles_provider").select("price_list, skills").eq("user_id", user["id"]).limit(1).execute()
+    if not row.data:
+        raise HTTPException(status_code=400, detail="provider_profile_missing")
+    current = row.data[0].get("price_list")
+    pl = dict(current) if isinstance(current, dict) else {}
+    bs = dict(pl.get("babysitting", {}))
     lst = body.listino.dict()
     lst["binario"] = body.binario
-    await db.users.update_one({"user_id": user["user_id"]},
-                              {"$set": {"bs_binario": body.binario, "bs_listino": lst,
-                                        "services": list(set((user.get("services") or []) + ["babysitting"]))}})
+    bs["listino"] = lst
+    pl["babysitting"] = bs
+    skills = sorted(set((row.data[0].get("skills") or []) + ["babysitting"]))
+    db.table("profiles_provider").update({"price_list": pl, "skills": skills}).eq("user_id", user["id"]).execute()
     return {"bs_binario": body.binario, "listino": lst}
 
 
-# ---------------- price engine ----------------
+# ---------------- price engine (logica pura — resta Python) ----------------
 class BsConfig(BaseModel):
     n_bambini: int = 1
-    durata_ore: float = 3.0                    # booked hours (end - start)
+    durata_ore: float = 3.0
     ripetizioni_attiva: bool = False
     ripetizioni_materie: List[str] = []
     ripetizioni_ore: float = 0.0
@@ -250,26 +323,31 @@ def price_breakdown(listino: dict, config: dict, binario: str, fee: float) -> di
     return out
 
 
-async def compatible_providers(binario: str, config: dict, lat: float, lng: float) -> list:
-    q = {"role": {"$in": ["provider", "business"]}, "services": "babysitting",
-         "approval_status": {"$nin": ["rejected", "suspended", "waitlist", "pending"]},
-         "bs_binario": binario, "bs_listino": {"$exists": True}}
-    out = []
-    for p in await db.users.find(q, {"_id": 0, "password_hash": 0}).to_list(200):
-        if binario == "persona_lf" and p.get("lf_inps_registered") is False:
-            continue
-        lst = p.get("bs_listino") or {}
-        dist = haversine(lat, lng, p.get("lat", 0), p.get("lng", 0))
-        if dist > float(lst.get("raggio_km", 15)):
-            continue
-        if float(config.get("durata_ore", 0)) < float(lst.get("minimo_ore", 0)):
-            continue
-        # ripetizioni subject/level filter
-        if config.get("ripetizioni_attiva"):
-            prof_mat = set(lst.get("materie", []))
-            if not set(config.get("ripetizioni_materie", [])).issubset(prof_mat):
-                continue
-        out.append({"provider": p, "distance": round(dist, 1), "listino": lst})
+def _compatible_providers(binario: str, config: dict, lat: Optional[float], lng: Optional[float]) -> List[dict]:
+    materie = config.get("ripetizioni_materie") or [] if config.get("ripetizioni_attiva") else []
+    res = db.rpc(
+        "babysitting_compatible_providers",
+        {
+            "p_binario": binario, "p_lat": lat, "p_lng": lng,
+            "p_durata_ore": float(config.get("durata_ore", 0) or 0),
+            "p_materie": materie or None,
+        },
+    ).execute()
+    return res.data or []
+
+
+def _richiesta_out(row: dict) -> dict:
+    brief = row.get("brief_answers") or {}
+    out = dict(brief)
+    out.update({
+        "richiesta_id": row["id"],
+        "cliente_id": row["client_id"],
+        "categoria": "FAMIGLIA",
+        "servizio": "BABYSITTING",
+        "indirizzo": row.get("address"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    })
     return out
 
 
@@ -286,6 +364,16 @@ async def get_config(user=Depends(get_current_user)):
     }
 
 
+async def fee_pct() -> float:
+    res = db.table("app_settings").select("value").eq("key", _FEE_SETTING_KEY).limit(1).execute()
+    if res.data:
+        try:
+            return float(res.data[0]["value"])
+        except Exception:
+            pass
+    return B.DEFAULT_FEE_PCT
+
+
 class EstimateIn(BaseModel):
     binario: str = "persona_lf"
     config: BsConfig
@@ -299,24 +387,31 @@ async def estimate(body: EstimateIn, user=Depends(get_current_user)):
     fee = await fee_pct()
     result = {}
     for binario in ("persona_lf", "piva"):
-        provs = await compatible_providers(binario, cfg, body.lat, body.lng)
-        prices = [price_breakdown(pp["listino"], cfg, binario, fee)["total_client"] for pp in provs]
+        provs = _compatible_providers(binario, cfg, body.lat, body.lng)
+        prices = [price_breakdown(pp.get("listino") or {}, cfg, binario, fee)["total_client"] for pp in provs]
         result[binario] = {"providers": len(provs),
                            "min": round(min(prices), 2) if prices else None,
                            "max": round(max(prices), 2) if prices else None}
     return {"fee_pct": fee, "ranges": result}
 
 
+def _category_id() -> str:
+    res = db.table("service_categories").select("id").eq("slug", _CATEGORY_SLUG).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=500, detail="babysitting_category_missing")
+    return res.data[0]["id"]
+
+
 # ---------------- richiesta CRUD ----------------
 class RichiestaIn(BaseModel):
     binario: str = "persona_lf"
-    bambini: List[str] = []                    # child card ids
+    bambini: List[str] = []
     config: BsConfig
     indirizzo: str = ""
     lat: float
     lng: float
-    data_ora: str = ""                          # start ISO
-    ora_fine: str = ""                          # end ISO
+    data_ora: str = ""
+    ora_fine: str = ""
     urgente: bool = False
     ricorrenza: str = "una_tantum"
     giorni_preferiti: List[str] = []
@@ -329,9 +424,8 @@ class RichiestaIn(BaseModel):
 async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
     if body.binario not in ("persona_lf", "piva"):
         raise HTTPException(status_code=400, detail="invalid_binario")
-    # validate children exist + age gate (>=12 months)
-    cards = await db.child_cards.find({"card_id": {"$in": body.bambini}, "family_id": user["user_id"]},
-                                      {"_id": 0}).to_list(20)
+    cards_res = db.table("child_cards").select("*").in_("id", body.bambini).eq("family_id", user["id"]).execute()
+    cards = cards_res.data or []
     if not cards:
         raise HTTPException(status_code=400, detail="no_children_selected")
     for c in cards:
@@ -339,117 +433,128 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="child_too_young")
     cfg = body.config.dict()
     cfg["n_bambini"] = len(cards)
-    # derive booked hours from start/end when both present
     st, en = _parse(body.data_ora), _parse(body.ora_fine)
     if st and en and en > st:
         cfg["durata_ore"] = _round_quarter((en - st).total_seconds() / 3600.0)
-    rid = new_id("bsr")
-    doc = {
-        "richiesta_id": rid, "cliente_id": user["user_id"], "cliente_nome": user.get("name", ""),
-        **CAT, "binario": body.binario, "config": cfg, "bambini": body.bambini,
+
+    brief = {
+        "binario": body.binario, "config": cfg, "bambini": [c["id"] for c in cards],
         "bambini_generic": _generic_children(cards),
-        "indirizzo": body.indirizzo, "accesso": body.accesso, "lat": body.lat, "lng": body.lng,
-        "data_ora": body.data_ora, "ora_fine": body.ora_fine, "urgente": body.urgente,
+        "accesso": body.accesso, "data_ora": body.data_ora, "ora_fine": body.ora_fine, "urgente": body.urgente,
         "ricorrenza": body.ricorrenza, "giorni_preferiti": body.giorni_preferiti,
         "durata_ore": cfg.get("durata_ore"), "note": body.note,
         "stato": "pubblicata" if body.publish else "bozza",
         "provider_invitati": [], "proposte": [], "provider_scelto": None,
         "incontro": None, "inizio": None, "fine": None, "consuntivo": None,
         "pagamento_fee": {"stato": "authorized" if body.publish else "none"},
-        "pagamento_lavoro": {"stato": "none"},
-        "recensione": None, "created_at": now_utc().isoformat(), "updated_at": now_utc().isoformat(),
+        "pagamento_lavoro": {"stato": "none"}, "recensione": None,
     }
     if body.publish:
-        doc["scade_at"] = (now_utc() + timedelta(hours=B.PROPOSAL_WINDOW_HOURS)).isoformat()
-        provs = await compatible_providers(body.binario, cfg, body.lat, body.lng)
-        doc["provider_invitati"] = [{"provider_id": pp["provider"]["user_id"], "at": now_utc().isoformat(),
-                                     "status": "invited", "auto": True} for pp in provs]
-    await db.richieste.insert_one(doc)
+        brief["scade_at"] = (now_utc() + timedelta(hours=B.PROPOSAL_WINDOW_HOURS)).isoformat()
+        provs = _compatible_providers(body.binario, cfg, body.lat, body.lng)
+        brief["provider_invitati"] = [{"provider_id": pp["provider_id"], "at": now_iso(), "status": "invited", "auto": True} for pp in provs]
+
+    row = {
+        "client_id": user["id"], "category_id": _category_id(),
+        "title": "Babysitting", "description": body.note,
+        "status": "published" if body.publish else "draft", "address": body.indirizzo,
+        "platform_fee_pct": await fee_pct(),
+        "brief_answers": brief,
+    }
+    res = db.table("missions").insert(row).execute()
+    created = res.data[0]
     if body.publish:
-        for inv in doc["provider_invitati"]:
-            await push_notification(inv["provider_id"], "nuova_richiesta", "Nuova richiesta babysitting",
-                                    "Hai una nuova richiesta compatibile in arrivo.", "richiesta", rid)
-    return {k: v for k, v in doc.items() if k != "_id"}
-
-
-async def _maybe_autoconfirm(r: dict) -> dict:
-    """Lazy auto-confirm: if provider ended and parent didn't confirm within 15 min."""
-    fine = r.get("fine")
-    if r["stato"] == "in_corso" and fine and fine.get("provider_at") and not fine.get("confirmed_at"):
-        deadline = _parse(fine.get("deadline", ""))
-        if deadline and now_utc() > deadline:
-            r = await _finalize_fine(r, auto=True)
-    return r
+        for inv in brief["provider_invitati"]:
+            await notify(inv["provider_id"], "nuova_richiesta", "Nuova richiesta babysitting",
+                        "Hai una nuova richiesta compatibile in arrivo.", "richiesta", created["id"])
+    return _richiesta_out(created)
 
 
 @router.get("/babysitting/richieste")
 async def my_richieste(user=Depends(get_current_user)):
-    items = await db.richieste.find({"cliente_id": user["user_id"], **CAT}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    out = []
-    for r in items:
-        r = await _maybe_autoconfirm(r)
-        out.append(r)
-    return out
+    res = (
+        db.table("missions").select("*")
+        .eq("client_id", user["id"]).eq("category_id", _category_id())
+        .order("created_at", desc=True).limit(100).execute()
+    )
+    return [_richiesta_out(r) for r in (res.data or [])]
 
 
 @router.get("/babysitting/richieste/{rid}")
 async def get_richiesta(rid: str, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="not_found")
-    is_owner = r["cliente_id"] == user["user_id"]
-    is_confirmed = r.get("provider_scelto") == user["user_id"]
-    is_invited = user["user_id"] in [p.get("provider_id") for p in r.get("provider_invitati", [])]
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    uid = user["id"]
+    is_owner = row["client_id"] == uid
+    is_confirmed = brief.get("provider_scelto") == uid
+    is_invited = uid in [p.get("provider_id") for p in brief.get("provider_invitati", [])]
     if not (is_owner or is_invited or is_confirmed):
         raise HTTPException(status_code=403, detail="forbidden")
-    r = await _maybe_autoconfirm(r)
-    r["role"] = "client" if is_owner else "provider"
-    if is_owner:
-        # full child cards for the family
-        r["bambini_full"] = await db.child_cards.find({"card_id": {"$in": r.get("bambini", [])}}, {"_id": 0}).to_list(20)
-    elif is_confirmed:
-        # second visibility level unlocked to the confirmed babysitter
-        r["bambini_full"] = await db.child_cards.find({"card_id": {"$in": r.get("bambini", [])}}, {"_id": 0}).to_list(20)
+    out = _richiesta_out(row)
+    out["role"] = "client" if is_owner else "provider"
+    bambini_ids = brief.get("bambini", [])
+    if is_owner or is_confirmed:
+        cards_res = db.table("child_cards").select("*").in_("id", bambini_ids).execute() if bambini_ids else None
+        out["bambini_full"] = [_child_public(c) for c in (cards_res.data or [])] if cards_res else []
     else:
-        r.pop("indirizzo", None)      # exact address hidden until confirmed
-        r.pop("accesso", None)
-        r.pop("bambini", None)
-    return r
+        out.pop("indirizzo", None)
+        out.pop("accesso", None)
+        out.pop("bambini", None)
+    return out
 
 
 @router.post("/babysitting/richieste/{rid}/cancel")
 async def cancel_richiesta(rid: str, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r["cliente_id"] != user["user_id"]:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
         raise HTTPException(status_code=404, detail="not_found")
-    if r["stato"] in ("completata", "recensita"):
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") in ("completata", "recensita"):
         raise HTTPException(status_code=400, detail="already_done")
-    if (r.get("escrow") or {}).get("stato") == "held":
-        await we.refund(r, "Rimborso babysitting")
-    await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"stato": "annullata", "updated_at": now_utc().isoformat()}})
+    # NOTA: nessun refund escrow/borsellino qui — come in artigiani.py/
+    # richieste.py, /confirm è uno stub (vedi sopra), quindi una richiesta non
+    # può mai arrivare a bloccare fondi in questo blocco.
+    brief["stato"] = "annullata"
+    db.table("missions").update({"status": "cancelled", "brief_answers": brief}).eq("id", rid).execute()
     return {"stato": "annullata"}
 
 
 # ---------------- provider side ----------------
 @router.get("/babysitting/incoming")
 async def incoming(user=Depends(get_current_user)):
-    if user.get("role") not in ("provider", "business"):
+    if user.get("role") not in ("provider", "both"):
         return []
-    uid = user["user_id"]
-    items = await db.richieste.find(
-        {**CAT, "$or": [
-            {"provider_invitati": {"$elemMatch": {"provider_id": uid, "status": {"$ne": "declined"}}}, "stato": {"$in": list(STATES_OPEN)}},
-            {"provider_scelto": uid, "stato": {"$in": ["confermata", "in_corso"]}},
-        ]},
-        {"_id": 0}).sort([("urgente", -1), ("created_at", -1)]).to_list(100)
+    uid = user["id"]
+    res = (
+        db.table("missions").select("*")
+        .eq("category_id", _category_id()).eq("status", "published")
+        .order("urgente", desc=True).order("created_at", desc=True).limit(200).execute()
+    )
+    pl, _ = _price_list(uid)
+    lst = (pl.get("babysitting", {}) or {}).get("listino") or {}
     fee = await fee_pct()
+
     out = []
-    for r in items:
-        r.pop("indirizzo", None); r.pop("accesso", None); r.pop("bambini", None)
-        lst = user.get("bs_listino") or {}
-        r["price"] = price_breakdown(lst, r["config"], r["binario"], fee)
-        r["my_proposal"] = next((p for p in r.get("proposte", []) if p.get("provider_id") == user["user_id"]), None)
-        out.append(r)
+    for row in (res.data or []):
+        brief = row.get("brief_answers") or {}
+        invitati = brief.get("provider_invitati", [])
+        my_invite = next((p for p in invitati if p.get("provider_id") == uid), None)
+        is_chosen = brief.get("provider_scelto") == uid
+        if not my_invite and not is_chosen:
+            continue
+        if my_invite and my_invite.get("status") == "declined" and not is_chosen:
+            continue
+        item = _richiesta_out(row)
+        item.pop("indirizzo", None)
+        item.pop("accesso", None)
+        item.pop("bambini", None)
+        item["price"] = price_breakdown(lst, brief.get("config", {}), brief.get("binario", "persona_lf"), fee)
+        item["my_proposal"] = next((p for p in brief.get("proposte", []) if p.get("provider_id") == uid), None)
+        out.append(item)
     return out
 
 
@@ -460,153 +565,110 @@ class ProposeIn(BaseModel):
 
 @router.post("/babysitting/richieste/{rid}/propose")
 async def propose(rid: str, body: ProposeIn, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="not_found")
-    if user["user_id"] not in [p.get("provider_id") for p in r.get("provider_invitati", [])]:
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    invitati = brief.get("provider_invitati", [])
+    uid = user["id"]
+    if uid not in [p.get("provider_id") for p in invitati]:
         raise HTTPException(status_code=403, detail="not_invited")
-    if r["stato"] not in STATES_OPEN:
+    if brief.get("stato") not in STATI_APERTI:
         raise HTTPException(status_code=400, detail="not_open")
+
     if not body.accept:
-        await db.richieste.update_one({"richiesta_id": rid, "provider_invitati.provider_id": user["user_id"]},
-                                      {"$set": {"provider_invitati.$.status": "declined"}})
+        for p in invitati:
+            if p.get("provider_id") == uid:
+                p["status"] = "declined"
+        brief["provider_invitati"] = invitati
+        db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
         return {"declined": True}
-    lst = user.get("bs_listino") or {}
+
+    pl, prow = _price_list(uid)
+    bs = pl.get("babysitting", {})
+    lst = bs.get("listino") or {}
+    bsp = bs.get("profile") or {}
+    documents = (prow or {}).get("documents") or {}
+    business_data = (prow or {}).get("business_data") or {}
     fee = await fee_pct()
-    pb = price_breakdown(lst, r["config"], r["binario"], fee)
-    bsp = user.get("bs_profile") or {}
+    pb = price_breakdown(lst, brief.get("config", {}), brief.get("binario", "persona_lf"), fee)
     proposal = {
-        "provider_id": user["user_id"], "provider_nome": user.get("business_name") or user.get("name", ""),
-        "provider_rating": user.get("rating", 0), "provider_trust": user.get("trust_score", 0),
-        "provider_foto": user.get("presentation_photo") or user.get("selfie_document"),
+        "provider_id": uid, "provider_nome": business_data.get("business_name") or user.get("full_name", ""),
+        "provider_rating": (prow or {}).get("avg_rating") or 0, "provider_trust": (prow or {}).get("trust_score") or 0,
         "esperienza_anni": bsp.get("esperienza_anni", 0), "lingue": bsp.get("lingue", []),
         "certificazioni": bsp.get("certificazioni", []), "presentazione": bsp.get("presentazione", {}),
-        "casellario_ok": bool(user.get("casellario_verified")),
-        "price": pb["total_client"], "breakdown": pb, "message": body.message, "at": now_utc().isoformat(),
+        "casellario_ok": bool(documents.get("casellario_verified")),
+        "price": pb["total_client"], "breakdown": pb, "message": body.message, "at": now_iso(),
     }
-    await db.richieste.update_one({"richiesta_id": rid}, {"$pull": {"proposte": {"provider_id": user["user_id"]}}})
-    await db.richieste.update_one({"richiesta_id": rid},
-                                  {"$push": {"proposte": proposal},
-                                   "$set": {"stato": "con_proposte", "updated_at": now_utc().isoformat()}})
-    await push_notification(r["cliente_id"], "babysitting_proposta", "Nuova babysitter disponibile",
-                            f"{proposal['provider_nome']} è disponibile (€{pb['total_client']:.2f}).", "babysitting", rid)
+    proposte = [p for p in brief.get("proposte", []) if p.get("provider_id") != uid]
+    proposte.append(proposal)
+    brief["proposte"] = proposte
+    brief["stato"] = "con_proposte"
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+
+    await notify(row["client_id"], "babysitting_proposta", "Nuova babysitter disponibile",
+                f"{proposal['provider_nome']} è disponibile (€{pb['total_client']:.2f}).", "babysitting", rid)
     return proposal
 
 
-# ---------------- client confirm + meet-and-greet ----------------
+# ---------------- confirm + incontro — STUB (Blocco 3, vedi docstring modulo) ----------------
 class ConfirmIn(BaseModel):
     provider_id: str
 
 
 @router.post("/babysitting/richieste/{rid}/confirm")
 async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r["cliente_id"] != user["user_id"]:
-        raise HTTPException(status_code=404, detail="not_found")
-    if r["stato"] != "con_proposte":
-        raise HTTPException(status_code=400, detail="no_proposals")
-    prop = next((p for p in r.get("proposte", []) if p.get("provider_id") == body.provider_id), None)
-    if not prop:
-        raise HTTPException(status_code=400, detail="proposal_not_found")
-    lf = {}
-    if r["binario"] == "persona_lf":
-        # engage booked hours + 1h prudential margin (1h of work at the same avg rate)
-        nominale = prop["breakdown"].get("lf_nominale", prop["price"])
-        work = float(prop["breakdown"].get("work_total", 0))
-        booked = max(1.0, float(r["config"].get("durata_ore", 1)))
-        margin_nom = lf_round_nominale(work / booked * B.VOUCHER_MARGIN_HOURS)
-        impegno = nominale + margin_nom
-        bors = round(user.get("lf_borsellino", 0), 2)
-        if bors < impegno:
-            raise HTTPException(status_code=400, detail="lf_insufficient_borsellino")
-        await db.users.update_one({"user_id": user["user_id"]},
-                                  {"$inc": {"lf_borsellino": -impegno, "lf_year_total": nominale,
-                                            "lf_year_hours": float(r["config"].get("durata_ore", 0))}})
-        lf = {"nominale": nominale, "impegnato": impegno, "margine": margin_nom,
-              "voucher": prop["breakdown"].get("lf_voucher"),
-              "netto_lavoratrice": prop["breakdown"].get("lf_netto_lavoratrice"), "stato": "impegnato"}
-    upd = {
-        "stato": "confermata", "provider_scelto": body.provider_id,
-        "pagamento_fee": {"stato": "charged", "importo": prop["breakdown"]["jobby_fee"], "at": now_utc().isoformat()},
-        "pagamento_lavoro": ({"stato": "held", "importo": prop["price"]} if r["binario"] != "persona_lf"
-                             else {**lf, "stato": "lf"}),
-        "prezzo_finale": prop["price"], "updated_at": now_utc().isoformat(),
-    }
-    if r["binario"] != "persona_lf":
-        # Blocca subito l'importo stimato dal wallet del cliente.
-        await we.hold(r, prop["price"], f"Blocco garanzia babysitting €{prop['price']:.2f}")
-    await db.richieste.update_one({"richiesta_id": rid}, {"$set": upd})
-    await push_notification(body.provider_id, "babysitting_confermata", "Sei stata scelta!",
-                            "Una famiglia ti ha scelto. Organizza l'incontro conoscitivo.", "babysitting", rid)
-    return {**r, **upd}
+    _wallet_gap_stub()
 
 
 class IncontroIn(BaseModel):
-    mode: str                      # video | persona
-    slot: str = ""                 # ISO datetime for the planned event
+    mode: str
+    slot: str = ""
 
 
 @router.post("/babysitting/richieste/{rid}/incontro")
 async def set_incontro(rid: str, body: IncontroIn, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r["cliente_id"] != user["user_id"]:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
         raise HTTPException(status_code=404, detail="not_found")
-    if r["stato"] != "confermata":
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") != "confermata":
         raise HTTPException(status_code=400, detail="not_confirmed")
     if body.mode not in ("video", "persona"):
         raise HTTPException(status_code=400, detail="invalid_mode")
-    incontro = {"mode": body.mode, "slot": body.slot, "created_at": now_utc().isoformat(), "stato": "pianificato"}
+    incontro = {"mode": body.mode, "slot": body.slot, "created_at": now_iso(), "stato": "pianificato"}
     if body.mode == "video":
-        incontro["link"] = f"https://meet.jit.si/JOBBY-{rid}-{new_id('m')[-6:]}"
-    await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"incontro": incontro, "updated_at": now_utc().isoformat()}})
-    await push_notification(r["provider_scelto"], "babysitting_incontro", "Incontro conoscitivo",
-                            "La famiglia ha proposto un incontro conoscitivo." + (" Videochiamata." if body.mode == "video" else ""),
-                            "babysitting", rid)
+        incontro["link"] = f"https://meet.jit.si/JOBBY-{rid[-8:]}"
+    brief["incontro"] = incontro
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(brief.get("provider_scelto"), "babysitting_incontro", "Incontro conoscitivo",
+                "La famiglia ha proposto un incontro conoscitivo." + (" Videochiamata." if body.mode == "video" else ""),
+                "babysitting", rid)
     return incontro
 
 
 @router.post("/babysitting/richieste/{rid}/incontro/cancel-refund")
 async def cancel_after_incontro(rid: str, user=Depends(get_current_user)):
-    """Garanzia primo incontro — full refund even under 48h if the meet didn't convince."""
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r["cliente_id"] != user["user_id"]:
-        raise HTTPException(status_code=404, detail="not_found")
-    if r["stato"] != "confermata" or not r.get("incontro"):
-        raise HTTPException(status_code=400, detail="no_incontro")
-    refund = {}
-    if r["binario"] == "persona_lf":
-        impegno = float((r.get("pagamento_lavoro") or {}).get("impegnato", 0))
-        nominale = float((r.get("pagamento_lavoro") or {}).get("nominale", 0))
-        await db.users.update_one({"user_id": user["user_id"]},
-                                  {"$inc": {"lf_borsellino": impegno, "lf_year_total": -nominale,
-                                            "lf_year_hours": -float(r["config"].get("durata_ore", 0))}})
-        refund = {"lf_restituito": impegno}
-    elif (r.get("escrow") or {}).get("stato") == "held":
-        await we.refund(r, "Garanzia primo incontro")
-    fee = float((r.get("pagamento_fee") or {}).get("importo", 0))
-    await db.richieste.update_one({"richiesta_id": rid},
-                                  {"$set": {"stato": "annullata", "garanzia_incontro": True,
-                                            "pagamento_fee": {"stato": "refunded", "importo": fee},
-                                            "updated_at": now_utc().isoformat()}})
-    await push_notification(r["provider_scelto"], "babysitting_annullata", "Incontro non confermato",
-                            "La famiglia ha usato la garanzia primo incontro.", "babysitting", rid)
-    return {"stato": "annullata", "refunded_fee": fee, **refund}
+    _wallet_gap_stub()
 
 
-# ---------------- double start/end code + consuntivo ----------------
+# ---------------- doppio codice inizio/fine + consuntivo ----------------
 @router.post("/babysitting/richieste/{rid}/inizio")
 async def inizio_start(rid: str, user=Depends(get_current_user)):
-    """Babysitter taps 'Inizio attività' → generates code for the parent to confirm."""
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r.get("provider_scelto") != user["user_id"]:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or (res.data[0].get("brief_answers") or {}).get("provider_scelto") != user["id"]:
         raise HTTPException(status_code=404, detail="not_found")
-    if r["stato"] != "confermata":
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") != "confermata":
         raise HTTPException(status_code=400, detail="not_confirmed")
     code = f"{random.randint(0, 9999):04d}"
-    inizio = {"provider_at": now_utc().isoformat(), "code": code, "confirmed_at": None}
-    await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"inizio": inizio, "updated_at": now_utc().isoformat()}})
-    await push_notification(r["cliente_id"], "babysitting_inizio", "Conferma inizio attività",
-                            f"La babysitter è arrivata. Codice inizio: {code}", "babysitting", rid)
+    brief["inizio"] = {"provider_at": now_iso(), "code": code, "confirmed_at": None}
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(row["client_id"], "babysitting_inizio", "Conferma inizio attività",
+                f"La babysitter è arrivata. Codice inizio: {code}", "babysitting", rid)
     return {"code": code}
 
 
@@ -616,83 +678,43 @@ class CodeIn(BaseModel):
 
 @router.post("/babysitting/richieste/{rid}/inizio/confirm")
 async def inizio_confirm(rid: str, body: CodeIn, user=Depends(get_current_user)):
-    """Parent confirms start (code optional — tapping the notification is enough)."""
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r["cliente_id"] != user["user_id"]:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
         raise HTTPException(status_code=404, detail="not_found")
-    if not r.get("inizio") or not r["inizio"].get("provider_at"):
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if not brief.get("inizio") or not brief["inizio"].get("provider_at"):
         raise HTTPException(status_code=400, detail="no_start")
-    await db.richieste.update_one({"richiesta_id": rid},
-                                  {"$set": {"inizio.confirmed_at": now_utc().isoformat(),
-                                            "stato": "in_corso", "updated_at": now_utc().isoformat()}})
+    brief["inizio"]["confirmed_at"] = now_iso()
+    brief["stato"] = "in_corso"
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
     return {"stato": "in_corso"}
-
-
-async def _finalize_fine(r: dict, auto: bool) -> dict:
-    """Compute billable hours from start→end confirmations, minimum guaranteed + overtime."""
-    rid = r["richiesta_id"]
-    st = _parse((r.get("inizio") or {}).get("confirmed_at") or (r.get("inizio") or {}).get("provider_at") or "")
-    en = _parse((r.get("fine") or {}).get("provider_at") or "")
-    booked = float(r["config"].get("durata_ore", 0) or 0)
-    worked = _round_quarter((en - st).total_seconds() / 3600.0) if (st and en and en > st) else booked
-    billable = max(booked, worked)                       # minimum guaranteed
-    extra_hours = round(max(0.0, billable - booked), 2)
-    # overtime consuntivo at the same babysitting rate
-    prop = next((p for p in r.get("proposte", []) if p.get("provider_id") == r.get("provider_scelto")), {})
-    lst_rate = float((prop.get("breakdown") or {}).get("voce_babysitting", 0))
-    per_hour = round(lst_rate / booked, 2) if booked else 0
-    extra_amount = round(extra_hours * per_hour, 2)
-    consuntivo = {"booked_ore": booked, "worked_ore": worked, "billable_ore": billable,
-                  "extra_ore": extra_hours, "extra_importo": extra_amount, "auto": auto}
-    upd = {"fine.confirmed_at": now_utc().isoformat(), "fine.auto": auto, "consuntivo": consuntivo,
-           "stato": "completata", "completed_at": now_utc().isoformat(),
-           "contestabile_fino": (now_utc().replace(hour=12, minute=0, second=0, microsecond=0) + timedelta(days=1)).isoformat(),
-           "updated_at": now_utc().isoformat()}
-    if r["binario"] == "persona_lf":
-        upd["lf_comunicazione"] = {"prestatrice_id": r.get("provider_scelto"), "committente_id": r["cliente_id"],
-                                   "ore": billable, "generata_at": now_utc().isoformat(), "stato": "da_trasmettere"}
-    await db.richieste.update_one({"richiesta_id": rid}, {"$set": upd})
-    await push_notification(r["cliente_id"], "babysitting_completata", "Servizio completato",
-                            f"Ore certificate: {billable}h. Puoi lasciare una recensione.", "babysitting", rid)
-    if r["binario"] != "persona_lf":
-        final_gross = round(float(r.get("prezzo_finale", 0)) + extra_amount, 2)
-        r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-        collectable = await we.conguaglio(r2, final_gross)
-        r2 = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-        feev = await fee_pct()
-        await cd.arm_or_release_richiesta(r2, round(collectable * (1 - feev / 100.0), 2), "Compenso babysitting")
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    return r
 
 
 @router.post("/babysitting/richieste/{rid}/fine")
 async def fine_start(rid: str, user=Depends(get_current_user)):
-    """Babysitter taps 'Fine attività' → parent has 15 min to confirm, else auto-confirm."""
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r.get("provider_scelto") != user["user_id"]:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or (res.data[0].get("brief_answers") or {}).get("provider_scelto") != user["id"]:
         raise HTTPException(status_code=404, detail="not_found")
-    if r["stato"] != "in_corso":
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") != "in_corso":
         raise HTTPException(status_code=400, detail="not_in_progress")
     code = f"{random.randint(0, 9999):04d}"
-    fine = {"provider_at": now_utc().isoformat(), "code": code, "confirmed_at": None,
-            "deadline": (now_utc() + timedelta(minutes=B.AUTO_CONFIRM_MIN)).isoformat()}
-    await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"fine": fine, "updated_at": now_utc().isoformat()}})
-    await push_notification(r["cliente_id"], "babysitting_fine", "Conferma fine attività",
-                            f"Inserisci il codice fine: {code}", "babysitting", rid)
+    brief["fine"] = {"provider_at": now_iso(), "code": code, "confirmed_at": None,
+                     "deadline": (now_utc() + timedelta(minutes=B.AUTO_CONFIRM_MIN)).isoformat()}
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(row["client_id"], "babysitting_fine", "Conferma fine attività",
+                f"Inserisci il codice fine: {code}", "babysitting", rid)
     return {"code": code}
 
 
 @router.post("/babysitting/richieste/{rid}/fine/confirm")
 async def fine_confirm(rid: str, body: CodeIn, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r["cliente_id"] != user["user_id"]:
-        raise HTTPException(status_code=404, detail="not_found")
-    if not r.get("fine") or not r["fine"].get("provider_at"):
-        raise HTTPException(status_code=400, detail="no_end")
-    if body.code.strip() and body.code.strip() != r["fine"].get("code"):
-        raise HTTPException(status_code=400, detail="invalid_code")
-    r = await _finalize_fine(r, auto=False)
-    return {"stato": "completata", "consuntivo": r.get("consuntivo")}
+    # Chiude il consuntivo ore ed innesca il pagamento (we.conguaglio +
+    # cd.arm_or_release_richiesta lato P.IVA, comunicazione INPS lato LF) —
+    # stesso gap wallet del resto del modulo, vedi docstring in cima al file.
+    _wallet_gap_stub()
 
 
 class ReviewIn(BaseModel):
@@ -702,27 +724,37 @@ class ReviewIn(BaseModel):
 
 @router.post("/babysitting/richieste/{rid}/review")
 async def review(rid: str, body: ReviewIn, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r["cliente_id"] != user["user_id"]:
-        raise HTTPException(status_code=404, detail="not_found")
-    if r["stato"] != "completata":
-        raise HTTPException(status_code=400, detail="not_completed")
-    rev = {"rating": max(1, min(5, body.rating)), "comment": body.comment, "at": now_utc().isoformat()}
-    await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"recensione": rev, "stato": "recensita", "updated_at": now_utc().isoformat()}})
-    return rev
+    _wallet_gap_stub()
 
 
-# ---------------- emergency + add-child ----------------
+# ---------------- emergenza + aggiunta bambino ----------------
 @router.post("/babysitting/richieste/{rid}/emergency")
 async def emergency(rid: str, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or user["user_id"] not in (r["cliente_id"], r.get("provider_scelto")):
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="not_found")
-    fam = await db.users.find_one({"user_id": r["cliente_id"]}, {"_id": 0})
-    await db.admin_alerts.insert_one({"type": "babysitting_emergency", "richiesta_id": rid,
-                                      "by": user["user_id"], "at": now_utc().isoformat()})
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    uid = user["id"]
+    if uid not in (row["client_id"], brief.get("provider_scelto")):
+        raise HTTPException(status_code=404, detail="not_found")
+    fam_res = db.table("users").select("full_name, phone").eq("id", row["client_id"]).limit(1).execute()
+    fam = fam_res.data[0] if fam_res.data else {}
+    # NOTA: riuso pragmatico di admin_actions come log dell'evento — Postgres
+    # non ha ancora un equivalente della collection Mongo db.admin_alerts
+    # (alert da rivedere, distinta dall'audit log "azioni compiute da un
+    # admin" a cui admin_actions è realmente pensata: qui `admin_id` è
+    # in realtà l'utente — cliente o babysitter — che ha premuto il
+    # pulsante, non un admin). Sufficiente per non perdere l'evento adesso;
+    # se il volume/uso di questi alert cresce vale la pena creare una tabella
+    # dedicata (stesso gap che si ripresenterà per la moderazione di
+    # spec4.py, non ancora migrato in questo blocco).
+    db.table("admin_actions").insert({
+        "admin_id": uid, "action": "babysitting_emergency", "target_type": "mission", "target_id": rid,
+        "notes": "Pulsante di emergenza attivato durante una richiesta Babysitting.",
+    }).execute()
     return {"emergency_numbers": B.EMERGENCY_NUMBERS,
-            "parent_contact": {"nome": fam.get("name"), "phone": fam.get("phone", "")}}
+            "parent_contact": {"nome": fam.get("full_name"), "phone": fam.get("phone", "")}}
 
 
 class AddChildIn(BaseModel):
@@ -731,18 +763,21 @@ class AddChildIn(BaseModel):
 
 @router.post("/babysitting/richieste/{rid}/add-child")
 async def add_child(rid: str, body: AddChildIn, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r["cliente_id"] != user["user_id"]:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or res.data[0]["client_id"] != user["id"]:
         raise HTTPException(status_code=404, detail="not_found")
-    if r["stato"] not in ("confermata", "in_corso"):
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("stato") not in ("confermata", "in_corso"):
         raise HTTPException(status_code=400, detail="not_active")
-    c = await db.child_cards.find_one({"card_id": body.card_id, "family_id": user["user_id"]}, {"_id": 0})
-    if not c:
+    card = db.table("child_cards").select("id").eq("id", body.card_id).eq("family_id", user["id"]).limit(1).execute()
+    if not card.data:
         raise HTTPException(status_code=404, detail="child_not_found")
-    req = {"card_id": body.card_id, "at": now_utc().isoformat(), "stato": "richiesto"}
-    await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"add_child_request": req, "updated_at": now_utc().isoformat()}})
-    await push_notification(r["provider_scelto"], "babysitting_add_child", "Aggiunta bambino",
-                            "La famiglia chiede di aggiungere un bambino. Accetti?", "babysitting", rid)
+    req = {"card_id": body.card_id, "at": now_iso(), "stato": "richiesto"}
+    brief["add_child_request"] = req
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(brief.get("provider_scelto"), "babysitting_add_child", "Aggiunta bambino",
+                "La famiglia chiede di aggiungere un bambino. Accetti?", "babysitting", rid)
     return req
 
 
@@ -752,54 +787,65 @@ class AddChildDecisionIn(BaseModel):
 
 @router.post("/babysitting/richieste/{rid}/add-child/decision")
 async def add_child_decision(rid: str, body: AddChildDecisionIn, user=Depends(get_current_user)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r or r.get("provider_scelto") != user["user_id"]:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data or (res.data[0].get("brief_answers") or {}).get("provider_scelto") != user["id"]:
         raise HTTPException(status_code=404, detail="not_found")
-    reqc = r.get("add_child_request")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    reqc = brief.get("add_child_request")
     if not reqc or reqc.get("stato") != "richiesto":
         raise HTTPException(status_code=400, detail="no_request")
     if not body.accept:
-        await db.richieste.update_one({"richiesta_id": rid}, {"$set": {"add_child_request.stato": "rifiutato"}})
-        await push_notification(r["cliente_id"], "babysitting_add_child", "Aggiunta bambino rifiutata",
-                                "La babysitter non può accogliere il bambino aggiuntivo.", "babysitting", rid)
+        reqc["stato"] = "rifiutato"
+        brief["add_child_request"] = reqc
+        db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+        await notify(row["client_id"], "babysitting_add_child", "Aggiunta bambino rifiutata",
+                    "La babysitter non può accogliere il bambino aggiuntivo.", "babysitting", rid)
         return {"accepted": False}
-    supp = float((r.get("bs_listino_cache") or {}).get("supplemento_bambino", 0))
-    if not supp:
-        prov = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
-        supp = float((prov.get("bs_listino") or {}).get("supplemento_bambino", 0))
-    new_cfg = {**r["config"], "n_bambini": int(r["config"].get("n_bambini", 1)) + 1}
-    await db.richieste.update_one({"richiesta_id": rid},
-                                  {"$set": {"add_child_request.stato": "accettato", "config": new_cfg,
-                                            "supplemento_applicato": supp, "updated_at": now_utc().isoformat()},
-                                   "$push": {"bambini": reqc["card_id"]}})
-    await push_notification(r["cliente_id"], "babysitting_add_child", "Bambino aggiunto",
-                            f"La babysitter ha accettato (+€{supp:.2f}).", "babysitting", rid)
+    pl, _ = _price_list(user["id"])
+    supp = float(((pl.get("babysitting", {}) or {}).get("listino") or {}).get("supplemento_bambino", 0))
+    cfg = dict(brief.get("config", {}))
+    cfg["n_bambini"] = int(cfg.get("n_bambini", 1)) + 1
+    reqc["stato"] = "accettato"
+    brief["add_child_request"] = reqc
+    brief["config"] = cfg
+    brief["supplemento_applicato"] = supp
+    brief["bambini"] = list(brief.get("bambini", [])) + [reqc["card_id"]]
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    await notify(row["client_id"], "babysitting_add_child", "Bambino aggiunto",
+                f"La babysitter ha accettato (+€{supp:.2f}).", "babysitting", rid)
     return {"accepted": True, "supplemento": supp}
 
 
-# ---------------- admin manual matching + casellario ----------------
+# ---------------- amministrazione ----------------
 @router.get("/admin/babysitting/richieste")
 async def admin_richieste(_=Depends(require_admin)):
-    items = await db.richieste.find({"stato": {"$in": list(STATES_OPEN)}, **CAT}, {"_id": 0}) \
-        .sort([("urgente", -1), ("created_at", -1)]).to_list(200)
+    res = (
+        db.table("missions").select("*")
+        .eq("category_id", _category_id()).eq("status", "published")
+        .order("created_at", desc=True).limit(200).execute()
+    )
     fee = await fee_pct()
-    for r in items:
-        provs = await compatible_providers(r["binario"], r["config"], r["lat"], r["lng"])
-        bs_of = {}
-        r["compatible"] = []
-        for pp in provs:
-            p = pp["provider"]; bsp = p.get("bs_profile") or {}
-            r["compatible"].append({
-                "provider_id": p["user_id"], "nome": p.get("business_name") or p.get("name"),
-                "distance": pp["distance"], "rating": p.get("rating", 0), "trust": p.get("trust_score", 0),
-                "esperienza_anni": bsp.get("esperienza_anni", 0),
-                "certificazioni": bsp.get("certificazioni", []), "casellario_ok": bool(p.get("casellario_verified")),
-                "price": price_breakdown(pp["listino"], r["config"], r["binario"], fee)["total_client"],
-                "invited": p["user_id"] in [i.get("provider_id") for i in r.get("provider_invitati", [])],
-                "invite_status": next((i.get("status") for i in r.get("provider_invitati", []) if i.get("provider_id") == p["user_id"]), None),
-                "confirmed": r.get("provider_scelto") == p["user_id"],
-            })
-    return items
+    out = []
+    for row in (res.data or []):
+        brief = row.get("brief_answers") or {}
+        if brief.get("stato") not in STATI_APERTI:
+            continue
+        invitati = brief.get("provider_invitati", [])
+        provs = _compatible_providers(brief.get("binario", "persona_lf"), brief.get("config", {}), row.get("lat"), row.get("lng"))
+        item = _richiesta_out(row)
+        item["compatible"] = [{
+            "provider_id": p["provider_id"], "nome": p.get("business_name") or p.get("full_name"),
+            "distance": p.get("distance_km"), "rating": p.get("avg_rating") or 0, "trust": p.get("trust_score") or 0,
+            "esperienza_anni": (p.get("profile") or {}).get("esperienza_anni", 0),
+            "certificazioni": (p.get("profile") or {}).get("certificazioni", []), "casellario_ok": bool(p.get("casellario_ok")),
+            "price": price_breakdown(p.get("listino") or {}, brief.get("config", {}), brief.get("binario", "persona_lf"), fee)["total_client"],
+            "invited": p["provider_id"] in [i.get("provider_id") for i in invitati],
+            "invite_status": next((i.get("status") for i in invitati if i.get("provider_id") == p["provider_id"]), None),
+            "confirmed": brief.get("provider_scelto") == p["provider_id"],
+        } for p in provs]
+        out.append(item)
+    return out
 
 
 class InviteIn(BaseModel):
@@ -808,31 +854,33 @@ class InviteIn(BaseModel):
 
 @router.post("/admin/babysitting/richieste/{rid}/invite")
 async def admin_invite(rid: str, body: InviteIn, _=Depends(require_admin)):
-    r = await db.richieste.find_one({"richiesta_id": rid}, {"_id": 0})
-    if not r:
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="not_found")
-    already = [i.get("provider_id") for i in r.get("provider_invitati", [])]
-    new_invites = []
-    reset = 0
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    invitati = brief.get("provider_invitati", [])
+    already = [i.get("provider_id") for i in invitati]
+    new_count, reset_count = 0, 0
     for pid in body.provider_ids:
         if pid in already:
-            res = await db.richieste.update_one(
-                {"richiesta_id": rid, "provider_invitati": {"$elemMatch": {"provider_id": pid, "status": "declined"}}},
-                {"$set": {"provider_invitati.$.status": "invited", "provider_invitati.$.reinvited_at": now_utc().isoformat()}})
-            if res.modified_count:
-                reset += 1
-                await push_notification(pid, "babysitting_invito", "Nuova richiesta babysitting",
-                                        "Hai ricevuto di nuovo una richiesta compatibile.", "babysitting", rid)
+            for i in invitati:
+                if i.get("provider_id") == pid and i.get("status") == "declined":
+                    i["status"] = "invited"
+                    i["reinvited_at"] = now_iso()
+                    reset_count += 1
+                    await notify(pid, "babysitting_invito", "Nuova richiesta babysitting",
+                                "Hai ricevuto di nuovo una richiesta compatibile.", "babysitting", rid)
             continue
-        new_invites.append({"provider_id": pid, "at": now_utc().isoformat(), "status": "invited"})
-        await push_notification(pid, "babysitting_invito", "Nuova richiesta babysitting",
-                                "Hai ricevuto una richiesta compatibile. Rispondi entro 24h.", "babysitting", rid)
-    if new_invites or reset:
-        upd = {"$set": {"stato": "in_matching", "updated_at": now_utc().isoformat()}}
-        if new_invites:
-            upd["$push"] = {"provider_invitati": {"$each": new_invites}}
-        await db.richieste.update_one({"richiesta_id": rid}, upd)
-    return {"invited": len(new_invites), "reactivated": reset}
+        invitati.append({"provider_id": pid, "at": now_iso(), "status": "invited"})
+        new_count += 1
+        await notify(pid, "babysitting_invito", "Nuova richiesta babysitting",
+                    "Hai ricevuto una richiesta compatibile. Rispondi entro 24h.", "babysitting", rid)
+    if new_count or reset_count:
+        brief["provider_invitati"] = invitati
+        brief["stato"] = "in_matching"
+        db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+    return {"invited": new_count, "reactivated": reset_count}
 
 
 class CasellarioDecisionIn(BaseModel):
@@ -841,14 +889,18 @@ class CasellarioDecisionIn(BaseModel):
 
 @router.post("/admin/babysitting/{user_id}/casellario")
 async def admin_casellario(user_id: str, body: CasellarioDecisionIn, _=Depends(require_admin)):
-    upd = {"casellario_verified": body.verified}
+    row = db.table("profiles_provider").select("documents").eq("user_id", user_id).limit(1).execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    documents = dict(row.data[0].get("documents") or {})
+    documents["casellario_verified"] = body.verified
     if body.verified:
-        upd["casellario_expires"] = (now_utc() + timedelta(days=365)).isoformat()
-    await db.users.update_one({"user_id": user_id}, {"$set": upd})
+        documents["casellario_expires"] = (now_utc() + timedelta(days=365)).isoformat()
+    db.table("profiles_provider").update({"documents": documents}).eq("user_id", user_id).execute()
     msg = "I tuoi controlli sono stati verificati (badge 'controlli superati')." if body.verified \
         else "Il certificato del casellario non è stato validato. Ricaricalo."
-    await push_notification(user_id, "babysitting_casellario", "Verifica casellario", msg, "profile", user_id)
-    return {"user_id": user_id, "casellario_verified": body.verified, "expires_at": upd.get("casellario_expires")}
+    await notify(user_id, "babysitting_casellario", "Verifica casellario", msg, "profile", user_id)
+    return {"user_id": user_id, "casellario_verified": body.verified, "expires_at": documents.get("casellario_expires")}
 
 
 class FeeIn(BaseModel):
@@ -857,5 +909,5 @@ class FeeIn(BaseModel):
 
 @router.post("/admin/babysitting/fee")
 async def set_fee(body: FeeIn, _=Depends(require_admin)):
-    await db.settings.update_one({"key": "babysitting_fee_pct"}, {"$set": {"value": float(body.fee_pct)}}, upsert=True)
+    db.table("app_settings").upsert({"key": _FEE_SETTING_KEY, "value": float(body.fee_pct)}).execute()
     return {"fee_pct": body.fee_pct}
