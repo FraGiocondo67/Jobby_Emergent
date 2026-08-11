@@ -36,6 +36,12 @@ class OnboardingIn(BaseModel):
     vat_number: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    # BLOCCO 7c (jobby-web -> client puro, signup client-side): il form di
+    # registrazione business/prossimità di jobby-web raccoglie anche un
+    # elenco libero di prodotti/servizi — prima veniva salvato via l'Admin
+    # API di Supabase (register-route.ts), qui non esisteva ancora un posto
+    # dove metterlo.
+    products: Optional[List[str]] = None
 
 
 class ImageIn(BaseModel):

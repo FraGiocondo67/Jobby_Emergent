@@ -56,16 +56,31 @@ async def complete_onboarding(body: OnboardingIn, user=Depends(get_current_user)
     user_id = user["id"]
     is_business = bool(body.business_name or body.vat_number)
 
+    # BLOCCO 7c (jobby-web -> client puro, signup client-side): prima questa
+    # decisione guardava `user.get("status") != "active"` per capire se era
+    # la "prima volta" che l'utente diventava provider. Bug scoperto
+    # implementando davvero il signup client-side per jobby-web: il trigger
+    # Postgres `handle_new_user()` (Blocco 1) imposta SEMPRE status='active'
+    # per qualunque nuovo signup (client o provider), quindi quel controllo
+    # non distingueva più nulla — un provider al primo onboarding sarebbe
+    # finito subito 'active', bypassando la coda di approvazione admin del
+    # Blocco 6. Si usa invece l'esistenza di `profiles_provider`: se non
+    # esiste ancora, è davvero la prima volta → va sempre in 'pending' a
+    # prescindere dallo status attuale; se esiste già, questo endpoint non
+    # tocca più lo status (resta competenza esclusiva di
+    # provider_onboarding.py da quel momento in poi).
+    existing_provider_profile = None
+    if role in ("provider", "both"):
+        existing_provider_profile = (
+            db.table("profiles_provider").select("id, business_data").eq("user_id", user_id).limit(1).execute()
+        )
+
     user_updates = {"role": role}
     if body.name:
         user_updates["full_name"] = body.name
     if body.phone is not None:
         user_updates["phone"] = body.phone
-    # I client sono auto-approvati; provider/business (anche col ruolo 'both')
-    # restano 'pending' finché il KYC non è approvato, a meno che lo status non
-    # sia già 'active' da un'approvazione precedente (es. utente che torna
-    # sull'onboarding per aggiungere un secondo ruolo).
-    if role in ("provider", "both") and user.get("status") != "active":
+    if role in ("provider", "both") and not (existing_provider_profile and existing_provider_profile.data):
         user_updates["status"] = "pending"
     db.table("users").update(user_updates).eq("id", user_id).execute()
 
@@ -83,13 +98,7 @@ async def complete_onboarding(body: OnboardingIn, user=Depends(get_current_user)
             db.table("profiles_client").insert({"user_id": user_id, **payload}).execute()
 
     if role in ("provider", "both"):
-        existing = (
-            db.table("profiles_provider")
-            .select("id, business_data")
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
+        existing = existing_provider_profile
         payload = {"is_proximity_business": is_business}
         if body.radius_km is not None:
             payload["operational_radius_km"] = int(body.radius_km)
@@ -105,6 +114,14 @@ async def complete_onboarding(body: OnboardingIn, user=Depends(get_current_user)
             business_data["vat_number"] = body.vat_number
         if body.service_mode is not None:
             business_data["service_mode"] = body.service_mode
+        # `address` è condiviso col profilo cliente (sopra) ma per un business
+        # di prossimità è l'indirizzo dell'attività, non un indirizzo di casa
+        # — ha senso solo quando is_business è vero, altrimenti lo si ignora
+        # qui (resta comunque scritto su profiles_client se role=='both').
+        if is_business and body.address is not None:
+            business_data["business_address"] = body.address
+        if body.products is not None:
+            business_data["products"] = body.products
         if business_data:
             payload["business_data"] = business_data
 
