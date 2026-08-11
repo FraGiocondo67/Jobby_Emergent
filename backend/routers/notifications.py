@@ -42,16 +42,30 @@ async def push_notification(user_id: str, ntype: str, title: str, body: str,
 
 
 @router.get("/notifications")
-async def list_notifications(user=Depends(get_current_user)):
-    res = (
-        db.table("notifications").select("*")
-        .eq("user_id", user["id"]).order("created_at", desc=True).limit(100).execute()
-    )
+async def list_notifications(limit: int = 100, unread: bool = False, user=Depends(get_current_user)):
+    # limit/unread: BLOCCO 7b (jobby-web -> client puro), aggiunti per parità
+    # con app/api/notifications/route.ts (GET ?limit=&unread=true) — prima
+    # questo endpoint aveva solo il comportamento di default (ultime 100,
+    # nessun filtro), che resta invariato per chi non passa i parametri.
+    limit = max(1, min(limit, 200))
+    query = db.table("notifications").select("*").eq("user_id", user["id"])
+    if unread:
+        query = query.eq("is_read", False)
+    res = query.order("created_at", desc=True).limit(limit).execute()
     unread_res = (
         db.table("notifications").select("id", count="exact")
         .eq("user_id", user["id"]).eq("is_read", False).execute()
     )
     return {"items": res.data or [], "unread": unread_res.count or 0}
+
+
+@router.delete("/notifications/{notif_id}")
+async def delete_notification(notif_id: str, user=Depends(get_current_user)):
+    """BLOCCO 7b: prima non esisteva alcun modo di eliminare una notifica dal
+    backend — jobby-web lo faceva scrivendo direttamente su Supabase
+    (app/api/notifications/route.ts, DELETE)."""
+    db.table("notifications").delete().eq("id", notif_id).eq("user_id", user["id"]).execute()
+    return {"ok": True}
 
 
 @router.get("/notifications/unread-count")

@@ -327,6 +327,29 @@ async def self_suspend(body: SuspendIn, user=Depends(get_current_user)):
     return {"availability_status": status}
 
 
+# ---------------- availability a 3 stati (BLOCCO 7b, jobby-web -> client puro) ----------------
+# Diverso da /provider/suspend sopra: quello è solo un toggle booleano
+# online/offline (pausa volontaria). jobby-web (app/api/providers/status e
+# .../availability) espone da sempre un terzo stato reale, `busy` — è un
+# valore valido dell'enum Postgres `availability_status` (verificato: online/
+# offline/busy), non un'invenzione del frontend — quindi qui si aggiunge un
+# endpoint dedicato che accetta tutti e tre gli stati esplicitamente, invece
+# di forzare la semantica binaria di /provider/suspend.
+class ProviderAvailabilityStatusIn(BaseModel):
+    status: str  # online | offline | busy
+
+
+@router.patch("/provider/availability")
+async def set_availability_status(body: ProviderAvailabilityStatusIn, user=Depends(get_current_user)):
+    if user.get("role") not in ("provider", "both"):
+        raise HTTPException(status_code=403, detail="providers_only")
+    if body.status not in ("online", "offline", "busy"):
+        raise HTTPException(status_code=400, detail="invalid_status")
+    _provider_row(user["id"])
+    db.table("profiles_provider").update({"availability_status": body.status}).eq("user_id", user["id"]).execute()
+    return {"availability_status": body.status}
+
+
 # ---------------- admin: approval + fee config ----------------
 @router.get("/admin/onboarding/pending")
 async def admin_pending(_=Depends(require_admin)):

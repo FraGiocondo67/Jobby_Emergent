@@ -41,6 +41,9 @@ missione persona_lf finisce in dispute, l'eventuale storno del registro LF
 resta un'azione amministrativa manuale (segnalato nella risposta di
 admin_resolve_dispute quando succede).
 """
+from datetime import datetime, timezone
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
@@ -53,12 +56,52 @@ router = APIRouter()
 
 CLAIM_PHASES = ("pre_execution", "during_execution", "post_execution_unpaid", "post_execution_paid")
 
+# BLOCCO 7b (jobby-web -> client puro): finestra massima per aprire una
+# segnalazione dopo l'esecuzione del servizio. Prima viveva solo in
+# jobby-web/app/api/claims/create (CLAIM_WINDOW_HOURS), centralizzata qui
+# così la usano anche mobile/Retool/pannello admin. Deve restare allineata
+# alla stessa soglia usata da create_payout_request (Supabase) per
+# l'esclusione delle missioni con claim/dispute aperti dal calcolo payout.
+CLAIM_WINDOW_HOURS = 2
+
 
 class ClaimCreate(BaseModel):
     mission_id: str
-    phase: str
     reason: str
     description: str = ""
+    # Deprecato: se inviato viene ignorato. La fase è sempre derivata
+    # server-side da _derive_claim_phase() — prima jobby-web la calcolava
+    # lato proxy Next.js e la mandava già pronta, altri chiamanti (mobile,
+    # Retool) potevano invece mandare un valore arbitrario. Campo lasciato
+    # opzionale solo per non rompere chiamate esistenti che lo inviano ancora.
+    phase: Optional[str] = None
+
+
+def _derive_claim_phase(mission: dict) -> str:
+    """Deriva la fase del claim dallo stato reale della missione — non ci si
+    fida di un valore mandato dal chiamante. Stessa identica logica che prima
+    viveva solo in jobby-web/app/api/claims/create/route.ts (vedi
+    CLAIM_WINDOW_HOURS sopra)."""
+    status = mission.get("status")
+    if status in ("published", "matched", "confirmed"):
+        return "pre_execution"
+    if status == "in_progress":
+        return "during_execution"
+    if status in ("completed", "reviewed"):
+        executed_at = mission.get("checkout_at") or mission.get("confirmed_at")
+        if executed_at:
+            executed_dt = datetime.fromisoformat(str(executed_at).replace("Z", "+00:00"))
+            hours_since = (datetime.now(timezone.utc) - executed_dt).total_seconds() / 3600
+        else:
+            hours_since = float("inf")
+        if hours_since > CLAIM_WINDOW_HOURS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Il tempo per segnalare un problema su questa missione è scaduto "
+                       f"(max {CLAIM_WINDOW_HOURS} ore dalla fine del servizio).",
+            )
+        return "post_execution_unpaid"
+    raise HTTPException(status_code=400, detail="Non puoi segnalare un problema su una missione in questo stato")
 
 
 class AdminResolveIn(BaseModel):
@@ -145,11 +188,10 @@ async def reason_suggestions():
 
 @router.post("/claims")
 async def create_claim(body: ClaimCreate, user=Depends(get_current_user)):
-    if body.phase not in CLAIM_PHASES:
-        raise HTTPException(status_code=400, detail="invalid_phase")
     mission = _load_mission(body.mission_id)
     if mission["client_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="forbidden")
+    phase = _derive_claim_phase(mission)
     existing = (
         db.table("claims").select("id")
         .eq("mission_id", body.mission_id).in_("status", ["open", "under_review", "escalated"])
@@ -159,7 +201,7 @@ async def create_claim(body: ClaimCreate, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="claim_already_open")
 
     ins = db.table("claims").insert({
-        "mission_id": body.mission_id, "client_id": user["id"], "phase": body.phase,
+        "mission_id": body.mission_id, "client_id": user["id"], "phase": phase,
         "reason": body.reason, "description": body.description,
     }).execute()
     claim = ins.data[0] if ins.data else None

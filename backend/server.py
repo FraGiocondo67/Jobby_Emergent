@@ -14,6 +14,8 @@ from routers import listino
 from routers import geo
 from routers import stripe_connect
 from routers import admin_users
+from routers import categories
+from routers import profile
 import confirm_delivery
 
 # BLOCCO 7 (migrazione Emergent -> Supabase/Render): 8 router Mongo-based mai
@@ -46,6 +48,8 @@ api.include_router(geo.router)
 api.include_router(confirm_delivery.router)
 api.include_router(provider_onboarding.router)
 api.include_router(admin_users.router)
+api.include_router(categories.router)
+api.include_router(profile.router)
 # missions.py/bookings.py (motore di matching generico pre-Blocco2, con
 # provider "bot" simulati) RITIRATI nel Blocco 5 — decisione esplicita
 # dell'utente: le 4 verticali (Pulizie/Artigiani/Babysitting/Driver, Blocco
