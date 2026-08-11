@@ -2,7 +2,7 @@
   "expo": {
     "name": "JOBBY FREELESS",
     "slug": "jobby-freeless",
-    "version": "1.0.6",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "jobbyfreeless",
@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "it.jobbyfree.app",
+      "bundleIdentifier": "com.emergent.jobbymvpupdate.eijtrr",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Find trusted providers near you",
