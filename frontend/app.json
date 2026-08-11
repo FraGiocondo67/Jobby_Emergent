@@ -15,7 +15,8 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Find trusted providers near you",
         "NSPhotoLibraryUsageDescription": "Upload photos of your business",
-        "NSCameraUsageDescription": "Take photos of your business or documents"
+        "NSCameraUsageDescription": "Take photos of your business or documents",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -51,6 +52,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6980e2bb-9569-41c3-9949-f055eefc7b26"
+      }
+    },
+    "owner": "frafra1067"
   }
 }
