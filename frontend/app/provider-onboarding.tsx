@@ -201,7 +201,12 @@ export default function ProviderOnboarding() {
   };
 
   if (!cfg) return <View style={styles.container} />;
-  const fee = cfg.fee; const ranges = cfg.price_ranges;
+  // BLOCCO 9: cfg.fee ora è {"provider": {...}, "business": {...}} —
+  // sceglie il segmento giusto in base allo stesso criterio già usato per
+  // il documento visura (attività di prossimità o impresa = "business").
+  const feeSegment = (intendedRole === "business" || profileType === "impresa") ? "business" : "provider";
+  const fee = cfg.fee?.[feeSegment] || cfg.fee?.provider || cfg.fee;
+  const ranges = cfg.price_ranges;
 
   const renderStep = () => {
     switch (cur) {

@@ -77,8 +77,22 @@ from deps_pg import get_current_user, require_admin
 
 router = APIRouter()
 
-DEFAULT_FEE = {"visit_fixed_total": 8.0, "provider_share": 4.0, "client_share": 4.0,
-               "recurring_total": 6.0, "recurring_after_month": 1}
+# BLOCCO 9: "La commissione JOBBY" (schermata di onboarding, i18n.feeTitle)
+# era un'unica configurazione globale (onboarding_fee) uguale per tutti — su
+# richiesta va resa articolata per tipo di attività: provider individuali
+# (persona fisica/p.iva/libretto famiglia) vs attività di prossimità
+# (is_proximity_business=true). Struttura invariata per segmento (stessi 5
+# campi mostrati in fee-step), solo ora tenuta due volte, una per segmento,
+# cosi l'admin può differenziarle indipendentemente. Nessun altro punto del
+# backend legge questi campi per calcoli reali (verificato via grep — solo
+# GET /onboarding/config li espone, e price_services.py/missions.py hanno
+# meccanismi di commissione separati e non toccati qui): è puro contenuto
+# informativo mostrato al provider prima del submit, quindi la modifica di
+# struttura non ha impatto su pagamenti/prenotazioni esistenti.
+FEE_SEGMENTS = ("provider", "business")
+_DEFAULT_FEE_SHARED = {"visit_fixed_total": 8.0, "provider_share": 4.0, "client_share": 4.0,
+                       "recurring_total": 6.0, "recurring_after_month": 1}
+DEFAULT_FEE = {"provider": dict(_DEFAULT_FEE_SHARED), "business": dict(_DEFAULT_FEE_SHARED)}
 DEFAULT_PRICE_RANGES = {
     "ordinaria": {"min": 14, "max": 18}, "afondo": {"min": 18, "max": 24},
     "posttrasloco": {"min": 22, "max": 30}, "stiro": {"min": 10, "max": 14},
@@ -282,9 +296,29 @@ def _setting(key: str, default: dict) -> dict:
     return dict(default)
 
 
+def _fee_setting() -> dict:
+    """Come _setting(), ma con merge annidato per segmento (provider/
+    business) invece che shallow — altrimenti salvare solo "business" da
+    admin_set_fee cancellerebbe/azzererebbe i campi mancanti di "provider"
+    (e viceversa) al primo GET dopo un upsert parziale."""
+    res = db.table("app_settings").select("value").eq("key", "onboarding_fee").limit(1).execute()
+    stored = res.data[0]["value"] if res.data and isinstance(res.data[0].get("value"), dict) else {}
+    out = {}
+    for seg in FEE_SEGMENTS:
+        seg_default = DEFAULT_FEE[seg]
+        seg_stored = stored.get(seg) if isinstance(stored.get(seg), dict) else {}
+        out[seg] = {**seg_default, **seg_stored}
+    return out
+
+
 @router.get("/onboarding/config")
 async def onboarding_config(user=Depends(get_current_user)):
-    return {"fee": _setting("onboarding_fee", DEFAULT_FEE), "price_ranges": _setting("price_ranges", DEFAULT_PRICE_RANGES),
+    # BLOCCO 9: fee ora è {"provider": {...}, "business": {...}} — il
+    # frontend sceglie il segmento giusto in base a intendedRole/profileType
+    # (già noti lato client quando si arriva allo step "fee", alla fine del
+    # flusso). Entrambi i segmenti tornano sempre, cosi funziona anche se il
+    # provider cambia idea sul profilo prima di quello step.
+    return {"fee": _fee_setting(), "price_ranges": _setting("price_ranges", DEFAULT_PRICE_RANGES),
             "condizioni": CONDIZIONI}
 
 
@@ -453,16 +487,33 @@ async def admin_decision(user_id: str, body: AdminDecisionIn, _=Depends(require_
 
 
 class FeeConfigIn(BaseModel):
+    # BLOCCO 9: aggiunto "segment" (provider individuale vs attività di
+    # prossimità/business) — vedi nota su DEFAULT_FEE più sopra. Aggiunto
+    # anche recurring_after_month, presente in DEFAULT_FEE/nello step "fee"
+    # ma mai stato impostabile da questo endpoint finora (gap preesistente).
+    segment: str
     visit_fixed_total: float
     provider_share: float
     client_share: float
     recurring_total: float
+    recurring_after_month: int = 1
+
+
+@router.get("/admin/onboarding/fee")
+async def admin_get_fee(_=Depends(require_admin)):
+    """Legge entrambi i segmenti — usato dal pannello admin per precompilare
+    il form prima di modificare."""
+    return _fee_setting()
 
 
 @router.post("/admin/onboarding/fee")
 async def admin_set_fee(body: FeeConfigIn, _=Depends(require_admin)):
-    db.table("app_settings").upsert({"key": "onboarding_fee", "value": body.dict()}).execute()
-    return _setting("onboarding_fee", DEFAULT_FEE)
+    if body.segment not in FEE_SEGMENTS:
+        raise HTTPException(status_code=400, detail="invalid_segment")
+    current = _fee_setting()
+    current[body.segment] = body.dict(exclude={"segment"})
+    db.table("app_settings").upsert({"key": "onboarding_fee", "value": current}).execute()
+    return current
 
 
 # ==================== trigger IDV scritto + promemoria rinnovi ====================

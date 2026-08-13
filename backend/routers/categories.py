@@ -109,6 +109,43 @@ class CategoryAdminPatchIn(BaseModel):
     is_active: Optional[bool] = None
 
 
+# BLOCCO 9: mancava del tutto la creazione di nuove categorie da pannello —
+# solo lista/attiva-disattiva/modifica (segnalato dall'utente). slug è
+# UNIQUE su service_categories, category_type ha un CHECK
+# (standard/proximity/payment_service), le altre colonne hanno default DB
+# (requires_kyc=true, is_active=true, sort_order=0).
+class CategoryAdminCreateIn(BaseModel):
+    slug: str
+    name_it: str
+    name_en: str
+    category_type: str = "standard"
+    icon: Optional[str] = None
+    sort_order: int = 0
+    requires_kyc: bool = True
+    is_active: bool = True
+
+
+@router.post("/admin/categories")
+async def admin_create_category(body: CategoryAdminCreateIn, _=Depends(require_admin)):
+    if body.category_type not in ("standard", "proximity", "payment_service"):
+        raise HTTPException(status_code=400, detail="invalid_category_type")
+    slug = body.slug.strip().lower().replace(" ", "_")
+    if not slug:
+        raise HTTPException(status_code=400, detail="invalid_slug")
+    existing = db.table("service_categories").select("id").eq("slug", slug).limit(1).execute()
+    if existing.data:
+        raise HTTPException(status_code=400, detail="slug_already_exists")
+    row = {
+        "slug": slug, "name_it": body.name_it.strip(), "name_en": body.name_en.strip(),
+        "category_type": body.category_type, "icon": body.icon, "sort_order": body.sort_order,
+        "requires_kyc": body.requires_kyc, "is_active": body.is_active,
+    }
+    res = db.table("service_categories").insert(row).execute()
+    if not res.data:
+        raise HTTPException(status_code=500, detail="create_failed")
+    return res.data[0]
+
+
 @router.get("/admin/categories")
 async def admin_list_categories(_=Depends(require_admin)):
     res = (
