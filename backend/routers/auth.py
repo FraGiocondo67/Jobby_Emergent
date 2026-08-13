@@ -96,6 +96,18 @@ async def me(user=Depends(get_current_user)):
         if pp.get("is_proximity_business") and flat.get("role") in ("provider", "both"):
             flat["role"] = "business"
         flat["business_name"] = business_data.get("business_name", "")
+        # BLOCCO 9: un provider puro (role="provider", niente
+        # profiles_client) non aveva alcun modo di rivedersi l'indirizzo
+        # salvato da app/profile-details.tsx — flat["address"] veniva
+        # popolato SOLO da cp sopra. Ora business_data.address (scritto da
+        # routers/profile.py update_profile(), stessa chiave) fa da
+        # fallback quando manca un profilo cliente.
+        flat["address"] = flat.get("address") or business_data.get("address")
+        # BLOCCO 9: app/activities.tsx legge user?.service_mode per
+        # precompilare la modalità (outdoor/in_shop/both) di un'attività di
+        # prossimità — mai stato esposto qui (vive in business_data.
+        # service_mode, scritto da routers/profile.py update_profile()).
+        flat["service_mode"] = business_data.get("service_mode")
         flat["picture"] = flat.get("picture") or business_data.get("photo")
         flat["hourly_rate"] = pp.get("hourly_rate")
         flat["services"] = pp.get("skills") or []

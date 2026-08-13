@@ -15,7 +15,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core_pg import db
+from core_pg import db, to_geography_point
 from deps_pg import get_current_user
 from models import PriceItem
 
@@ -26,15 +26,41 @@ class ProfilePatchIn(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     preferred_lang: Optional[str] = None
-    # profiles_client
+    # profiles_client (address vale anche per provider puro, vedi sotto:
+    # non esisteva una colonna dedicata per un provider non-business, va in
+    # business_data.address)
     address: Optional[str] = None
     search_radius_km: Optional[float] = None
     preferred_categories: Optional[List[str]] = None
+    # BLOCCO 9 (fix "l'indirizzo non ha la funzione di localizzazione da
+    # mappa" in Profilo/Dettagli personali): app/profile-details.tsx non
+    # aveva alcun modo di salvare lat/lng (a differenza di
+    # provider-onboarding.tsx, che li scrive già su profiles_provider.
+    # location tramite POST /onboarding/provider/profile) — aggiunta qui la
+    # stessa possibilità, riusando /geocode e /reverse-geocode già esistenti
+    # (routers/geo.py) lato frontend.
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     # profiles_provider
     bio: Optional[str] = None
     hourly_rate: Optional[float] = None
     skills: Optional[List[str]] = None
     operational_radius_km: Optional[float] = None
+    # BLOCCO 9 (fix "l'attività scelta dal provider non si salva mai"):
+    # app/activities.tsx chiama api.updateProfile({services, radius_km,
+    # service_mode}) — nomi che qui non sono mai esistiti (le colonne vere
+    # sono skills/operational_radius_km, stesso alias già esposto in lettura
+    # da routers/auth.py flat["services"]/flat["radius_km"]). Pydantic
+    # ignorava questi campi sconosciuti: il PUT tornava 200 ma non scriveva
+    # mai le attività scelte. Accettati qui come alias comodi (stesso
+    # pattern di `online` sopra) — usati solo se il campo "vero" non è
+    # anch'esso presente nella stessa richiesta.
+    services: Optional[List[str]] = None
+    radius_km: Optional[float] = None
+    # service_mode (outdoor/in_shop/both, solo attività di prossimità) non ha
+    # una colonna dedicata — va dentro business_data (jsonb), con merge non
+    # overwrite, vedi sotto.
+    service_mode: Optional[str] = None
     availability_status: Optional[str] = None
     # BLOCCO 9: la app Expo (ProviderHome.toggleOnline, app/(tabs)/index.tsx)
     # chiama api.updateProfile({online: bool}) - un campo che qui non e' mai
@@ -84,6 +110,8 @@ async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
             cp_updates["search_radius_km"] = body.search_radius_km
         if body.preferred_categories is not None:
             cp_updates["preferred_categories"] = body.preferred_categories
+        if body.lat is not None and body.lng is not None:
+            cp_updates["location"] = to_geography_point(body.lat, body.lng)
         if cp_updates:
             db.table("profiles_client").update(cp_updates).eq("user_id", user_id).execute()
 
@@ -95,8 +123,12 @@ async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
             pp_updates["hourly_rate"] = body.hourly_rate
         if body.skills is not None:
             pp_updates["skills"] = body.skills
+        elif body.services is not None:
+            pp_updates["skills"] = body.services
         if body.operational_radius_km is not None:
             pp_updates["operational_radius_km"] = body.operational_radius_km
+        elif body.radius_km is not None:
+            pp_updates["operational_radius_km"] = body.radius_km
         if body.availability_status is not None:
             if body.availability_status not in ("online", "offline", "busy"):
                 raise HTTPException(status_code=400, detail="invalid_availability_status")
@@ -105,8 +137,27 @@ async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
             pp_updates["availability_status"] = "online" if body.online else "offline"
         if body.payout_details is not None:
             pp_updates["payout_details"] = body.payout_details
-        if body.business_data is not None:
-            pp_updates["business_data"] = body.business_data
+        if body.business_data is not None or body.service_mode is not None or body.address is not None:
+            # BLOCCO 9: prima era un overwrite secco di tutta business_data —
+            # avrebbe cancellato business_name/vat_number/photo/indirizzo già
+            # salvati in onboarding non appena qualcuno avesse chiamato
+            # updateProfile con un business_data parziale (es. solo
+            # service_mode, come farebbe activities.tsx). Ora fa merge.
+            # address qui dentro (non su una colonna dedicata) perché un
+            # provider puro non-business non ha profiles_client: prima
+            # l'indirizzo digitato in Profilo/Dettagli personali veniva
+            # sempre scartato per questi utenti (role="provider").
+            current = db.table("profiles_provider").select("business_data").eq("user_id", user_id).limit(1).execute()
+            merged: Dict[str, Any] = dict((current.data[0].get("business_data") or {}) if current.data else {})
+            if body.business_data is not None:
+                merged.update(body.business_data)
+            if body.service_mode is not None:
+                merged["service_mode"] = body.service_mode
+            if body.address is not None:
+                merged["address"] = body.address
+            pp_updates["business_data"] = merged
+        if body.lat is not None and body.lng is not None:
+            pp_updates["location"] = to_geography_point(body.lat, body.lng)
         if body.price_list is not None:
             pp_updates["price_list"] = [p.dict() for p in body.price_list]
         if pp_updates:

@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
@@ -39,8 +40,34 @@ export default function ProfileDetails() {
   const [timeSlots, setTimeSlots] = useState<Record<string, Record<string, boolean>>>(user?.provider_profile?.time_slots || {});
   const [priceList, setPriceList] = useState<any[]>(user?.provider_profile?.price_list || user?.price_list || []);
   const [loading, setLoading] = useState(false);
+  // BLOCCO 9 (fix "l'indirizzo non ha la funzione di localizzazione da
+  // mappa"): stesso pattern già usato in app/provider-onboarding.tsx
+  // (useMyLocation + resolveCoords), mai stato presente qui.
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   const isProvider = user?.role === "provider" || user?.role === "business";
+
+  const useMyLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+      const loc = await Location.getCurrentPositionAsync({});
+      const c = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setCoords(c);
+      try {
+        const g = await api.reverseGeocode(c.lat, c.lng);
+        if (g?.label) setAddress(g.label);
+      } catch {}
+    } catch {}
+  };
+
+  const resolveCoords = async () => {
+    try {
+      const g = await api.geocode(address);
+      if (g && !g.fallback) return { lat: g.lat, lng: g.lng };
+    } catch {}
+    return coords;
+  };
 
   const toggleSlot = (d: string, s: string) => {
     Haptics.selectionAsync().catch(() => {});
@@ -53,6 +80,10 @@ export default function ProfileDetails() {
   const save = async () => {
     setLoading(true);
     const payload: any = { address, phone };
+    if (address.trim()) {
+      const c = await resolveCoords();
+      if (c) { payload.lat = c.lat; payload.lng = c.lng; }
+    }
     if (isProvider) {
       payload.price_list = priceList
         .filter((it) => it.name.trim())
@@ -83,7 +114,8 @@ export default function ProfileDetails() {
           <Text style={styles.title}>{t("personalDetails")}</Text>
 
           <Text style={styles.label}>{t("addressLabel")}</Text>
-          <TextInput testID="detail-address" style={styles.input} value={address} onChangeText={setAddress} placeholder="Via Roma 12, Treviso" placeholderTextColor={colors.muted} />
+          <TextInput testID="detail-address" style={styles.input} value={address} onChangeText={(v) => { setAddress(v); setCoords(null); }} placeholder="Via Roma 12, Treviso" placeholderTextColor={colors.muted} />
+          <Button testID="detail-use-location" label={t("useMyLocation")} variant="secondary" icon="navigate" onPress={useMyLocation} style={{ marginTop: spacing.sm, height: 46 }} />
 
           <Text style={styles.label}>{t("mobileLabel")}</Text>
           <TextInput testID="detail-phone" style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+39 ..." placeholderTextColor={colors.muted} />
