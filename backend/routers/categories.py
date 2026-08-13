@@ -6,10 +6,13 @@ bypassando questo backend. Stesso identico contratto di quella route (stessi
 campi, stesso ordinamento, richiede solo un utente autenticato qualsiasi
 ruolo) cosi la conversione a proxy non cambia comportamento per chi la
 chiama gia oggi."""
-from fastapi import APIRouter, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core_pg import db
-from deps_pg import get_current_user
+from deps_pg import get_current_user, require_admin
 
 router = APIRouter()
 
@@ -86,3 +89,54 @@ async def list_categories_for_app(_=Depends(get_current_user)):
     except Exception:
         providers_online = 0
     return {"standard": standard, "proximity": proximity, "payment": payment, "providers_online": providers_online}
+
+
+# ---------------- admin (pannello jobby-admin, Blocco 9) ----------------
+# Prima di questo blocco NON esisteva alcuna gestione admin delle categorie
+# su Postgres: l'unica esistente (routers/catalog_routes.py: admin_list/
+# toggle/set/commission) è Mongo-based e RITIRATA nel Blocco 7 (vedi il suo
+# docstring). Riscritta qui da zero sullo schema service_categories reale —
+# niente commission_pct (non esiste come colonna in questo schema, a
+# differenza del vecchio modello Mongo: le fee sono gestite per-verticale in
+# public.app_settings, fuori scope di un editor categorie).
+
+class CategoryAdminPatchIn(BaseModel):
+    name_it: Optional[str] = None
+    name_en: Optional[str] = None
+    icon: Optional[str] = None
+    sort_order: Optional[int] = None
+    requires_kyc: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+@router.get("/admin/categories")
+async def admin_list_categories(_=Depends(require_admin)):
+    res = (
+        db.table("service_categories")
+        .select("id, slug, name_it, name_en, icon, category_type, requires_kyc, is_active, sort_order")
+        .order("category_type")
+        .order("sort_order")
+        .execute()
+    )
+    return {"categories": res.data or []}
+
+
+@router.post("/admin/categories/{category_id}/toggle")
+async def admin_toggle_category(category_id: str, _=Depends(require_admin)):
+    row = db.table("service_categories").select("id, is_active").eq("id", category_id).limit(1).execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    new_active = not row.data[0]["is_active"]
+    db.table("service_categories").update({"is_active": new_active}).eq("id", category_id).execute()
+    return {"id": category_id, "is_active": new_active}
+
+
+@router.put("/admin/categories/{category_id}")
+async def admin_update_category(category_id: str, body: CategoryAdminPatchIn, _=Depends(require_admin)):
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="no_fields_to_update")
+    res = db.table("service_categories").update(updates).eq("id", category_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    return res.data[0]
