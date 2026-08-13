@@ -18,7 +18,7 @@ const ROLES = [
 ] as const;
 
 export default function ProfileTab() {
-  const { user, setUser, refresh, logout } = useAuth();
+  const { user, setUser, refresh, activeView, setActiveView, logout } = useAuth();
   const { t, lang, setLang } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -33,9 +33,24 @@ export default function ProfileTab() {
     catch { setQrConfirm(!v); Alert.alert(t("error")); }
   };
 
-  const isProvider = user?.role === "provider" || user?.role === "business";
-  const isProviderRole = user?.role === "provider";
-  const isBusiness = user?.role === "business";
+  // BLOCCO 9 (fix "attivo il profilo cliente da provider ma diventa CLIENT
+  // invece di BOTH, e tornare a provider rifà tutto l'onboarding"): questa
+  // sezione si basava su user?.role (enum singolo) e su user?.roles[], un
+  // campo Mongo mai esistito nello schema Postgres attuale — owned finiva
+  // quindi sempre per contenere un solo ruolo, "attivare" un secondo ruolo
+  // sovrascriveva `role` invece di combinarlo (backend supporta già
+  // role="both", vedi routers/onboarding.py), e "tornare" all'altro ruolo
+  // passava sempre da un endpoint di switch (/profile/switch-role) che non
+  // esiste più lato backend (404 garantito). owned ora si basa sui profili
+  // REALMENTE esistenti (user.client_profile/provider_profile, già in GET
+  // /auth/me), e switchRole/activateRole usano activeView (stato locale,
+  // vedi AuthContext) invece di riscrivere `role` solo per cambiare vista.
+  const hasClientProfile = !!user?.client_profile;
+  const hasProviderProfile = !!user?.provider_profile;
+  const isBusinessProfile = !!user?.provider_profile?.is_proximity_business;
+  const isProvider = activeView === "provider" && hasProviderProfile;
+  const isProviderRole = isProvider && !isBusinessProfile;
+  const isBusiness = isProvider && isBusinessProfile;
   const services: string[] = user?.services || [];
   const vStatus = user?.verification_status || "unverified";
 
@@ -45,7 +60,10 @@ export default function ProfileTab() {
   }, []);
   useFocusEffect(useCallback(() => { loadTrust(); }, [loadTrust]));
 
-  const owned: string[] = (user?.roles && user.roles.length ? user.roles : [user?.role || "client"]);
+  const owned: string[] = [
+    hasClientProfile ? "client" : null,
+    hasProviderProfile ? (isBusinessProfile ? "business" : "provider") : null,
+  ].filter((x): x is string => !!x);
   const canActivate = (roleId: string) => {
     if (owned.includes(roleId)) return false;
     if (owned.length >= 2) return false;
@@ -54,11 +72,13 @@ export default function ProfileTab() {
     return true;
   };
 
-  const switchRole = async (roleId: string) => {
-    if (roleId === user?.role) return;
+  // Cambio di vista puro locale (nessuna chiamata al backend): tra i profili
+  // che l'utente possiede già, sceglie quale mostrare. Non tocca mai `role`.
+  const switchRole = (roleId: string) => {
+    const activeLabel = isProvider ? (isBusinessProfile ? "business" : "provider") : "client";
+    if (roleId === activeLabel) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    const updated = await api.switchRole(roleId);
-    setUser(updated);
+    setActiveView(roleId === "client" ? "client" : "provider");
     router.replace("/(tabs)");
   };
 
@@ -67,17 +87,40 @@ export default function ProfileTab() {
       Alert.alert(t("activateProfileTitle"), t("activateClientMsg"), [
         { text: t("cancel"), style: "cancel" },
         { text: t("continue"), onPress: async () => {
-          // BLOCCO 9: api.completeOnboarding() risponde con lo shape grezzo
-          // {"user": {...}}, non con quello di /auth/me — vedi fix analogo
-          // in app/onboarding-flow.tsx. refresh() richiama GET /auth/me.
-          try { await api.completeOnboarding({ role: "client" }); await refresh(); router.replace("/(tabs)"); } catch {}
+          try {
+            // Preserva il profilo provider già esistente: "both", non
+            // "client" — completeOnboarding() sovrascrive `role` per intero.
+            await api.completeOnboarding({ role: hasProviderProfile ? "both" : "client" });
+            await refresh();
+            setActiveView("client");
+            router.replace("/(tabs)");
+          } catch { Alert.alert(t("error")); }
         } },
       ]);
       return;
     }
     Alert.alert(t("activateProfileTitle"), t("activateProfileMsg"), [
       { text: t("cancel"), style: "cancel" },
-      { text: t("continue"), onPress: () => router.push(`/provider-onboarding?role=${roleId}`) },
+      { text: t("continue"), onPress: async () => {
+        try {
+          // Prima mancava del tutto questa chiamata: si saltava subito a
+          // /provider-onboarding, che si aspetta profiles_provider già
+          // creato (_provider_row() in routers/provider_onboarding.py) —
+          // stesso bug originale di app/onboarding-flow.tsx (vedi 4a470f9),
+          // mai riportato qui.
+          await api.completeOnboarding({ role: hasClientProfile ? "both" : "provider", is_business: roleId === "business" });
+          await refresh();
+          if (hasProviderProfile) {
+            // Profilo provider già completo in precedenza (es. l'utente lo
+            // aveva attivato, poi era passato a solo client): i dati KYC
+            // esistono già, non serve rifare tutto il form.
+            setActiveView("provider");
+            router.replace("/(tabs)");
+          } else {
+            router.push(`/provider-onboarding?role=${roleId}`);
+          }
+        } catch { Alert.alert(t("error")); }
+      } },
     ]);
   };
 
@@ -112,7 +155,8 @@ export default function ProfileTab() {
         <Text style={styles.sectionLabel}>{t("selectRole")}</Text>
         <View style={styles.roleRow}>
           {ROLES.filter((r) => owned.includes(r.id)).map((r) => {
-            const active = user?.role === r.id;
+            const activeLabel = isProvider ? (isBusinessProfile ? "business" : "provider") : "client";
+            const active = activeLabel === r.id;
             return (
               <Pressable key={r.id} testID={`role-${r.id}`} style={[styles.roleChip, active && styles.roleChipActive]} onPress={() => switchRole(r.id)}>
                 <Ionicons name={r.icon as any} size={22} color={active ? "#fff" : colors.onSurfaceTertiary} />

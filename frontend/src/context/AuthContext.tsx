@@ -34,9 +34,13 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { supabase } from "@/src/lib/supabase";
 import { api, setUnauthorizedHandler } from "@/src/api";
+
+const ACTIVE_VIEW_KEY = "jobby_active_view";
+type ActiveView = "client" | "provider";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -52,6 +56,19 @@ type AuthState = {
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   setUser: (u: User) => void;
+  // BLOCCO 9 (fix "attivo anche il profilo cliente/provider ma poi non
+  // riesco più a tornare all'altro senza rifare l'onboarding"): lo schema
+  // Postgres supporta già role="both" (client + provider sullo stesso
+  // account, vedi routers/onboarding.py) ma non esiste alcun concetto di
+  // "quale dei due sto guardando ora" — la vecchia UI Mongo lo risolveva con
+  // un endpoint /profile/switch-role che scriveva `role` lato server, mai
+  // portato in Postgres (l'endpoint non esiste più: chiamarlo dava sempre
+  // 404). Non serve davvero una scrittura server-side per "che home vedo
+  // adesso" — è puro stato di navigazione locale. activeView/setActiveView
+  // sostituiscono quell'endpoint: quale home mostrare tra le due che
+  // l'utente possiede, persistito solo sul device.
+  activeView: ActiveView;
+  setActiveView: (v: ActiveView) => void;
 };
 
 const AuthContext = createContext<AuthState>({} as AuthState);
@@ -104,6 +121,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Evita refresh() concorrenti/ridondanti quando onAuthStateChange spara più
   // eventi ravvicinati (es. INITIAL_SESSION seguito subito da SIGNED_IN).
   const refreshing = useRef(false);
+
+  const [activeView, setActiveViewState] = useState<ActiveView>("client");
+  const viewLoaded = useRef(false);
+
+  const setActiveView = useCallback((v: ActiveView) => {
+    setActiveViewState(v);
+    AsyncStorage.setItem(ACTIVE_VIEW_KEY, v).catch(() => {});
+  }, []);
+
+  // Tiene activeView allineato a cosa l'utente possiede davvero: la prima
+  // volta che un utente è disponibile carica la preferenza salvata sul
+  // device (o sceglie un default sensato — provider/business se esiste,
+  // altrimenti client); dopo, ad ogni refresh() successivo, si limita a
+  // "sganciare" activeView se il profilo che stava guardando è sparito (non
+  // dovrebbe succedere, ma è più sicuro non restare bloccati su un profilo
+  // inesistente) senza toccare una scelta valida dell'utente.
+  const hasProviderProfile = !!user?.provider_profile;
+  const hasClientProfile = !!user?.client_profile;
+  useEffect(() => {
+    if (!user) { viewLoaded.current = false; return; }
+    if (!viewLoaded.current) {
+      viewLoaded.current = true;
+      AsyncStorage.getItem(ACTIVE_VIEW_KEY).then((saved) => {
+        let next: ActiveView = saved === "provider" || saved === "client" ? saved : hasProviderProfile ? "provider" : "client";
+        if (next === "provider" && !hasProviderProfile) next = "client";
+        if (next === "client" && !hasClientProfile && hasProviderProfile) next = "provider";
+        setActiveViewState(next);
+      }).catch(() => {});
+    } else {
+      setActiveViewState((cur) => {
+        if (cur === "provider" && !hasProviderProfile) return "client";
+        if (cur === "client" && !hasClientProfile && hasProviderProfile) return "provider";
+        return cur;
+      });
+    }
+  }, [user?.id, hasProviderProfile, hasClientProfile]);
 
   const refresh = useCallback(async () => {
     if (refreshing.current) return;
@@ -224,7 +277,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginEmail, register, loginApple, loginDemo, logout, refresh, setUser }}>
+    <AuthContext.Provider value={{ user, loading, login, loginEmail, register, loginApple, loginDemo, logout, refresh, setUser, activeView, setActiveView }}>
       {children}
     </AuthContext.Provider>
   );

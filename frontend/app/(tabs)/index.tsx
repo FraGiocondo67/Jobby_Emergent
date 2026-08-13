@@ -17,9 +17,19 @@ import NotifBell from "@/src/components/NotifBell";
 import { EarnerConfirm } from "@/src/components/DeliveryConfirm";
 
 export default function HomeTab() {
-  const { user } = useAuth();
-  if (user?.role === "provider") return <ProviderHome />;
-  if (user?.role === "business") return <BusinessHome />;
+  const { user, activeView } = useAuth();
+  // BLOCCO 9 (fix "attivo anche il profilo cliente ma poi non torno più al
+  // profilo provider senza rifare l'onboarding"): prima si guardava solo
+  // user?.role, un enum singolo — un utente con entrambi i profili
+  // (role="both" lato backend) non veniva mai gestito qui, cadeva sempre nel
+  // ramo CustomerHome di default. Ora si usa la presenza reale dei profili
+  // (user.provider_profile/client_profile, già inclusi in GET /auth/me) più
+  // activeView (src/context/AuthContext.tsx) — puro stato locale di "quale
+  // home sto guardando ora", senza bisogno di riscrivere role sul server né
+  // di rifare l'onboarding solo per cambiare vista.
+  if (user?.provider_profile && activeView === "provider") {
+    return user.provider_profile.is_proximity_business ? <BusinessHome /> : <ProviderHome />;
+  }
   return <CustomerHome />;
 }
 
