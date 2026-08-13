@@ -1076,6 +1076,13 @@ class FeeIn(BaseModel):
     fee_pct: float
 
 
+# BLOCCO 9: vedi nota gemella in routers/richieste.py — mancava un GET per
+# rileggere la commissione già impostata.
+@router.get("/admin/driver/fee")
+async def get_fee(_=Depends(require_admin)):
+    return {"fee_pct": await fee_pct()}
+
+
 @router.post("/admin/driver/fee")
 async def set_fee(body: FeeIn, _=Depends(require_admin)):
     db.table("app_settings").upsert({"key": _FEE_SETTING_KEY, "value": float(body.fee_pct)}).execute()

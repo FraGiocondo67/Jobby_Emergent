@@ -755,6 +755,16 @@ class FeeIn(BaseModel):
     fee_pct: float
 
 
+# BLOCCO 9: mancava un modo di RILEGGERE la commissione impostata — solo
+# POST esisteva, nessun endpoint di lettura per precompilare un form admin
+# (segnalato dall'utente confrontando col vecchio pannello Emergent, "markup
+# per attività"). Il meccanismo è già reale e già usato in tutti i calcoli
+# di questo file (fee_pct()) — mancava solo l'esposizione admin.
+@router.get("/admin/pulizie/fee")
+async def get_fee(_=Depends(require_admin)):
+    return {"fee_pct": await fee_pct()}
+
+
 @router.post("/admin/pulizie/fee")
 async def set_fee(body: FeeIn, _=Depends(require_admin)):
     db.table("app_settings").upsert({"key": _FEE_SETTING_KEY, "value": float(body.fee_pct)}).execute()
