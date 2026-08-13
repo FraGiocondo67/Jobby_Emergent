@@ -1073,3 +1073,85 @@ class FeeIn(BaseModel):
 async def set_fee(body: FeeIn, _=Depends(require_admin)):
     db.table("app_settings").upsert({"key": _FEE_SETTING_KEY, "value": float(body.fee_pct)}).execute()
     return {"fee_pct": body.fee_pct}
+
+
+# ---------------- admin: mestieri (pannello jobby-admin, Blocco 9) ----------------
+# public.artigiani_mestieri (6 righe seed: idraulico/elettricista/caldaista/
+# climatizzazione/giardiniere/tuttofare, vedi docstring modulo) era stata
+# pensata "admin-editabile via Retool" (Blocco 2) ma Retool è stato
+# deprioritizzato a favore del pannello custom jobby-admin (Blocco 8) — non
+# esisteva però ancora nessun endpoint di gestione qui, solo la lettura
+# pubblica filtrata su is_active in _mestieri_rows()/GET /artigiani/config
+# (segnalato dall'utente: le 6 sottocategorie sono visibili in app ma non
+# gestibili dal pannello). Nessuna FK verso service_categories — il legame
+# con "Artigiani della casa" è implicito (unico consumer di questa tabella
+# è questo router, categoria fissa _CATEGORY_SLUG="artigiani"), quindi niente
+# concetto di parent_id da gestire qui.
+class MestiereAdminRow(BaseModel):
+    slug: str
+    name_it: str
+    name_en: str
+    icon: Optional[str] = None
+    richiede_abilitazione: bool = False
+    richiede_fgas: bool = False
+    richiede_libretto_famiglia: bool = False
+    has_stage2_diagnosi: bool = True
+    stagionale: bool = False
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class MestiereAdminPatchIn(BaseModel):
+    name_it: Optional[str] = None
+    name_en: Optional[str] = None
+    icon: Optional[str] = None
+    richiede_abilitazione: Optional[bool] = None
+    richiede_fgas: Optional[bool] = None
+    richiede_libretto_famiglia: Optional[bool] = None
+    has_stage2_diagnosi: Optional[bool] = None
+    stagionale: Optional[bool] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+@router.get("/admin/artigiani/mestieri")
+async def admin_list_mestieri(_=Depends(require_admin)):
+    res = db.table("artigiani_mestieri").select("*").order("sort_order").execute()
+    return {"mestieri": res.data or []}
+
+
+@router.post("/admin/artigiani/mestieri")
+async def admin_create_mestiere(body: MestiereAdminRow, _=Depends(require_admin)):
+    slug = body.slug.strip().lower().replace(" ", "_")
+    if not slug:
+        raise HTTPException(status_code=400, detail="invalid_slug")
+    existing = db.table("artigiani_mestieri").select("id").eq("slug", slug).limit(1).execute()
+    if existing.data:
+        raise HTTPException(status_code=400, detail="slug_already_exists")
+    row = body.dict()
+    row["slug"] = slug
+    res = db.table("artigiani_mestieri").insert(row).execute()
+    if not res.data:
+        raise HTTPException(status_code=500, detail="create_failed")
+    return res.data[0]
+
+
+@router.put("/admin/artigiani/mestieri/{mestiere_id}")
+async def admin_update_mestiere(mestiere_id: str, body: MestiereAdminPatchIn, _=Depends(require_admin)):
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="no_fields_to_update")
+    res = db.table("artigiani_mestieri").update(updates).eq("id", mestiere_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    return res.data[0]
+
+
+@router.post("/admin/artigiani/mestieri/{mestiere_id}/toggle")
+async def admin_toggle_mestiere(mestiere_id: str, _=Depends(require_admin)):
+    row = db.table("artigiani_mestieri").select("id, is_active").eq("id", mestiere_id).limit(1).execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    new_active = not row.data[0]["is_active"]
+    db.table("artigiani_mestieri").update({"is_active": new_active}).eq("id", mestiere_id).execute()
+    return {"id": mestiere_id, "is_active": new_active}
