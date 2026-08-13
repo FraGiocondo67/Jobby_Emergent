@@ -25,7 +25,7 @@ const ROLES = [
 ] as const;
 
 export default function OnboardingFlow() {
-  const { user, setUser } = useAuth();
+  const { user, refresh } = useAuth();
   const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -137,8 +137,18 @@ export default function OnboardingFlow() {
         payload.vat_number = vat.trim();
         payload.service_mode = "both";
       }
-      const updated = await api.completeOnboarding(payload);
-      setUser(updated);
+      await api.completeOnboarding(payload);
+      // BLOCCO 9 (fix bug "sessione resta CLIENT anche dopo essersi
+      // registrati come provider"): api.completeOnboarding() risponde con lo
+      // shape GREZZO di routers/onboarding.py ({"user": {...riga postgres
+      // cruda...}}), non con lo shape "piatto" calcolato da GET /auth/me
+      // (role alias business, onboarding_completed, provider_profile, ecc. —
+      // vedi routers/auth.py). Fare setUser(updated) con quella risposta
+      // sovrascriveva lo stato con un oggetto senza `role` al livello
+      // atteso da HomeTab (user?.role) — risultato: home cliente di default
+      // a prescindere dal ruolo appena impostato sul backend. refresh()
+      // richiama /auth/me e ottiene lo shape corretto.
+      await refresh();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       router.replace("/(tabs)");
     } catch {
@@ -162,11 +172,13 @@ export default function OnboardingFlow() {
   const startProviderOnboarding = async (chosenRole: "provider" | "business") => {
     setBusy(true);
     try {
-      const updated = await api.completeOnboarding({
+      await api.completeOnboarding({
         role: "provider",
         is_business: chosenRole === "business",
       });
-      setUser(updated);
+      // Vedi commento sopra in submit(): refresh() (non setUser con la
+      // risposta grezza di completeOnboarding) per avere lo shape corretto.
+      await refresh();
       router.push(`/provider-onboarding?role=${chosenRole}`);
     } catch {
       Alert.alert(t("error"));
