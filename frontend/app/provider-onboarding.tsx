@@ -23,7 +23,7 @@ const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const SLOTS = ["morning", "afternoon", "evening"];
 
 export default function ProviderOnboarding() {
-  const { user, setUser } = useAuth();
+  const { user, refresh } = useAuth();
   const { lang, t } = useLang();
   const router = useRouter();
   const params = useLocalSearchParams<{ role?: string }>();
@@ -168,8 +168,12 @@ export default function ProviderOnboarding() {
     setBusy(true);
     try {
       await saveAvailability();
-      const u = await api.submitProvider();
-      setUser(u);
+      // BLOCCO 9: api.submitProvider() risponde con {"ok": true,
+      // "provider_state": {...}}, non con l'utente completo — stesso bug di
+      // setUser(rawResponse) già corretto altrove (onboarding-flow.tsx,
+      // profile.tsx, ecc). refresh() richiama GET /auth/me.
+      await api.submitProvider();
+      await refresh();
       router.replace("/(tabs)");
     } catch (e: any) {
       if (String(e?.message).includes("email_not_verified")) Alert.alert(t("otpInvalid"));
@@ -181,7 +185,9 @@ export default function ProviderOnboarding() {
   const toggleActivity = (id: string) => {
     setActivityCats((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
-  const saveActivities = async () => { try { const u = await api.updateProfile({ services: activityCats }); setUser(u); } catch {} };
+  // BLOCCO 9: api.updateProfile() risponde con {"message": "..."}, non con
+  // l'utente — stesso bug di setUser(rawResponse) corretto altrove.
+  const saveActivities = async () => { try { await api.updateProfile({ services: activityCats }); await refresh(); } catch {} };
 
   const next = async () => {
     if (cur === "intro") { if (!profileType) return; if (!isAdult) { Alert.alert(t("minorBlocked")); return; } }
@@ -297,6 +303,12 @@ export default function ProviderOnboarding() {
           <DocBox testID="doc-id_back" label={t("idBack")} done={!!docs.id_back} onPress={() => uploadDoc("id_back")} />
           <DocBox testID="doc-selfie" label={t("selfieDoc")} done={!!docs.selfie} onPress={() => uploadDoc("selfie")} />
           {!isLF ? <DocBox testID="doc-presentation" label={t("logoPhoto")} done={!!docs.presentation} onPress={() => uploadDoc("presentation", false)} /> : null}
+          {/* BLOCCO 9: visura camerale / Certificate of incorporation —
+              richiesta solo per attività di prossimità e per chi si
+              registra come società/impresa (profileType "impresa"). */}
+          {(intendedRole === "business" || profileType === "impresa") ? (
+            <DocBox testID="doc-visura" label={t("visuraDoc")} done={!!docs.visura} onPress={() => uploadDoc("visura", false)} />
+          ) : null}
         </>);
       case "lf_delega":
         return (<>

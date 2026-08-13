@@ -202,14 +202,28 @@ async def set_profile(body: ProfileIn, user=Depends(get_current_user)):
 
 
 class DocIn(BaseModel):
-    kind: str   # id_front | id_back | selfie | presentation
+    kind: str   # id_front | id_back | selfie | presentation | visura
     image: str
+
+
+# BLOCCO 9 (richiesta utente: "per le attività di prossimità e gli user
+# registrati come società/impresa dobbiamo attivare la gestione dei
+# documenti... aggiungerei anche 'visura'/'Certificate of incorporation'"):
+# aggiunto un quinto tipo di documento, richiesto solo per attività di
+# prossimità (intendedRole === "business" lato app) o profilo fiscale
+# "impresa" — vedi app/provider-onboarding.tsx, step "docs". Stesso
+# meccanismo di storage degli altri 4 (base64 dentro
+# profiles_provider.documents, JSONB), nessuna migrazione richiesta.
+DOC_KIND_FIELDS = {
+    "id_front": "id_document_front", "id_back": "id_document_back",
+    "selfie": "selfie_document", "presentation": "presentation_photo",
+    "visura": "visura_camerale",
+}
 
 
 @router.post("/onboarding/provider/document")
 async def upload_doc(body: DocIn, user=Depends(get_current_user)):
-    field = {"id_front": "id_document_front", "id_back": "id_document_back",
-             "selfie": "selfie_document", "presentation": "presentation_photo"}.get(body.kind)
+    field = DOC_KIND_FIELDS.get(body.kind)
     if not field or not body.image.strip():
         raise HTTPException(status_code=400, detail="invalid_document")
     provider = _provider_row(user["id"])
@@ -381,7 +395,12 @@ async def admin_pending(_=Depends(require_admin)):
                     "presentation_photo": documents.get("presentation_photo"), "casellario_doc": documents.get("casellario_doc"),
                     "casellario_verified": documents.get("casellario_verified"), "contact_email": u.get("email"),
                     "email_verified": u.get("is_email_verified"), "lf_delega_signed": documents.get("lf_delega_signed"),
-                    "lf_inps_registered": documents.get("lf_inps_registered"), "user_id": u.get("id")})
+                    "lf_inps_registered": documents.get("lf_inps_registered"), "user_id": u.get("id"),
+                    # BLOCCO 9: visura camerale/Certificate of incorporation
+                    # (solo prossimità/impresa, vedi DOC_KIND_FIELDS sopra) +
+                    # segnale per l'admin panel di quando serve mostrarla.
+                    "visura_camerale": documents.get("visura_camerale"),
+                    "is_proximity_business": p.get("is_proximity_business", False)})
     return out
 
 
