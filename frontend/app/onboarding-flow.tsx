@@ -146,6 +146,35 @@ export default function OnboardingFlow() {
     }
   };
 
+  // BLOCCO 9 (fix bug "qualunque ruolo scelgo apre sempre CLIENTE" +
+  // "attività offri: non compare nulla da scegliere"): per provider/business
+  // questo bottone saltava DIRETTAMENTE a /provider-onboarding senza mai
+  // chiamare api.completeOnboarding() — l'UNICO endpoint che scrive
+  // users.role e crea la riga profiles_provider (routers/onboarding.py).
+  // Risultato: role restava sempre al default 'client' del trigger di
+  // signup, e /provider-onboarding (che si aspetta profiles_provider già
+  // creata, vedi routers/provider_onboarding.py: _provider_row() solleva
+  // 400 "complete_onboarding_first" se manca) andava in errore al primo
+  // salvataggio. "business" non è un role valido lato backend (VALID_ROLES
+  // = client/provider/both, vedi onboarding.py) — è un flag
+  // is_proximity_business dentro profiles_provider — va quindi tradotto in
+  // role="provider" + is_business=true.
+  const startProviderOnboarding = async (chosenRole: "provider" | "business") => {
+    setBusy(true);
+    try {
+      const updated = await api.completeOnboarding({
+        role: "provider",
+        is_business: chosenRole === "business",
+      });
+      setUser(updated);
+      router.push(`/provider-onboarding?role=${chosenRole}`);
+    } catch {
+      Alert.alert(t("error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // ---- Step 0: role ----
   if (step === 0) {
     return (
@@ -167,7 +196,16 @@ export default function OnboardingFlow() {
           </View>
         </View>
         <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-          <Button testID="role-next" label={t("next")} disabled={!role} onPress={() => (role === "client" ? setStep(1) : router.push(`/provider-onboarding?role=${role}`))} />
+          <Button
+            testID="role-next"
+            label={t("next")}
+            disabled={!role}
+            loading={busy}
+            onPress={() => {
+              if (role === "client") setStep(1);
+              else startProviderOnboarding(role as "provider" | "business");
+            }}
+          />
         </View>
       </View>
     );

@@ -54,7 +54,7 @@ async def complete_onboarding(body: OnboardingIn, user=Depends(get_current_user)
         raise HTTPException(status_code=400, detail="invalid_role")
 
     user_id = user["id"]
-    is_business = bool(body.business_name or body.vat_number)
+    is_business = bool(body.business_name or body.vat_number or body.is_business)
 
     # BLOCCO 7c (jobby-web -> client puro, signup client-side): prima questa
     # decisione guardava `user.get("status") != "active"` per capire se era

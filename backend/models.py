@@ -36,6 +36,13 @@ class OnboardingIn(BaseModel):
     vat_number: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    # BLOCCO 9: la app mobile chiama /onboarding/complete PRIMA di raccogliere
+    # business_name/vat_number (raccolti solo dopo, in app/provider-onboarding.tsx)
+    # — senza un segnale esplicito, is_proximity_business sotto risulterebbe
+    # sempre false per un'attività di prossimità. jobby-web non lo manda (non
+    # gli serve, ha già business_name/vat_number nello stesso submit): resta
+    # opzionale, nessun impatto su chi già funziona.
+    is_business: Optional[bool] = None
     # BLOCCO 7c (jobby-web -> client puro, signup client-side): il form di
     # registrazione business/prossimità di jobby-web raccoglie anche un
     # elenco libero di prodotti/servizi — prima veniva salvato via l'Admin
