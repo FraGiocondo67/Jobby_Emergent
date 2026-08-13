@@ -24,7 +24,7 @@ const SUBCONFIG: Record<string, { route: string; titleKey: string }> = {
 };
 
 export default function Activities() {
-  const { user, setUser } = useAuth();
+  const { user, refresh } = useAuth();
   const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -55,8 +55,10 @@ export default function Activities() {
     const payload: any = { services: selected, radius_km: radiusKm };
     if (business) payload.service_mode = mode;
     try {
-      const updated = await api.updateProfile(payload);
-      setUser(updated);
+      // BLOCCO 9: vedi fix analogo in app/(tabs)/index.tsx (toggleOnline) —
+      // api.updateProfile() non risponde con un utente, refresh() sì.
+      await api.updateProfile(payload);
+      await refresh();
       router.back();
     } catch {
       // Surface nothing intrusive; stay on screen so the user can retry.

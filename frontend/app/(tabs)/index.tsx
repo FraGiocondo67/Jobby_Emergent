@@ -167,7 +167,7 @@ function CustomerHome() {
 }
 
 function ProviderHome() {
-  const { user, setUser } = useAuth();
+  const { user, refresh } = useAuth();
   const { t, lang } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -210,7 +210,13 @@ function ProviderHome() {
   const toggleOnline = async (v: boolean) => {
     setOnline(v);
     Haptics.selectionAsync().catch(() => {});
-    setUser(await api.updateProfile({ online: v }));
+    // BLOCCO 9 (fix bug "seleziono online e la app torna alla home CLIENTE"):
+    // api.updateProfile() (PUT /profile) risponde con {"message": "..."},
+    // NON con un utente — setUser() con quella risposta cancellava
+    // user.role dallo stato, HomeTab tornava a CustomerHome di default.
+    // refresh() richiama GET /auth/me e ottiene lo shape corretto.
+    await api.updateProfile({ online: v });
+    await refresh();
   };
   const act = async (id: string, accept: boolean) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -299,7 +305,7 @@ function ProviderHome() {
 }
 
 function BusinessHome() {
-  const { user, setUser } = useAuth();
+  const { user, refresh } = useAuth();
   const { lang, t } = useLang();
   const insets = useSafeAreaInsets();
   const [requests, setRequests] = useState<any[]>([]);
@@ -320,7 +326,9 @@ function BusinessHome() {
   const toggleOnline = async (v: boolean) => {
     setOnline(v);
     Haptics.selectionAsync().catch(() => {});
-    setUser(await api.updateProfile({ online: v }));
+    // Vedi commento nello stesso fix in ProviderHome.toggleOnline sopra.
+    await api.updateProfile({ online: v });
+    await refresh();
   };
 
   const openRespond = (r: any) => {

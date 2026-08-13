@@ -13,7 +13,7 @@ import { Button } from "@/src/components/UI";
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 export default function ProfileDetails() {
-  const { user, setUser } = useAuth();
+  const { user, refresh } = useAuth();
   const { t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -48,8 +48,11 @@ export default function ProfileDetails() {
         .map((it) => ({ name: it.name.trim(), price: Number(it.price) || 0, unit: (it.unit || "").trim() }));
     }
     try {
-      const updated = await api.updateProfile(payload);
-      setUser(updated);
+      // BLOCCO 9: api.updateProfile() risponde con {"message": "..."}, non
+      // con un utente — vedi fix analogo in app/(tabs)/index.tsx
+      // (toggleOnline). refresh() richiama GET /auth/me.
+      await api.updateProfile(payload);
+      await refresh();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       router.back();
     } catch {} finally { setLoading(false); }

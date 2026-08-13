@@ -18,7 +18,7 @@ const ROLES = [
 ] as const;
 
 export default function ProfileTab() {
-  const { user, setUser, logout } = useAuth();
+  const { user, setUser, refresh, logout } = useAuth();
   const { t, lang, setLang } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -67,7 +67,10 @@ export default function ProfileTab() {
       Alert.alert(t("activateProfileTitle"), t("activateClientMsg"), [
         { text: t("cancel"), style: "cancel" },
         { text: t("continue"), onPress: async () => {
-          try { const u = await api.completeOnboarding({ role: "client" }); setUser(u); router.replace("/(tabs)"); } catch {}
+          // BLOCCO 9: api.completeOnboarding() risponde con lo shape grezzo
+          // {"user": {...}}, non con quello di /auth/me — vedi fix analogo
+          // in app/onboarding-flow.tsx. refresh() richiama GET /auth/me.
+          try { await api.completeOnboarding({ role: "client" }); await refresh(); router.replace("/(tabs)"); } catch {}
         } },
       ]);
       return;
