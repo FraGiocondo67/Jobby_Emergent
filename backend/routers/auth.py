@@ -70,6 +70,17 @@ async def me(user=Depends(get_current_user)):
     flat["name"] = base.get("full_name")
     flat["picture"] = base.get("avatar_url")
     flat["wallet_balance"] = 0.0  # nessun wallet interno (Blocco 3), vedi routers/app_home.py
+    # BLOCCO 9 (fix bug "ad ogni login la app rifà l'onboarding"): public.users
+    # non ha mai avuto una colonna onboarding_completed nello schema Postgres
+    # (era un campo diretto nel documento Mongo — vedi il vecchio
+    # server.py/seed di allora) — app/index.tsx pero' controlla ancora
+    # `user.onboarding_completed` per decidere se aprire "/onboarding-flow" o
+    # la app vera: sempre undefined -> sempre falsy -> onboarding ripetuto ad
+    # ogni login, qualunque cosa l'utente avesse gia' scelto. Stesso segnale
+    # gia' calcolato correttamente da GET /onboarding/status (routers/
+    # onboarding.py): "ha gia' un profilo client o provider" = onboarding
+    # fatto. Replicato qui cosi' non serve chiamare due endpoint.
+    flat["onboarding_completed"] = bool(cp or pp)
     if cp:
         flat["address"] = cp.get("address")
         flat["radius_km"] = cp.get("search_radius_km")
