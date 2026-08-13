@@ -107,7 +107,12 @@ export const api = {
   earnings: () => request("/earnings"),
 
   // categories & discovery
-  categories: () => request("/categories"),
+  // BLOCCO 9: /categories (senza suffisso) è il contratto Blocco 7b per
+  // jobby-web ({categories:[...]} piatto) — la app usa invece /categories/home,
+  // stesso dato sorgente ma raggruppato {standard,proximity,payment,
+  // providers_online} come CustomerHome/ProviderHome si aspettano davvero
+  // (vedi backend/routers/categories.py).
+  categories: () => request("/categories/home"),
   getCategory: (id: string) => request(`/categories/${id}`),
 
   // wallet

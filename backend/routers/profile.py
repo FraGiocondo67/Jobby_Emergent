@@ -35,10 +35,24 @@ class ProfilePatchIn(BaseModel):
     skills: Optional[List[str]] = None
     operational_radius_km: Optional[float] = None
     availability_status: Optional[str] = None
+    # BLOCCO 9: la app Expo (ProviderHome.toggleOnline, app/(tabs)/index.tsx)
+    # chiama api.updateProfile({online: bool}) - un campo che qui non e' mai
+    # esistito (solo availability_status: "online"/"offline"/"busy"). Il
+    # PATCH veniva quindi accettato (pydantic ignora i campi sconosciuti) ma
+    # non aggiornava nulla: i provider non potevano davvero mettersi online.
+    # Accettato qui come alias comodo, tradotto sotto in availability_status.
+    online: Optional[bool] = None
     payout_details: Optional[Dict[str, Any]] = None
     business_data: Optional[Dict[str, Any]] = None
 
 
+# BLOCCO 9: la app Expo chiama questa route con PUT (src/api.ts:
+# updateProfile -> request("/profile", {method:"PUT"})), non PATCH - FastAPI
+# le tratta come route distinte, quindi ogni PUT falliva con 405 Method Not
+# Allowed (mai stato notato perche' il chiamante lo ingoia in try/catch).
+# Stessa funzione esposta su entrambi i verbi, nessun'altra modifica di
+# comportamento per chi gia' chiama PATCH (jobby-web).
+@router.put("/profile")
 @router.patch("/profile")
 async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
     user_id = user["id"]
@@ -79,6 +93,8 @@ async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
             if body.availability_status not in ("online", "offline", "busy"):
                 raise HTTPException(status_code=400, detail="invalid_availability_status")
             pp_updates["availability_status"] = body.availability_status
+        elif body.online is not None:
+            pp_updates["availability_status"] = "online" if body.online else "offline"
         if body.payout_details is not None:
             pp_updates["payout_details"] = body.payout_details
         if body.business_data is not None:
