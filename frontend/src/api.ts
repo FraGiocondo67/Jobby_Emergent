@@ -188,7 +188,8 @@ export const api = {
   onbConfig: () => request("/onboarding/config"),
   setProviderProfile: (data: any) => request("/onboarding/provider/profile", { method: "POST", body: JSON.stringify(data) }),
   uploadProviderDoc: (kind: string, image: string) => request("/onboarding/provider/document", { method: "POST", body: JSON.stringify({ kind, image }) }),
-  signDelega: (signature_name: string) => request("/onboarding/lf/delega", { method: "POST", body: JSON.stringify({ signature_name }) }),
+  signDelega: (signature_name: string, signature_svg?: string) =>
+    request("/onboarding/lf/delega", { method: "POST", body: JSON.stringify({ signature_name, signature_svg }) }),
   setInps: (registered: boolean) => request("/onboarding/lf/inps", { method: "POST", body: JSON.stringify({ registered }) }),
   setAvailability: (availability: any) => request("/onboarding/availability", { method: "PUT", body: JSON.stringify({ availability }) }),
   submitProvider: () => request("/onboarding/provider/submit", { method: "POST" }),

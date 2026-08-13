@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -12,6 +12,7 @@ import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 import { DateField } from "@/src/components/DateTimeField";
+import SignaturePad, { SignaturePadHandle } from "@/src/components/SignaturePad";
 
 const TREVISO = { lat: 45.6669, lng: 12.2433 };
 const PROFILES = [
@@ -56,6 +57,7 @@ export default function ProviderOnboarding() {
   const [docs, setDocs] = useState<Record<string, string>>({});
   const [delegaName, setDelegaName] = useState("");
   const [delegaSigned, setDelegaSigned] = useState(false);
+  const signaturePadRef = useRef<SignaturePadHandle>(null);
   const [avail, setAvail] = useState<Record<string, Record<string, boolean>>>({});
 
   useEffect(() => { (async () => { try { setCfg(await api.onbConfig()); } catch {} })(); }, []);
@@ -155,8 +157,12 @@ export default function ProviderOnboarding() {
 
   const signDelega = async () => {
     if (!delegaName.trim()) return;
+    // BLOCCO 9: prima bastava digitare il nome — ora serve anche una firma
+    // disegnata a mano (vedi SignaturePad), non solo il nome stampato.
+    const signatureSvg = signaturePadRef.current?.toDataUri();
+    if (!signatureSvg) { Alert.alert(t("signHere")); return; }
     setBusy(true);
-    try { await api.signDelega(delegaName.trim()); await api.setInps(false); setDelegaSigned(true); }
+    try { await api.signDelega(delegaName.trim(), signatureSvg); await api.setInps(false); setDelegaSigned(true); }
     catch { Alert.alert(t("error")); } finally { setBusy(false); }
   };
 
@@ -176,7 +182,20 @@ export default function ProviderOnboarding() {
       await refresh();
       router.replace("/(tabs)");
     } catch (e: any) {
-      if (String(e?.message).includes("email_not_verified")) Alert.alert(t("otpInvalid"));
+      const msg = String(e?.message || "");
+      // BLOCCO 9: submit_provider ora richiede davvero i documenti (vedi
+      // backend) — se mancano, l'errore è "missing_documents:key1,key2".
+      // Mostriamo quali, invece del generico t("error") indistinguibile da
+      // qualunque altro fallimento.
+      const missingMatch = msg.match(/missing_documents:([\w,]+)/);
+      if (missingMatch) {
+        const labels: Record<string, string> = {
+          id_document_front: t("idFront"), id_document_back: t("idBack"),
+          selfie_document: t("selfieDoc"), visura_camerale: t("visuraDoc"),
+        };
+        const missing = missingMatch[1].split(",").map((k) => labels[k] || k).join(", ");
+        Alert.alert(t("error"), missing);
+      } else if (msg.includes("email_not_verified")) Alert.alert(t("otpInvalid"));
       else Alert.alert(t("error"));
       setBusy(false);
     }
@@ -320,10 +339,13 @@ export default function ProviderOnboarding() {
           <Text style={styles.h}>{t("delegaTitle")}</Text>
           <Text style={styles.sub}>{t("delegaSub")}</Text>
           <View style={styles.delegaBox}><Text style={styles.delegaText}>{t("delegaText")}</Text></View>
-          <Text style={styles.label}>{t("signHere")}</Text>
+          <Text style={styles.label}>{t("typeFullName")}</Text>
           <TextInput testID="delega-name" style={styles.input} value={delegaName} onChangeText={setDelegaName} placeholder={t("typeFullName")} placeholderTextColor={colors.muted} editable={!delegaSigned} />
-          {!delegaSigned ? (
+          {!delegaSigned ? (<>
+            <Text style={[styles.label, { marginTop: spacing.lg }]}>{t("signHere")}</Text>
+            <SignaturePad testID="delega-signature" ref={signaturePadRef} />
             <Button testID="sign-delega" label={t("signAccept")} loading={busy} onPress={signDelega} style={{ marginTop: spacing.md }} />
+          </>
           ) : (<>
             <View style={styles.okRow}><Ionicons name="checkmark-circle" size={20} color={colors.success} /><Text style={styles.okText}>{t("delegaSigned")}</Text></View>
             <View style={styles.inpsBox}>

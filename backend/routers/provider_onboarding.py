@@ -250,15 +250,28 @@ async def upload_doc(body: DocIn, user=Depends(get_current_user)):
 # ---------------- Libretto Famiglia guided steps ----------------
 class DelegaIn(BaseModel):
     signature_name: str
+    # BLOCCO 9 (fix "la delega deve essere firmata col dito, tipo penna, non
+    # solo un nome digitato"): prima la "firma" era solo il nome stampato in
+    # un TextInput. signature_svg è il tratto disegnato a mano
+    # (SignaturePad, frontend) come SVG vettoriale incapsulato in una data
+    # URI — stesso schema delle altre immagini in `documents` (id/selfie/
+    # visura), così il pannello admin lo mostra con lo stesso DocumentGrid
+    # senza codice dedicato.
+    signature_svg: Optional[str] = None
 
 
 @router.post("/onboarding/lf/delega")
 async def sign_delega(body: DelegaIn, user=Depends(get_current_user)):
     if not body.signature_name.strip():
         raise HTTPException(status_code=400, detail="empty_signature")
+    if not body.signature_svg:
+        raise HTTPException(status_code=400, detail="missing_signature_drawing")
     provider = _provider_row(user["id"])
     documents = dict(provider.get("documents") or {})
-    documents.update({"lf_delega_signed": True, "lf_delega_name": body.signature_name.strip(), "lf_delega_at": now_iso()})
+    documents.update({
+        "lf_delega_signed": True, "lf_delega_name": body.signature_name.strip(),
+        "lf_delega_at": now_iso(), "lf_delega_signature": body.signature_svg,
+    })
     _save_documents(user["id"], documents)
     return {"lf_delega_signed": True}
 
@@ -332,6 +345,20 @@ async def submit_provider(user=Depends(get_current_user)):
     if not fiscal.get("profile_type"):
         raise HTTPException(status_code=400, detail="profile_incomplete")
     documents = dict(provider.get("documents") or {})
+    # BLOCCO 9 (fix "la verifica identità deve essere reale, documento +
+    # selfie"): prima non c'era ALCUN controllo qui — un provider poteva
+    # premere "Invia" ed entrare in coda approvazione senza aver mai
+    # caricato un documento, lasciando all'admin solo il nome per decidere.
+    # Non è ancora un provider IDV automatico (richiederebbe un contratto/
+    # credenziali SUMSUB che non abbiamo) ma almeno garantisce che ci sia
+    # sempre qualcosa di reale da verificare a vista nella coda admin
+    # (vedi jobby-admin PendingQueue/DocumentGrid).
+    required = ["id_document_front", "id_document_back", "selfie_document"]
+    if provider.get("is_proximity_business"):
+        required.append("visura_camerale")
+    missing = [k for k in required if not documents.get(k)]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"missing_documents:{','.join(missing)}")
     documents["submitted_at"] = now_iso()
     upd = {"documents": documents}
     if provider.get("kyc_status") in (None, "not_started"):
@@ -434,7 +461,11 @@ async def admin_pending(_=Depends(require_admin)):
                     # (solo prossimità/impresa, vedi DOC_KIND_FIELDS sopra) +
                     # segnale per l'admin panel di quando serve mostrarla.
                     "visura_camerale": documents.get("visura_camerale"),
-                    "is_proximity_business": p.get("is_proximity_business", False)})
+                    "is_proximity_business": p.get("is_proximity_business", False),
+                    # BLOCCO 9: firma disegnata della delega Libretto Famiglia
+                    # (vedi DelegaIn.signature_svg) — prima non c'era alcuna
+                    # firma vera da mostrare, solo il nome digitato.
+                    "lf_delega_signature": documents.get("lf_delega_signature")})
     return out
 
 
