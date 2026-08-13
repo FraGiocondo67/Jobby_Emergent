@@ -34,22 +34,32 @@ function CustomerRequests() {
   const [bsReqs, setBsReqs] = useState<any[]>([]);
   const [drvReqs, setDrvReqs] = useState<any[]>([]);
   const [artReqs, setArtReqs] = useState<any[]>([]);
+  const [genReqs, setGenReqs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "completed">("active");
   const [sortDir, setSortDir] = useState<"newest" | "oldest">("newest");
 
+  // BLOCCO 9: prima un solo Promise.all racchiudeva anche api.requests()/
+  // api.bookings() — due endpoint MAI montati su questo backend (/requests
+  // e /bookings appartengono a wallet.py/bookings.py, ritirati nel Blocco
+  // 5). Bastava che uno dei due fallisse (sempre, con 404) perché l'intero
+  // Promise.all rigettasse e il catch esterno ingoiasse TUTTO, comprese le
+  // 4 verticali funzionanti — "Le mie richieste" poteva restare vuota anche
+  // per pulizie/babysitting/driver/artigiani a seconda dei tempi di rete.
+  // Promise.allSettled isola ogni fetch: una fallisce, le altre restano.
   const load = useCallback(async () => {
-    try {
-      const [r, b, br, rq, bs, dr, art] = await Promise.all([api.requests(), api.bookings(), api.businessRequests(), api.myRichieste(), api.bsMyRichieste(), api.drvMyRichieste(), api.artMyRichieste()]);
-      setMissions(r.missions.filter((m: any) => m.status !== "booked"));
-      setPayments(r.payments);
-      setBookings(b);
-      setBizReqs(br);
-      setRichieste(rq || []);
-      setBsReqs(bs || []);
-      setDrvReqs(dr || []);
-      setArtReqs(art || []);
-    } catch {}
+    const [r, b, br, rq, bs, dr, art, gen] = await Promise.allSettled([
+      api.requests(), api.bookings(), api.businessRequests(), api.myRichieste(),
+      api.bsMyRichieste(), api.drvMyRichieste(), api.artMyRichieste(), api.myGenericRequests(),
+    ]);
+    if (r.status === "fulfilled") { setMissions((r.value.missions || []).filter((m: any) => m.status !== "booked")); setPayments(r.value.payments || []); }
+    if (b.status === "fulfilled") setBookings(b.value || []);
+    if (br.status === "fulfilled") setBizReqs(br.value || []);
+    if (rq.status === "fulfilled") setRichieste(rq.value || []);
+    if (bs.status === "fulfilled") setBsReqs(bs.value || []);
+    if (dr.status === "fulfilled") setDrvReqs(dr.value || []);
+    if (art.status === "fulfilled") setArtReqs(art.value || []);
+    if (gen.status === "fulfilled") setGenReqs(gen.value || []);
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -60,6 +70,7 @@ function CustomerRequests() {
     bsReqs.forEach((r) => list.push({ key: `bs-${r.richiesta_id}`, type: "babysitting", created_at: r.created_at, status: r.stato, data: r }));
     drvReqs.forEach((r) => list.push({ key: `drv-${r.richiesta_id}`, type: "driver", created_at: r.created_at, status: r.stato, data: r }));
     artReqs.forEach((r) => list.push({ key: `art-${r.richiesta_id}`, type: "artigiani", created_at: r.created_at, status: r.stato, data: r }));
+    genReqs.forEach((r) => list.push({ key: `gen-${r.id}`, type: "generic", created_at: r.created_at, status: (r.brief_answers || {}).stato, data: r }));
     bizReqs.forEach((r) => list.push({ key: `b-${r.request_id}`, type: "biz", created_at: r.created_at, status: r.status, data: r }));
     bookings.forEach((b) => list.push({ key: `k-${b.booking_id}`, type: "booking", created_at: b.created_at, status: b.status, data: b }));
     payments.forEach((p) => list.push({ key: `p-${p.request_id}`, type: "payment", created_at: p.created_at, status: "completed", data: p }));
@@ -73,7 +84,7 @@ function CustomerRequests() {
       const dbt = new Date(b.created_at || 0).getTime();
       return sortDir === "newest" ? dbt - da : da - dbt;
     });
-  }, [missions, richieste, bsReqs, drvReqs, artReqs, bizReqs, bookings, payments, filter, sortDir]);
+  }, [missions, richieste, bsReqs, drvReqs, artReqs, genReqs, bizReqs, bookings, payments, filter, sortDir]);
 
   const empty = merged.length === 0;
 
@@ -101,6 +112,7 @@ function CustomerRequests() {
   const doCancelMission = (id: string) => confirmCancel(async () => { await api.cancelMission(id); load(); });
   const doCancelBiz = (id: string) => confirmCancel(async () => { await api.cancelBusinessRequest(id); load(); });
   const doCancelOrder = (id: string) => confirmCancel(async () => { await api.cancelOrder(id); load(); });
+  const doCancelGeneric = (id: string) => confirmCancel(async () => { await api.cancelGenericRequest(id); load(); });
 
   const renderPulizie = (r: any) => (
     <Pressable key={`rq-${r.richiesta_id}`} testID={`req-pulizie-${r.richiesta_id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/pulizie/${r.richiesta_id}`)}>
@@ -173,6 +185,29 @@ function CustomerRequests() {
       </View>
     </Pressable>
   );
+
+  // BLOCCO 9: card per il flusso "a preventivo" delle 5 categorie senza
+  // verticale dedicata (sarta/pet-sitting/hospitality/assistenza/tecnico).
+  const renderGeneric = (r: any) => {
+    const brief = r.brief_answers || {};
+    const proposte = brief.proposte || [];
+    return (
+      <Pressable key={`gen-${r.id}`} testID={`req-generic-${r.id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/requests/${r.id}`)}>
+        <Text style={{ fontSize: 26 }}>{r.category?.icon || "🧩"}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>{r.category?.name_it || r.title}</Text>
+          <Text style={styles.cardSub}>{brief.note || ""} · {proposte.length} {t("proposalsLabel")}</Text>
+          <View style={{ marginTop: 6 }}><StatusPill status={brief.stato} /></View>
+          {brief.stato === "pubblicata" ? (
+            <Pressable testID={`cancel-generic-${r.id}`} style={styles.cancelBtn} onPress={() => doCancelGeneric(r.id)}>
+              <Text style={styles.cancelText}>✕ {t("cancelRequest")}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {r.price_agreed ? <Text style={styles.cardPrice}>€{Number(r.price_agreed).toFixed(2)}</Text> : null}
+      </Pressable>
+    );
+  };
 
   const renderBiz = (r: any) => (
     <View key={`b-${r.request_id}`} testID={`req-biz-${r.request_id}`} style={[styles.card, { flexDirection: "column", alignItems: "stretch" }, shadow.card]}>
@@ -279,6 +314,7 @@ function CustomerRequests() {
             : item.type === "babysitting" ? renderBabysitting(item.data)
             : item.type === "driver" ? renderDriver(item.data)
             : item.type === "artigiani" ? renderArtigiani(item.data)
+            : item.type === "generic" ? renderGeneric(item.data)
             : item.type === "biz" ? renderBiz(item.data)
             : item.type === "booking" ? renderBooking(item.data)
             : renderPayment(item.data)
@@ -293,12 +329,21 @@ function ProviderJobs() {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<any>(null);
   const [jobs, setJobs] = useState<any[]>([]);
+  // BLOCCO 9: richieste "a preventivo" (sarta/pet-sitting/hospitality/
+  // assistenza/tecnico) nelle categorie che il provider ha tra le skills —
+  // separate da /provider/jobs (che copre solo le 4 verticali dedicate,
+  // vedi richieste.py) perché usano un matching diverso (skills.contains,
+  // non provider_invitati precalcolato).
+  const [genAvailable, setGenAvailable] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<"active" | "completed">("active");
   const router = useRouter();
 
   const load = useCallback(async () => {
-    try { const [e, j] = await Promise.all([api.earnings(), api.providerJobs()]); setData(e); setJobs(j || []); } catch {}
+    const [e, j, ga] = await Promise.allSettled([api.earnings(), api.providerJobs(), api.availableGenericRequests()]);
+    if (e.status === "fulfilled") setData(e.value);
+    if (j.status === "fulfilled") setJobs(j.value || []);
+    if (ga.status === "fulfilled") setGenAvailable(ga.value || []);
   }, []);
   useFocusEffect(useCallback(() => { load(); const iv = setInterval(load, 6000); return () => clearInterval(iv); }, [load]));
 
@@ -328,6 +373,22 @@ function ProviderJobs() {
             <View style={styles.stat}><Text style={styles.statVal}>€{(data?.pending || 0).toFixed(0)}</Text><Text style={styles.statLbl}>{t("pending")}</Text></View>
           </View>
         </View>
+
+        {genAvailable.length > 0 ? (
+          <>
+            <Text style={styles.sectionLabel}>{t("availableRequests")}</Text>
+            {genAvailable.map((r: any) => (
+              <Pressable key={`gen-av-${r.id}`} testID={`gen-available-${r.id}`} style={[styles.card, shadow.card]} onPress={() => router.push(`/requests/${r.id}` as any)}>
+                <Text style={{ fontSize: 26 }}>{r.category?.icon || "🧩"}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle} numberOfLines={1}>{r.category?.name_it || r.title}</Text>
+                  <Text style={styles.cardSub}>{r.brief_answers?.note || ""}{r.my_proposal ? ` · ${t("proposalSent")}` : ""}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+              </Pressable>
+            ))}
+          </>
+        ) : null}
 
         <View style={styles.jobFilter}>
           {(["active", "completed"] as const).map((f) => (
@@ -362,6 +423,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, backgroundColor: colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: colors.divider },
   headerTitle: { fontSize: fsize["2xl"], fontFamily: font.bold, color: colors.onSurface },
+  sectionLabel: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.sm, marginTop: spacing.sm },
   empty: { alignItems: "center", padding: spacing["3xl"], gap: spacing.md },
   emptyText: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted },
   card: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.md, gap: spacing.md },

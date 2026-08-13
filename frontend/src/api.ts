@@ -115,6 +115,23 @@ export const api = {
   categories: () => request("/categories/home"),
   getCategory: (id: string) => request(`/categories/${id}`),
 
+  // BLOCCO 9 (fix "pagina bianca"/"il servizio non viene salvato" per le
+  // categorie senza router dedicato — sarta, pet sitting, hospitality,
+  // assistenza, tecnico): flusso generico "a preventivo", vedi
+  // backend/routers/generic_requests.py. Nessun pagamento in piattaforma
+  // (stesso modello di business.py) — il prezzo si concorda con il
+  // provider dopo la sua proposta.
+  createGenericRequest: (data: any) => request("/requests/generic", { method: "POST", body: JSON.stringify(data) }),
+  myGenericRequests: () => request("/requests/generic/mine"),
+  availableGenericRequests: () => request("/requests/generic/available"),
+  getGenericRequest: (id: string) => request(`/requests/generic/${id}`),
+  proposeGenericRequest: (id: string, price: number, message?: string) =>
+    request(`/requests/generic/${id}/propose`, { method: "POST", body: JSON.stringify({ price, message: message || "" }) }),
+  confirmGenericRequest: (id: string, provider_id: string) =>
+    request(`/requests/generic/${id}/confirm`, { method: "POST", body: JSON.stringify({ provider_id }) }),
+  cancelGenericRequest: (id: string) => request(`/requests/generic/${id}/cancel`, { method: "POST" }),
+  completeGenericRequest: (id: string) => request(`/requests/generic/${id}/complete`, { method: "POST" }),
+
   // wallet
   wallet: () => request("/wallet"),
   addFunds: (amount: number) => request("/wallet/add", { method: "POST", body: JSON.stringify({ amount }) }),

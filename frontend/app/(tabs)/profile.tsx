@@ -52,7 +52,13 @@ export default function ProfileTab() {
   const isProviderRole = isProvider && !isBusinessProfile;
   const isBusiness = isProvider && isBusinessProfile;
   const services: string[] = user?.services || [];
-  const vStatus = user?.verification_status || "unverified";
+  // BLOCCO 9 (fix "verifica identità... ancora non è attivo"): il backend
+  // (profiles_provider.kyc_status, vedi routers/provider_onboarding.py)
+  // produce null/not_started/pending/approved/rejected — MAI la stringa
+  // "verified" con cui questo file veniva confrontato, quindi restava
+  // "non verificato" anche dopo l'approvazione admin. Normalizzato qui,
+  // un solo punto, invece di toccare ogni confronto sotto.
+  const vStatus = user?.verification_status === "approved" ? "verified" : (user?.verification_status || "unverified");
 
   const loadTrust = useCallback(async () => {
     try { setTrust(await api.trust()); } catch {}

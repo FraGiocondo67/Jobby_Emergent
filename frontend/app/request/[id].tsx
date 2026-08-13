@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -22,10 +22,15 @@ export default function RequestScreen() {
   const insets = useSafeAreaInsets();
 
   const [cat, setCat] = useState<any>(null);
+  const [loadError, setLoadError] = useState(false);
   const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [address, setAddress] = useState("Via Roma 12, Treviso");
-  const [coords, setCoords] = useState(TREVISO);
-  const [date, setDate] = useState("2026-06-20");
+  const [note, setNote] = useState("");
+  const [address, setAddress] = useState("");
+  const [coords, setCoords] = useState<typeof TREVISO | null>(null);
+  // BLOCCO 9: prima era hardcoded a "2026-06-20" — una data ormai fissa nel
+  // codice, mai realmente inviata da nessun submit funzionante (vedi sotto).
+  // Ora che il submit salva davvero, va calcolata al mount.
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState("10:00");
   const [budget, setBudget] = useState("");
   const [loading, setLoading] = useState(false);
@@ -39,10 +44,12 @@ export default function RequestScreen() {
       try {
         const c = await api.getCategory(id as string);
         setCat(c);
-        const init: Record<string, any> = {};
-        (c.questions || []).forEach((q: any) => { if (q.default !== undefined) init[q.id] = q.default; });
-        setAnswers(init);
-      } catch {}
+      } catch {
+        // BLOCCO 9 (fix "pagina bianca"): prima l'errore veniva ingoiato e
+        // `cat` restava null per sempre (return <View /> vuota, sotto).
+        // Ora c'è uno stato di errore visibile con un modo per uscire.
+        setLoadError(true);
+      }
     })();
   }, [id]);
 
@@ -67,22 +74,36 @@ export default function RequestScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setSuccess(true);
       } else {
-        const m = await api.createMission({
-          category: id as string,
-          service_type: id as string,
-          config: answers,
-          address, lat: coords.lat, lng: coords.lng,
-          date, time,
-          duration_hours: duration,
-          recurrence: "once",
-          budget: budget.trim() ? Number(budget) : null,
+        // BLOCCO 9 (fix "il servizio non viene salvato"): api.createMission()
+        // chiamava POST /missions, mai montato su questo backend (motore
+        // generico ritirato nel Blocco 5) — falliva sempre in silenzio.
+        // Ora usa il flusso "a preventivo" dedicato (generic_requests.py).
+        await api.createGenericRequest({
+          cat_id: id as string,
+          answers,
+          note: note.trim() || budget.trim() ? `${note.trim()}${budget.trim() ? ` (budget indicativo: €${budget.trim()})` : ""}`.trim() : "",
+          address: address.trim(),
+          lat: coords?.lat, lng: coords?.lng,
+          scheduled_at: date && time ? `${date}T${time}:00` : undefined,
         });
-        router.replace(`/mission/radar?id=${m.mission_id}`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        setSuccess(true);
       }
     } catch (e: any) {
       setLoading(false);
+      Alert.alert(t("error"));
     }
   };
+
+  if (loadError) {
+    return (
+      <View style={[styles.container, styles.successWrap]}>
+        <Text style={{ fontSize: 48 }}>⚠️</Text>
+        <Text style={styles.successTitle}>{t("error")}</Text>
+        <Button testID="request-error-back" label={t("done")} onPress={() => router.back()} style={{ marginTop: spacing.xl, minWidth: 200 }} />
+      </View>
+    );
+  }
 
   if (!cat) return <View style={styles.container} />;
 
@@ -111,52 +132,55 @@ export default function RequestScreen() {
           <Text style={styles.bigEmoji}>{cat.emoji}</Text>
           <Text style={styles.title}>{cat.label[lang]}</Text>
 
-          {(cat.questions || []).map((q: any) => (
-            <View key={q.id} style={{ marginTop: spacing.lg }}>
-              <Text style={styles.label}>{q.label[lang]}</Text>
-              {q.type === "select" && (
+          {/* BLOCCO 9 (fix "pagina bianca"): il rendering qui sotto
+              assumeva una forma delle domande mai realmente prodotta da
+              nessun backend (q.label[lang], q.options[i].label[lang],
+              tipi "select"/"number"/"date"/"time") — la vera colonna
+              service_categories.questions (vedi routers/categories.py) ha
+              {id, text, type: "choice"|"multi", options: string[]}, tutta
+              in italiano. Riscritto per la forma reale. */}
+          {(cat.questions || []).map((q: any) => {
+            const isMulti = q.type === "multi";
+            const selected: string[] = isMulti ? (answers[q.id] || []) : [];
+            return (
+              <View key={q.id} style={{ marginTop: spacing.lg }}>
+                <Text style={styles.label}>{q.text}</Text>
                 <View style={styles.optWrap}>
-                  {q.options.map((o: any) => (
-                    <Pressable
-                      key={o.id}
-                      testID={`opt-${q.id}-${o.id}`}
-                      style={[styles.opt, answers[q.id] === o.id && styles.optActive]}
-                      onPress={() => setAnswers({ ...answers, [q.id]: o.id })}
-                    >
-                      <Text style={[styles.optText, answers[q.id] === o.id && styles.optTextActive]}>{o.label[lang]}</Text>
-                    </Pressable>
-                  ))}
+                  {(q.options || []).map((o: string) => {
+                    const isOn = isMulti ? selected.includes(o) : answers[q.id] === o;
+                    return (
+                      <Pressable
+                        key={o}
+                        testID={`opt-${q.id}-${o}`}
+                        style={[styles.opt, isOn && styles.optActive]}
+                        onPress={() => {
+                          if (isMulti) {
+                            const next = selected.includes(o) ? selected.filter((x) => x !== o) : [...selected, o];
+                            setAnswers({ ...answers, [q.id]: next });
+                          } else {
+                            setAnswers({ ...answers, [q.id]: o });
+                          }
+                        }}
+                      >
+                        <Text style={[styles.optText, isOn && styles.optTextActive]}>{o}</Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-              )}
-              {q.type === "number" && (
-                <View style={styles.stepper}>
-                  <Pressable testID={`${q.id}-minus`} style={styles.stepBtn} onPress={() => setAnswers({ ...answers, [q.id]: Math.max(q.min, (answers[q.id] ?? q.default) - 1) })}>
-                    <Ionicons name="remove" size={22} color={colors.onSurface} />
-                  </Pressable>
-                  <Text style={styles.stepVal} testID={`${q.id}-value`}>{answers[q.id] ?? q.default}</Text>
-                  <Pressable testID={`${q.id}-plus`} style={styles.stepBtn} onPress={() => setAnswers({ ...answers, [q.id]: Math.min(q.max, (answers[q.id] ?? q.default) + 1) })}>
-                    <Ionicons name="add" size={22} color={colors.onSurface} />
-                  </Pressable>
-                </View>
-              )}
-              {q.type === "text" && (
-                <TextInput
-                  testID={`input-${q.id}`}
-                  style={styles.input}
-                  value={answers[q.id] || ""}
-                  onChangeText={(v) => setAnswers({ ...answers, [q.id]: v })}
-                  placeholder={q.placeholder?.[lang] || ""}
-                  placeholderTextColor={colors.muted}
-                />
-              )}
-              {q.type === "date" && (
-                <DateField testID={`input-${q.id}`} value={answers[q.id] || ""} onChange={(v) => setAnswers({ ...answers, [q.id]: v })} lang={lang} />
-              )}
-              {q.type === "time" && (
-                <TimeField testID={`input-${q.id}`} value={answers[q.id] || ""} onChange={(v) => setAnswers({ ...answers, [q.id]: v })} />
-              )}
-            </View>
-          ))}
+              </View>
+            );
+          })}
+
+          <Text style={styles.label}>{t("presentation")}</Text>
+          <TextInput
+            testID="request-note"
+            style={[styles.input, { minHeight: 80, textAlignVertical: "top" }]}
+            value={note}
+            onChangeText={setNote}
+            placeholder=""
+            placeholderTextColor={colors.muted}
+            multiline
+          />
 
           {!isPayment && (
             <>
