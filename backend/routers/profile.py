@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from core_pg import db
 from deps_pg import get_current_user
+from models import PriceItem
 
 router = APIRouter()
 
@@ -44,6 +45,13 @@ class ProfilePatchIn(BaseModel):
     online: Optional[bool] = None
     payout_details: Optional[Dict[str, Any]] = None
     business_data: Optional[Dict[str, Any]] = None
+    # BLOCCO 9 (fix "il listino prezzi salvato da app/profile-details.tsx non
+    # si vede più da nessuna parte"): profiles_provider.price_list esiste da
+    # sempre in lettura (routers/auth.py, flat["price_list"]) ma questo
+    # modello non aveva mai avuto un campo per scriverlo — pydantic ignora i
+    # campi sconosciuti, quindi il PUT veniva accettato (200) ma non
+    # scriveva nulla. Stesso bug del campo `online` sopra.
+    price_list: Optional[List[PriceItem]] = None
 
 
 # BLOCCO 9: la app Expo chiama questa route con PUT (src/api.ts:
@@ -99,6 +107,8 @@ async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
             pp_updates["payout_details"] = body.payout_details
         if body.business_data is not None:
             pp_updates["business_data"] = body.business_data
+        if body.price_list is not None:
+            pp_updates["price_list"] = [p.dict() for p in body.price_list]
         if pp_updates:
             db.table("profiles_provider").update(pp_updates).eq("user_id", user_id).execute()
 

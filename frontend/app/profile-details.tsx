@@ -11,6 +11,7 @@ import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const SLOTS = ["morning", "afternoon", "evening"];
 
 export default function ProfileDetails() {
   const { user, refresh } = useAuth();
@@ -22,17 +23,28 @@ export default function ProfileDetails() {
   const [phone, setPhone] = useState(user?.phone || "");
   const [email, setEmail] = useState(user?.contact_email || user?.email || "");
   const [preferences, setPreferences] = useState(user?.preferences || "");
-  const [days, setDays] = useState<string[]>(user?.availability?.days || []);
-  const [start, setStart] = useState(user?.availability?.start || "09:00");
-  const [end, setEnd] = useState(user?.availability?.end || "18:00");
-  const [priceList, setPriceList] = useState<any[]>(user?.price_list || []);
+  // BLOCCO 9 (fix "la disponibilità impostata in onboarding non si vede/
+  // salva più dal profilo"): questa schermata usava una forma
+  // {days[], start, end} (fascia oraria unica) mai esistita lato backend —
+  // ProfilePatchIn (routers/profile.py) non ha né un campo `availability`
+  // né legge/scrive user.availability da nessuna parte: il PUT veniva
+  // accettato (pydantic ignora campi sconosciuti) ma non salvava nulla, e
+  // la lettura iniziale (user?.availability?.days) era sempre vuota. La
+  // disponibilità VERA, impostata durante l'onboarding provider, vive in
+  // profiles_provider.time_slots — {giorno: {morning/afternoon/evening:
+  // bool}} — già esposta in GET /auth/me come user.provider_profile.
+  // time_slots e già salvata con PUT /onboarding/availability (stesso
+  // endpoint/schermata di app/provider-onboarding.tsx). Riallineato qui a
+  // quello, invece di reinventare un formato incompatibile.
+  const [timeSlots, setTimeSlots] = useState<Record<string, Record<string, boolean>>>(user?.provider_profile?.time_slots || {});
+  const [priceList, setPriceList] = useState<any[]>(user?.provider_profile?.price_list || user?.price_list || []);
   const [loading, setLoading] = useState(false);
 
   const isProvider = user?.role === "provider" || user?.role === "business";
 
-  const toggleDay = (d: string) => {
+  const toggleSlot = (d: string, s: string) => {
     Haptics.selectionAsync().catch(() => {});
-    setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
+    setTimeSlots((prev) => ({ ...prev, [d]: { ...(prev[d] || {}), [s]: !(prev[d]?.[s]) } }));
   };
   const addItem = () => setPriceList((p) => [...p, { name: "", price: "", unit: "" }]);
   const updItem = (i: number, k: string, v: string) => setPriceList((p) => p.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
@@ -40,9 +52,8 @@ export default function ProfileDetails() {
 
   const save = async () => {
     setLoading(true);
-    const payload: any = { address, phone, contact_email: email, preferences };
+    const payload: any = { address, phone };
     if (isProvider) {
-      payload.availability = { days, start, end };
       payload.price_list = priceList
         .filter((it) => it.name.trim())
         .map((it) => ({ name: it.name.trim(), price: Number(it.price) || 0, unit: (it.unit || "").trim() }));
@@ -52,6 +63,7 @@ export default function ProfileDetails() {
       // con un utente — vedi fix analogo in app/(tabs)/index.tsx
       // (toggleOnline). refresh() richiama GET /auth/me.
       await api.updateProfile(payload);
+      if (isProvider) await api.setAvailability(timeSlots);
       await refresh();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       router.back();
@@ -85,23 +97,20 @@ export default function ProfileDetails() {
           {isProvider ? (
             <>
               <Text style={styles.blockTitle}>{t("availability")}</Text>
-              <Text style={styles.label}>{t("workingDays")}</Text>
-              <View style={styles.daysRow}>
-                {DAYS.map((d) => {
-                  const on = days.includes(d);
-                  return (
-                    <Pressable key={d} testID={`day-${d}`} style={[styles.dayChip, on && styles.dayChipOn]} onPress={() => toggleDay(d)}>
-                      <Text style={[styles.dayText, on && { color: "#fff" }]}>{t(`day_${d}` as any)}</Text>
+              <View style={styles.availHead}>
+                <View style={{ width: 48 }} />
+                {SLOTS.map((s) => <Text key={s} style={styles.availSlotHead}>{t(`slot_${s}` as any)}</Text>)}
+              </View>
+              {DAYS.map((d) => (
+                <View key={d} style={styles.availRow}>
+                  <Text style={styles.availDay}>{t(`day_${d}` as any)}</Text>
+                  {SLOTS.map((s) => (
+                    <Pressable key={s} testID={`av-${d}-${s}`} style={[styles.availCell, timeSlots[d]?.[s] && styles.availCellOn]} onPress={() => toggleSlot(d, s)}>
+                      {timeSlots[d]?.[s] ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
                     </Pressable>
-                  );
-                })}
-              </View>
-              <Text style={styles.label}>{t("workingHours")}</Text>
-              <View style={styles.row2}>
-                <TextInput testID="time-start" style={[styles.input, { flex: 1 }]} value={start} onChangeText={setStart} placeholder="09:00" placeholderTextColor={colors.muted} />
-                <Text style={styles.dash}>–</Text>
-                <TextInput testID="time-end" style={[styles.input, { flex: 1 }]} value={end} onChangeText={setEnd} placeholder="18:00" placeholderTextColor={colors.muted} />
-              </View>
+                  ))}
+                </View>
+              ))}
 
               <View style={styles.priceHead}>
                 <Text style={styles.blockTitle}>{t("priceList")}</Text>
@@ -139,10 +148,12 @@ const styles = StyleSheet.create({
   input: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: fsize.lg, fontFamily: font.regular, color: colors.onSurface },
   textarea: { minHeight: 90, textAlignVertical: "top" },
   blockTitle: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.onSurface, marginTop: spacing.xl },
-  daysRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  dayChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
-  dayChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  dayText: { fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurfaceTertiary },
+  availHead: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm },
+  availSlotHead: { flex: 1, textAlign: "center", fontSize: fsize.sm, fontFamily: font.medium, color: colors.muted },
+  availRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm },
+  availDay: { width: 48, fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface },
+  availCell: { flex: 1, height: 40, marginHorizontal: 3, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center" },
+  availCellOn: { backgroundColor: colors.brand, borderColor: colors.brand },
   row2: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   dash: { fontSize: fsize.xl, color: colors.muted },
   priceHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
