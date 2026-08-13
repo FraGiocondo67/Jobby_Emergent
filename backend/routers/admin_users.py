@@ -48,7 +48,7 @@ async def admin_list_users(
     fetch_limit = 1000 if q else max(1, min(limit, 500))
     query = (
         db.table("users")
-        .select("id, email, full_name, phone, role, status, preferred_lang, is_email_verified, created_at")
+        .select("id, email, full_name, phone, role, status, preferred_lang, is_email_verified, created_at, last_login_at")
         .order("created_at", desc=True)
         .limit(fetch_limit)
     )
@@ -67,6 +67,22 @@ async def admin_list_users(
             or ql in (r.get("phone") or "").lower()
         ]
         rows = rows[offset: offset + limit]
+
+    # BLOCCO 9: Trust score esiste già su profiles_client/profiles_provider
+    # (mai esposto in nessun pannello finora, segnalato dall'utente
+    # confrontando col vecchio pannello Emergent) — join Python su un batch
+    # limitato, stesso pattern pragmatico già usato altrove nel progetto
+    # (es. provider_onboarding.admin_pending) invece di una vera JOIN SQL.
+    ids = [r["id"] for r in rows]
+    if ids:
+        cp = db.table("profiles_client").select("user_id, trust_score").in_("user_id", ids).execute()
+        pp = db.table("profiles_provider").select("user_id, trust_score").in_("user_id", ids).execute()
+        client_trust = {row["user_id"]: row.get("trust_score") for row in (cp.data or [])}
+        provider_trust = {row["user_id"]: row.get("trust_score") for row in (pp.data or [])}
+        for r in rows:
+            r["client_trust_score"] = client_trust.get(r["id"])
+            r["provider_trust_score"] = provider_trust.get(r["id"])
+
     total = len(rows) if q else None
     return {"users": rows, "count": total if total is not None else len(rows)}
 
