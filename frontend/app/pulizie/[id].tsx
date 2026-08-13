@@ -125,9 +125,9 @@ export default function RichiestaDetail() {
         {isClient && r.binario === "persona_lf" && bors ? (
           <View style={[styles.card, shadow.card]}>
             <Text style={styles.sectionLabel}>{t("lfBorsellino")}</Text>
-            <Text style={styles.borsVal}>€{bors.borsellino.toFixed(2)}</Text>
+            <Text style={styles.borsVal}>€{(bors.borsellino || 0).toFixed(2)}</Text>
             {bors.alert ? <Text style={styles.borsAlert}>⚠️ {t("lfCeilingAlert")}</Text> : null}
-            <Text style={styles.borsSub}>{t("lfYearUsed")}: €{bors.year_total.toFixed(2)} / {bors.ceiling_eur} · {bors.year_hours}h / {bors.ceiling_hours}h</Text>
+            <Text style={styles.borsSub}>{t("lfYearUsed")}: €{(bors.year_total || 0).toFixed(2)} / {bors.ceiling_eur} · {bors.year_hours}h / {bors.ceiling_hours}h</Text>
             <Pressable testID="lf-topup" style={styles.topupBtn} onPress={topup} disabled={busy}><Text style={styles.topupText}>+ €100 {t("lfTopup")}</Text></Pressable>
           </View>
         ) : null}
@@ -140,7 +140,7 @@ export default function RichiestaDetail() {
               <View key={p.provider_id} style={[styles.propCard, shadow.card]} testID={`prop-${p.provider_id}`}>
                 <View style={styles.rowBetween}>
                   <Text style={styles.propName}>{p.provider_nome}</Text>
-                  <Text style={styles.propPrice}>€{p.price.toFixed(2)}</Text>
+                  <Text style={styles.propPrice}>€{(p.price || 0).toFixed(2)}</Text>
                 </View>
                 <Text style={styles.propMeta}>⭐ {(p.provider_rating || 0).toFixed(1)} · Trust {Math.round(p.provider_trust || 0)}</Text>
                 {p.variation_reason ? <Text style={styles.propVar}>{t("priceVaried")}: {t(`vr_${p.variation_reason}` as any) || p.variation_reason}</Text> : null}
