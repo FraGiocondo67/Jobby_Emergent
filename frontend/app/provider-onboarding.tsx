@@ -96,7 +96,17 @@ export default function ProviderOnboarding() {
   const uploadDoc = async (kind: string, useCamera = true) => {
     const img = await pickImage(useCamera);
     if (!img) return;
-    try { await api.uploadProviderDoc(kind, img); setDocs((d) => ({ ...d, [kind]: img })); } catch { Alert.alert(t("error")); }
+    try {
+      // BLOCCO 9 (fix "manca il casellario giudiziale nella lista documenti
+      // durante l'onboarding"): il casellario ha un endpoint dedicato
+      // (POST /babysitting/casellario) che oltre a salvare l'immagine
+      // resetta casellario_verified=false e imposta casellario_uploaded_at —
+      // non è un semplice campo generico come gli altri (DOC_KIND_FIELDS),
+      // quindi non passa per api.uploadProviderDoc.
+      if (kind === "casellario") await api.bsUploadCasellario(img);
+      else await api.uploadProviderDoc(kind, img);
+      setDocs((d) => ({ ...d, [kind]: img }));
+    } catch { Alert.alert(t("error")); }
   };
 
   const useMyLocation = async () => {
@@ -158,11 +168,12 @@ export default function ProviderOnboarding() {
   const signDelega = async () => {
     if (!delegaName.trim()) return;
     // BLOCCO 9: prima bastava digitare il nome — ora serve anche una firma
-    // disegnata a mano (vedi SignaturePad), non solo il nome stampato.
-    const signatureSvg = signaturePadRef.current?.toDataUri();
-    if (!signatureSvg) { Alert.alert(t("signHere")); return; }
+    // disegnata a mano (vedi SignaturePad). getDataUri() è asincrono (la
+    // WebView del canvas risponde via postMessage), non un valore sincrono.
     setBusy(true);
-    try { await api.signDelega(delegaName.trim(), signatureSvg); await api.setInps(false); setDelegaSigned(true); }
+    const signaturePng = await signaturePadRef.current?.getDataUri();
+    if (!signaturePng) { setBusy(false); Alert.alert(t("signHere")); return; }
+    try { await api.signDelega(delegaName.trim(), signaturePng); await api.setInps(false); setDelegaSigned(true); }
     catch { Alert.alert(t("error")); } finally { setBusy(false); }
   };
 
@@ -192,6 +203,7 @@ export default function ProviderOnboarding() {
         const labels: Record<string, string> = {
           id_document_front: t("idFront"), id_document_back: t("idBack"),
           selfie_document: t("selfieDoc"), visura_camerale: t("visuraDoc"),
+          casellario_doc: t("bsCasellario"),
         };
         const missing = missingMatch[1].split(",").map((k) => labels[k] || k).join(", ");
         Alert.alert(t("error"), missing);
@@ -332,6 +344,15 @@ export default function ProviderOnboarding() {
               registra come società/impresa (profileType "impresa"). */}
           {(intendedRole === "business" || profileType === "impresa") ? (
             <DocBox testID="doc-visura" label={t("visuraDoc")} done={!!docs.visura} onPress={() => uploadDoc("visura", false)} />
+          ) : null}
+          {/* BLOCCO 9 (fix "manca il casellario giudiziario nella lista
+              documenti durante l'on boarding"): prima era raggiungibile solo
+              da una schermata separata (app/babysitting/profilo.tsx), mai
+              proposta durante il wizard di onboarding. activityCats è già
+              popolato a questo punto (step "attivita" viene prima di "docs"
+              in entrambe le sequenze dello STEPS). */}
+          {activityCats.includes("babysitting") ? (
+            <DocBox testID="doc-casellario" label={t("bsCasellario")} done={!!docs.casellario} onPress={() => uploadDoc("casellario", false)} />
           ) : null}
         </>);
       case "lf_delega":

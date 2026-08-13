@@ -6,7 +6,7 @@ bypassando questo backend. Stesso identico contratto di quella route (stessi
 campi, stesso ordinamento, richiede solo un utente autenticato qualsiasi
 ruolo) cosi la conversione a proxy non cambia comportamento per chi la
 chiama gia oggi."""
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -91,6 +91,36 @@ async def list_categories_for_app(_=Depends(get_current_user)):
     return {"standard": standard, "proximity": proximity, "payment": payment, "providers_online": providers_online}
 
 
+# BLOCCO 9 (fix bug "pagina bianca" per le categorie senza router dedicato,
+# sarta/pet-sitting/hospitality/assistenza/tecnico): il frontend
+# (app/request/[id].tsx) chiama GET /categories/{id} dall'epoca Mongo
+# (catalog_routes.py, ritirato nel Blocco 7) — non esisteva alcuna route
+# equivalente su questo router Postgres, quindi la fetch falliva sempre con
+# 404, l'eccezione veniva ingoiata silenziosamente e la pagina restava
+# vuota per sempre. {cat_id} qui è lo slug/cat_id esposto alla app (stesso
+# valore restituito da _shape_for_app), non lo uuid interno. DEVE restare
+# DOPO /categories/home nel file — altrimenti {cat_id} intercetterebbe
+# anche "/categories/home" (Starlette risolve le route nell'ordine di
+# registrazione, non per specificità).
+@router.get("/categories/{cat_id}")
+async def get_category(cat_id: str, _=Depends(get_current_user)):
+    res = db.table("service_categories").select(
+        "id, slug, name_it, name_en, icon, category_type, requires_kyc, questions, is_active"
+    ).eq("slug", cat_id).limit(1).execute()
+    if not res.data:
+        # alcuni cat_id esposti alla app sono override (es. "pulizie" ->
+        # slug reale "housekeeping"): prova lo slug storico come fallback.
+        reverse = {v: k for k, v in _CAT_ID_OVERRIDES.items()}
+        alt = reverse.get(cat_id)
+        if alt:
+            res = db.table("service_categories").select(
+                "id, slug, name_it, name_en, icon, category_type, requires_kyc, questions, is_active"
+            ).eq("slug", alt).limit(1).execute()
+    if not res.data or not res.data[0].get("is_active"):
+        raise HTTPException(status_code=404, detail="category_not_found")
+    return _shape_for_app(res.data[0])
+
+
 # ---------------- admin (pannello jobby-admin, Blocco 9) ----------------
 # Prima di questo blocco NON esisteva alcuna gestione admin delle categorie
 # su Postgres: l'unica esistente (routers/catalog_routes.py: admin_list/
@@ -107,6 +137,15 @@ class CategoryAdminPatchIn(BaseModel):
     sort_order: Optional[int] = None
     requires_kyc: Optional[bool] = None
     is_active: Optional[bool] = None
+    # BLOCCO 9 (richiesta utente: "manca la gestione dei campi (FIELD) con
+    # tutte le parametrizzazioni che ne determinano la tipologia del
+    # servizio"): la colonna service_categories.questions esiste già ed è
+    # già letta/renderizzata dalla app (request/[id].tsx, ogni verticale
+    # dedicata ignora invece questo campo e ha i propri form fissi) — non
+    # esisteva però ALCUN modo admin di modificarla, solo SQL diretto.
+    # Formato atteso, un array di: {"id": "q1", "text": "...",
+    # "type": "choice"|"multi", "options": ["...", ...]}.
+    questions: Optional[List[dict]] = None
 
 
 # BLOCCO 9: mancava del tutto la creazione di nuove categorie da pannello —
@@ -150,7 +189,7 @@ async def admin_create_category(body: CategoryAdminCreateIn, _=Depends(require_a
 async def admin_list_categories(_=Depends(require_admin)):
     res = (
         db.table("service_categories")
-        .select("id, slug, name_it, name_en, icon, category_type, requires_kyc, is_active, sort_order")
+        .select("id, slug, name_it, name_en, icon, category_type, requires_kyc, is_active, sort_order, questions")
         .order("category_type")
         .order("sort_order")
         .execute()

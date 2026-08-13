@@ -15,6 +15,7 @@ from routers import geo
 from routers import stripe_connect
 from routers import admin_users
 from routers import categories
+from routers import generic_requests
 from routers import profile
 from routers import app_home
 import confirm_delivery
@@ -50,6 +51,7 @@ api.include_router(confirm_delivery.router)
 api.include_router(provider_onboarding.router)
 api.include_router(admin_users.router)
 api.include_router(categories.router)
+api.include_router(generic_requests.router)
 api.include_router(profile.router)
 api.include_router(app_home.router)
 # missions.py/bookings.py (motore di matching generico pre-Blocco2, con

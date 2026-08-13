@@ -356,6 +356,12 @@ async def submit_provider(user=Depends(get_current_user)):
     required = ["id_document_front", "id_document_back", "selfie_document"]
     if provider.get("is_proximity_business"):
         required.append("visura_camerale")
+    # BLOCCO 9 (fix "manca il casellario giudiziario nella lista documenti
+    # durante l'on boarding"): chi seleziona babysitting tra le attività deve
+    # anche caricare il casellario prima di poter inviare la candidatura,
+    # non solo trovarlo in una schermata separata post-approvazione.
+    if "babysitting" in (provider.get("skills") or []):
+        required.append("casellario_doc")
     missing = [k for k in required if not documents.get(k)]
     if missing:
         raise HTTPException(status_code=400, detail=f"missing_documents:{','.join(missing)}")

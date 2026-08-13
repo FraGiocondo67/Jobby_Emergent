@@ -1,103 +1,63 @@
-import React, { useRef, useState, forwardRef, useImperativeHandle } from "react";
-import { View, StyleSheet, PanResponder, Pressable, Text } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import React, { useRef, forwardRef, useImperativeHandle } from "react";
+import { View, StyleSheet, Pressable, Text } from "react-native";
+import SignatureScreen, { SignatureViewRef } from "react-native-signature-canvas";
 import { colors, radius, spacing, font, fsize } from "@/src/theme";
 
-/** BLOCCO 9 (fix "la delega all'intermediario deve essere firmata col dito,
- * come una vera firma a penna, non solo un nome digitato"): pad di firma
- * disegnata a mano libera. Nessuna nuova dipendenza — usa PanResponder
- * (core React Native) + react-native-svg (già installato nel progetto,
- * vedi package.json) per disegnare i tratti come un vero Path SVG, non
- * WebView/librerie esterne mai verificate in questo ambiente.
- *
- * Il risultato non viene rasterizzato (avrebbe richiesto react-native-
- * view-shot, non installato e non prebuildabile in Expo Go senza un dev
- * build) — viene esportato come SVG vettoriale vero e proprio, incapsulato
- * in una data URI (`data:image/svg+xml;utf8,...`), compatibile sia con
- * <img src> nel pannello admin sia con qualunque viewer SVG. */
+/** BLOCCO 9 (fix "la firma con il dito non viene memorizzata, sparisce
+ * appena viene fatta"): la prima versione era disegnata a mano con
+ * PanResponder + react-native-svg, dentro una ScrollView — il gesture
+ * responder dello scroll intercettava/terminava il tocco a metà tratto (RN
+ * non garantisce che un PanResponder annidato in una ScrollView mantenga la
+ * responsabilità del gesto), perdendo il disegno prima ancora del rilascio.
+ * Sostituito con react-native-signature-canvas: usa una WebView isolata
+ * (dipendenza già presente nel progetto, react-native-webview, unico peer
+ * richiesto — nessun nuovo modulo nativo, resta compatibile con Expo Go)
+ * che gestisce il canvas HTML5 al suo interno, fuori dalla catena di
+ * gesture RN — niente più conflitto con lo scroll del genitore. L'output è
+ * un vero PNG rasterizzato (data URI base64), non più un SVG vettoriale. */
+
+export type SignaturePadHandle = {
+  getDataUri: () => Promise<string | null>;
+  clear: () => void;
+};
 
 const WIDTH = 320;
 const HEIGHT = 160;
 
-export type SignaturePadHandle = {
-  isEmpty: () => boolean;
-  clear: () => void;
-  toDataUri: () => string | null;
-};
-
-function pointsToPath(points: { x: number; y: number }[]): string {
-  if (points.length === 0) return "";
-  if (points.length === 1) {
-    const p = points[0];
-    return `M ${p.x} ${p.y} L ${p.x + 0.1} ${p.y + 0.1}`;
-  }
-  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
-}
-
 const SignaturePad = forwardRef<SignaturePadHandle, { testID?: string }>(({ testID }, ref) => {
-  const [strokes, setStrokes] = useState<{ x: number; y: number }[][]>([]);
-  const currentStroke = useRef<{ x: number; y: number }[]>([]);
-  const [, forceRender] = useState(0);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => {
-        currentStroke.current = [{ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY }];
-        forceRender((n) => n + 1);
-      },
-      onPanResponderMove: (e) => {
-        currentStroke.current = [...currentStroke.current, { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY }];
-        forceRender((n) => n + 1);
-      },
-      onPanResponderRelease: () => {
-        if (currentStroke.current.length > 0) {
-          setStrokes((prev) => [...prev, currentStroke.current]);
-          currentStroke.current = [];
-        }
-      },
-    })
-  ).current;
+  const sigRef = useRef<SignatureViewRef>(null);
+  const resolverRef = useRef<((v: string | null) => void) | null>(null);
 
   useImperativeHandle(ref, () => ({
-    isEmpty: () => strokes.length === 0,
-    clear: () => {
-      setStrokes([]);
-      currentStroke.current = [];
-      forceRender((n) => n + 1);
-    },
-    toDataUri: () => {
-      if (strokes.length === 0) return null;
-      const paths = strokes
-        .map((s) => `<path d="${pointsToPath(s)}" stroke="#111827" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`)
-        .join("");
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}"><rect width="${WIDTH}" height="${HEIGHT}" fill="#ffffff"/>${paths}</svg>`;
-      return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-    },
+    getDataUri: () =>
+      new Promise<string | null>((resolve) => {
+        resolverRef.current = resolve;
+        // readSignature() è asincrono: il risultato arriva via onOK/onEmpty
+        // (postMessage dalla WebView), non come valore di ritorno diretto.
+        sigRef.current?.readSignature();
+      }),
+    clear: () => sigRef.current?.clearSignature(),
   }));
-
-  const allStrokes = currentStroke.current.length > 0 ? [...strokes, currentStroke.current] : strokes;
 
   return (
     <View>
-      <View testID={testID} style={styles.pad} {...panResponder.panHandlers}>
-        <Svg width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
-          {allStrokes.map((s, i) => (
-            <Path key={i} d={pointsToPath(s)} stroke="#111827" strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          ))}
-        </Svg>
-        {allStrokes.length === 0 ? <Text style={styles.hint}>Firma qui</Text> : null}
+      <View testID={testID} style={styles.wrap}>
+        <SignatureScreen
+          ref={sigRef}
+          onOK={(sig: string) => {
+            resolverRef.current?.(sig);
+            resolverRef.current = null;
+          }}
+          onEmpty={() => {
+            resolverRef.current?.(null);
+            resolverRef.current = null;
+          }}
+          autoClear={false}
+          descriptionText=""
+          webStyle=".m-signature-pad--footer { display: none; margin: 0; } .m-signature-pad--body { border: none; } .m-signature-pad { box-shadow: none; border: none; margin: 0; } body,html { background-color: #ffffff; height: 100%; }"
+        />
       </View>
-      <Pressable
-        testID={testID ? `${testID}-clear` : undefined}
-        onPress={() => {
-          setStrokes([]);
-          currentStroke.current = [];
-          forceRender((n) => n + 1);
-        }}
-        style={styles.clearBtn}
-      >
+      <Pressable testID={testID ? `${testID}-clear` : undefined} onPress={() => sigRef.current?.clearSignature()} style={styles.clearBtn}>
         <Text style={styles.clearText}>Cancella firma</Text>
       </Pressable>
     </View>
@@ -108,7 +68,7 @@ SignaturePad.displayName = "SignaturePad";
 export default SignaturePad;
 
 const styles = StyleSheet.create({
-  pad: {
+  wrap: {
     width: WIDTH,
     height: HEIGHT,
     backgroundColor: "#fff",
@@ -117,10 +77,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignSelf: "center",
     overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
   },
-  hint: { position: "absolute", color: colors.muted, fontSize: fsize.base, fontFamily: font.regular },
   clearBtn: { alignSelf: "center", marginTop: spacing.sm },
   clearText: { color: colors.brand, fontSize: fsize.sm, fontFamily: font.medium },
 });
