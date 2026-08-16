@@ -9,6 +9,7 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
+import { pickLabel } from "@/src/i18n";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
@@ -63,7 +64,7 @@ function CustomerHome() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const filtered = useMemo(
-    () => tiles.filter((c) => c.label[lang].toLowerCase().includes(query.toLowerCase())),
+    () => tiles.filter((c) => pickLabel(c.label, lang).toLowerCase().includes(query.toLowerCase())),
     [tiles, query, lang]
   );
 
@@ -148,7 +149,7 @@ function CustomerHome() {
                 ) : null}
                 <Text style={styles.tileEmoji}>{c.emoji}</Text>
                 <Text style={[styles.tileLabel, c.accent === "purple" && { color: colors.purple }, c.accent === "green" && { color: colors.green }]}>
-                  {c.label[lang]}
+                  {pickLabel(c.label, lang)}
                 </Text>
               </Pressable>
             ))}

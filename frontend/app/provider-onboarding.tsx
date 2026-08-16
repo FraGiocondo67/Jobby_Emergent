@@ -8,6 +8,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
+import { pickLabel } from "@/src/i18n";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
@@ -324,7 +325,7 @@ export default function ProviderOnboarding() {
               return (
                 <Pressable key={c.cat_id} testID={`onb-activity-${c.cat_id}`} style={[styles.actChip, on && styles.actChipOn]} onPress={() => toggleActivity(c.cat_id)}>
                   <Text style={{ fontSize: 22 }}>{c.emoji}</Text>
-                  <Text style={[styles.actChipText, on && { color: "#fff" }]}>{c.label[lang]}</Text>
+                  <Text style={[styles.actChipText, on && { color: "#fff" }]}>{pickLabel(c.label, lang)}</Text>
                   {on ? <Ionicons name="checkmark-circle" size={16} color="#fff" /> : null}
                 </Pressable>
               );

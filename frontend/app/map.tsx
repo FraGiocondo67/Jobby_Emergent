@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
+import { pickLabel } from "@/src/i18n";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Stars } from "@/src/components/UI";
@@ -126,7 +127,7 @@ export default function MapScreen() {
           </Pressable>
           {cats.map((c) => (
             <Pressable key={c.cat_id} testID={`cat-${c.cat_id}`} onPress={() => setCategory(c.cat_id)} style={[styles.catChip, category === c.cat_id && styles.catChipOn]}>
-              <Text style={[styles.catChipText, category === c.cat_id && { color: "#fff" }]}>{c.emoji} {c.label[lang]}</Text>
+              <Text style={[styles.catChipText, category === c.cat_id && { color: "#fff" }]}>{c.emoji} {pickLabel(c.label, lang)}</Text>
             </Pressable>
           ))}
         </ScrollView>

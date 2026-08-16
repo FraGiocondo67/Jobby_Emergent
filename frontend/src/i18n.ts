@@ -1335,6 +1335,24 @@ const baseStrings = {
 
 export type StringKey = keyof typeof baseStrings["en"];
 
+// BLOCCO 9 (fix crash iOS "Cannot read property 'toLowerCase' of undefined"
+// in app/(tabs)/index.tsx, tiles.filter): le etichette delle categorie
+// (service_categories, api.categories()/api.getCategory()) sono bilingue
+// SOLO it/en — `c.label[lang]` in ~19 punti sparsi in 8 schermate diverse
+// (home, attività, onboarding, mappa, richiesta servizio, mestieri
+// Artigiani...) dava per scontato che `lang` fosse sempre "it" o "en".
+// Da quando l'app supporta più lingue, selezionarne una diversa (qualunque,
+// non solo una in particolare) faceva sì che `label[lang]` valesse
+// `undefined` ovunque un'etichetta categoria venisse letta — bastava aprire
+// la Home per andare in crash. Le traduzioni vere dei nomi categoria
+// arriveranno con un lavoro dedicato lato dati (fuori scope di un fix); nel
+// frattempo questo helper centralizza il fallback ovunque, così l'app non
+// va più in crash per nessuna lingua, anche se ne aggiungiamo altre in
+// futuro senza tradurre subito anche le categorie.
+export function pickLabel(label: any, lang: Lang): string {
+  return (label && (label[lang] ?? label.en ?? label.it)) ?? "";
+}
+
 // Import qui in fondo (non in cima al file) solo per leggibilità — ognuno di
 // questi file importa `StringKey` da qui con `import type`, che non crea una
 // dipendenza circolare a runtime (viene rimosso in compilazione), solo un

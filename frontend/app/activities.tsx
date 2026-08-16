@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 import Slider from "@react-native-community/slider";
 import { useAuth } from "@/src/context/AuthContext";
 import { useLang } from "@/src/context/LanguageContext";
+import { pickLabel } from "@/src/i18n";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
@@ -87,7 +88,7 @@ export default function Activities() {
             return (
               <Pressable key={c.cat_id} testID={`activity-${c.cat_id}`} style={[styles.chip, on && styles.chipOn]} onPress={() => toggle(c.cat_id)}>
                 <Text style={{ fontSize: 22 }}>{c.emoji}</Text>
-                <Text style={[styles.chipText, on && { color: "#fff" }]}>{c.label[lang]}</Text>
+                <Text style={[styles.chipText, on && { color: "#fff" }]}>{pickLabel(c.label, lang)}</Text>
                 {on ? <Ionicons name="checkmark-circle" size={16} color="#fff" /> : null}
               </Pressable>
             );

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import { useLang } from "@/src/context/LanguageContext";
+import { pickLabel } from "@/src/i18n";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Button } from "@/src/components/UI";
@@ -70,7 +71,7 @@ export default function RequestScreen() {
     setLoading(true);
     try {
       if (isPayment) {
-        await api.pay({ service_id: id as string, label: cat.label[lang], amount, answers });
+        await api.pay({ service_id: id as string, label: pickLabel(cat.label, lang), amount, answers });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setSuccess(true);
       } else {
@@ -112,7 +113,7 @@ export default function RequestScreen() {
       <View style={[styles.container, styles.successWrap]}>
         <Text style={{ fontSize: 64 }}>✅</Text>
         <Text style={styles.successTitle}>{t("paymentDone")}</Text>
-        <Text style={styles.successSub}>{cat.label[lang]} · €{amount.toFixed(2)}</Text>
+        <Text style={styles.successSub}>{pickLabel(cat.label, lang)} · €{amount.toFixed(2)}</Text>
         <Button testID="done-button" label={t("done")} onPress={() => router.replace("/(tabs)/richieste")} style={{ marginTop: spacing.xl, minWidth: 200 }} />
       </View>
     );
@@ -130,7 +131,7 @@ export default function RequestScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 160 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <Text style={styles.bigEmoji}>{cat.emoji}</Text>
-          <Text style={styles.title}>{cat.label[lang]}</Text>
+          <Text style={styles.title}>{pickLabel(cat.label, lang)}</Text>
 
           {/* BLOCCO 9 (fix "pagina bianca"): il rendering qui sotto
               assumeva una forma delle domande mai realmente prodotta da

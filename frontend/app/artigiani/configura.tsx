@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { useLang } from "@/src/context/LanguageContext";
+import { pickLabel } from "@/src/i18n";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize } from "@/src/theme";
 import { Button } from "@/src/components/UI";
@@ -56,9 +57,9 @@ export default function ArtigianiConfigura() {
   const buildDesc = () => paramList.map((p: any) => {
     const v = params[p.id];
     if (v == null || v === "") return null;
-    if (p.type === "cascade") { const cat = p.options.find((o: any) => o.id === v.categoria); const el = cat?.sub.find((s: any) => s.id === v.elemento); return `${p.label[lang]}: ${cat?.label[lang] || ""}${el ? ` › ${el.label[lang]}` : ""}`; }
-    if (p.type === "select") { const o = p.options.find((x: any) => x.id === v.id); return `${p.label[lang]}: ${o?.label[lang] || ""}${v.text ? ` (${v.text})` : ""}`; }
-    return `${p.label[lang]}: ${v}`;
+    if (p.type === "cascade") { const cat = p.options.find((o: any) => o.id === v.categoria); const el = cat?.sub.find((s: any) => s.id === v.elemento); return `${pickLabel(p.label, lang)}: ${pickLabel(cat?.label, lang) || ""}${el ? ` › ${pickLabel(el.label, lang)}` : ""}`; }
+    if (p.type === "select") { const o = p.options.find((x: any) => x.id === v.id); return `${pickLabel(p.label, lang)}: ${pickLabel(o?.label, lang) || ""}${v.text ? ` (${v.text})` : ""}`; }
+    return `${pickLabel(p.label, lang)}: ${v}`;
   }).filter(Boolean).join(" · ");
   const isTuttofare = mestiere === "tuttofare";
   const STEPS = useMemo(() => isTuttofare ? ["mestiere", "problema", "quando", "dove", "binario", "riepilogo"] : ["mestiere", "problema", "quando", "dove", "riepilogo"], [isTuttofare]);
@@ -116,32 +117,32 @@ export default function ArtigianiConfigura() {
       const catOpt = p.options.find((o: any) => o.id === v?.categoria);
       return (
         <View key={p.id}>
-          <Text style={styles.label}>{p.label[lang]}</Text>
+          <Text style={styles.label}>{pickLabel(p.label, lang)}</Text>
           <View style={styles.wrap}>{p.options.map((o: any) => (
-            <Pressable key={o.id} testID={`art-param-${p.id}-${o.id}`} style={[styles.chip, v?.categoria === o.id && styles.optOn]} onPress={() => setParam(p.id, { categoria: o.id, elemento: "" })}><Text style={[styles.optText, v?.categoria === o.id && styles.optTextOn]}>{o.label[lang]}</Text></Pressable>))}</View>
-          {catOpt ? (<><Text style={styles.label}>{catOpt.label[lang]}</Text>
+            <Pressable key={o.id} testID={`art-param-${p.id}-${o.id}`} style={[styles.chip, v?.categoria === o.id && styles.optOn]} onPress={() => setParam(p.id, { categoria: o.id, elemento: "" })}><Text style={[styles.optText, v?.categoria === o.id && styles.optTextOn]}>{pickLabel(o.label, lang)}</Text></Pressable>))}</View>
+          {catOpt ? (<><Text style={styles.label}>{pickLabel(catOpt.label, lang)}</Text>
             <View style={styles.wrap}>{catOpt.sub.map((s: any) => (
-              <Pressable key={s.id} testID={`art-param-${p.id}-el-${s.id}`} style={[styles.chip, v?.elemento === s.id && styles.optOn]} onPress={() => setParam(p.id, { ...v, elemento: s.id })}><Text style={[styles.optText, v?.elemento === s.id && styles.optTextOn]}>{s.label[lang]}</Text></Pressable>))}</View></>) : null}
+              <Pressable key={s.id} testID={`art-param-${p.id}-el-${s.id}`} style={[styles.chip, v?.elemento === s.id && styles.optOn]} onPress={() => setParam(p.id, { ...v, elemento: s.id })}><Text style={[styles.optText, v?.elemento === s.id && styles.optTextOn]}>{pickLabel(s.label, lang)}</Text></Pressable>))}</View></>) : null}
         </View>);
     }
     if (p.type === "select") {
       const sel = p.options.find((o: any) => o.id === v?.id);
       return (
         <View key={p.id}>
-          <Text style={styles.label}>{p.label[lang]}</Text>
+          <Text style={styles.label}>{pickLabel(p.label, lang)}</Text>
           {p.options.map((o: any) => (
             <Pressable key={o.id} testID={`art-param-${p.id}-${o.id}`} style={[styles.rowOpt, v?.id === o.id && styles.optOn]} onPress={() => setParam(p.id, o.needs_text ? { id: o.id, text: "" } : { id: o.id })}>
-              <Text style={[styles.optText, v?.id === o.id && styles.optTextOn]}>{o.label[lang]}</Text>
+              <Text style={[styles.optText, v?.id === o.id && styles.optTextOn]}>{pickLabel(o.label, lang)}</Text>
               {v?.id === o.id ? <Ionicons name="checkmark-circle" size={20} color={colors.brand} /> : null}
             </Pressable>))}
           {sel?.needs_text ? <TextInput testID={`art-param-${p.id}-text`} style={styles.input} value={v?.text || ""} onChangeText={(tx) => setParam(p.id, { id: sel.id, text: tx })} placeholder={t("artOtherDesc")} placeholderTextColor={colors.muted} /> : null}
         </View>);
     }
     if (p.type === "number") {
-      return (<View key={p.id}><Text style={styles.label}>{p.label[lang]}</Text>
+      return (<View key={p.id}><Text style={styles.label}>{pickLabel(p.label, lang)}</Text>
         <TextInput testID={`art-param-${p.id}`} style={styles.input} keyboardType="numeric" value={v != null ? String(v) : ""} onChangeText={(tx) => setParam(p.id, tx)} placeholderTextColor={colors.muted} /></View>);
     }
-    return (<View key={p.id}><Text style={styles.label}>{p.label[lang]}</Text>
+    return (<View key={p.id}><Text style={styles.label}>{pickLabel(p.label, lang)}</Text>
       <TextInput testID={`art-param-${p.id}`} style={[styles.input, { minHeight: 70, textAlignVertical: "top" }]} multiline value={v || ""} onChangeText={(tx) => setParam(p.id, tx)} placeholderTextColor={colors.muted} /></View>);
   };
 

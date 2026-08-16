@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/src/context/LanguageContext";
+import { pickLabel } from "@/src/i18n";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 
@@ -42,7 +43,7 @@ export default function ListScreen() {
     if (configurators[item.cat_id]) {
       router.push(configurators[item.cat_id] as any);
     } else if (cfg.mode === "proximity") {
-      router.push(`/businesses/${item.cat_id}?label=${encodeURIComponent(item.label[lang])}&emoji=${encodeURIComponent(item.emoji || "🏪")}`);
+      router.push(`/businesses/${item.cat_id}?label=${encodeURIComponent(pickLabel(item.label, lang))}&emoji=${encodeURIComponent(item.emoji || "🏪")}`);
     } else {
       router.push(`/request/${item.cat_id}?type=${cfg.mode}`);
     }
@@ -79,7 +80,7 @@ export default function ListScreen() {
                 <Text style={{ fontSize: 26 }}>{item.emoji || "🧩"}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.rowTitle}>{item.label[lang]}</Text>
+                <Text style={styles.rowTitle}>{pickLabel(item.label, lang)}</Text>
                 <Text style={styles.rowSub}>{itemSub(item)}</Text>
               </View>
               <Ionicons name="arrow-forward" size={22} color={arrowColor} />
