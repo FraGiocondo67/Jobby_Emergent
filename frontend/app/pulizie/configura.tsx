@@ -11,17 +11,25 @@ import { Button } from "@/src/components/UI";
 import { DateField, TimeField } from "@/src/components/DateTimeField";
 
 const TREVISO = { lat: 45.6669, lng: 12.2433 };
-const STEPS = ["home", "type", "extra", "products", "duration", "recurrence", "when", "details", "track"];
+const ALL_STEPS = ["home", "type", "extra", "products", "duration", "recurrence", "when", "details", "track"];
 
 export default function PulizieConfigura() {
   const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // BLOCCO 9 (fix "richiesta diretta dalla mappa non arriva al
-  // professionista scelto"): app/provider/[id].tsx passa ?provider=<id>
-  // quando il cliente sceglie esplicitamente un professionista dalla mappa
-  // — prima ignorato qui, il submit finiva sempre nell'auto-match generico.
-  const { provider } = useLocalSearchParams<{ provider?: string }>();
+  // professionista scelto" + "mi chiede impresa/collaboratore anche se ho
+  // scelto un professionista specifico"): app/provider/[id].tsx passa
+  // ?provider=<id>&providerName=<nome> quando il cliente sceglie
+  // esplicitamente un professionista dalla mappa. Prima entrambi venivano
+  // ignorati qui: il submit finiva sempre nell'auto-match generico E lo
+  // step "track" chiedeva comunque impresa/collaboratore al cliente, anche
+  // se quel dato appartiene al provider scelto (già fissato nel suo
+  // listino), non a una scelta del cliente. Con un provider selezionato lo
+  // step "track" viene quindi saltato: il binario/prezzo arrivano già
+  // risolti da /pulizie/estimate (vedi loadEstimate sotto).
+  const { provider, providerName } = useLocalSearchParams<{ provider?: string; providerName?: string }>();
+  const STEPS = useMemo(() => (provider ? ALL_STEPS.filter((s) => s !== "track") : ALL_STEPS), [provider]);
   const [cfgMeta, setCfgMeta] = useState<any>(null);
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -55,10 +63,18 @@ export default function PulizieConfigura() {
   // live estimate from step 1 onward
   const loadEstimate = useCallback(async () => {
     try {
-      const r = await api.pulizieEstimate({ binario, ricorrenza, lat: coords.lat, lng: coords.lng, config });
+      const r = await api.pulizieEstimate({
+        binario, ricorrenza, lat: coords.lat, lng: coords.lng, config,
+        ...(provider ? { provider_id: provider } : {}),
+      });
       setEst(r);
+      // Richiesta diretta: il binario non lo sceglie il cliente, lo
+      // restituisce l'estimate (preso dal listino del provider scelto) —
+      // sincronizziamo lo stato locale cosi' `range = est.ranges[binario]`
+      // punta sempre alla chiave giusta.
+      if (provider && r?.provider_binario && r.provider_binario !== binario) setBinario(r.provider_binario);
     } catch {}
-  }, [binario, ricorrenza, coords, config]);
+  }, [binario, ricorrenza, coords, config, provider]);
 
   useEffect(() => { if (cfgMeta && step >= 1) loadEstimate(); }, [cfgMeta, step, loadEstimate]);
 
@@ -228,6 +244,12 @@ export default function PulizieConfigura() {
         <Text style={styles.headerTitle}>🧹 {t("cleaning")}</Text>
         <View style={{ width: 24 }} />
       </View>
+      {provider ? (
+        <View style={styles.directBanner}>
+          <Ionicons name="person-circle" size={16} color={colors.brand} />
+          <Text style={styles.directBannerText}>{t("directRequestTo")} {providerName || ""}</Text>
+        </View>
+      ) : null}
       <View style={styles.progress}>{STEPS.map((_, i) => (<View key={i} style={[styles.pBar, { backgroundColor: i <= step ? colors.brand : colors.border }]} />))}</View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -261,6 +283,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   headerTitle: { fontSize: fsize.lg, fontFamily: font.medium, color: colors.onSurface },
+  directBanner: { flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: spacing.lg, marginBottom: spacing.sm, paddingVertical: 6, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignSelf: "flex-start" },
+  directBannerText: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.onBrandTertiary },
   progress: { flexDirection: "row", gap: 4, paddingHorizontal: spacing.lg, marginBottom: spacing.md },
   pBar: { flex: 1, height: 4, borderRadius: 2 },
   stepTitle: { fontSize: fsize["2xl"], fontFamily: font.bold, color: colors.onSurface, marginBottom: spacing.lg },

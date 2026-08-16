@@ -253,6 +253,24 @@ class EstimateIn(BaseModel):
     lat: float = 45.6669
     lng: float = 12.2433
     ricorrenza: str = "una_tantum"
+    # BLOCCO 9 (fix "seleziono un professionista dalla mappa e il prezzo/ora
+    # mostrato è €0"): senza questo la stima era sempre un range min/max
+    # sull'intero pool auto-compatibile (_compatible_providers) — se il
+    # professionista scelto a mano non vi rientrava (es. binario
+    # 'persona_lf' senza il flag INPS registrato, un criterio che una
+    # richiesta DIRETTA non deve comunque applicare — vedi create_richiesta
+    # sotto), il range restava vuoto e la UI mostrava "€0.00"/nessun
+    # prezzo, anche con un listino reale e diverso da zero già salvato.
+    provider_id: Optional[str] = None
+
+
+def _provider_pulizie_listino(provider_id: str) -> dict:
+    """Listino pulizie salvato dal provider stesso (price_list->pulizie),
+    dict vuoto se non ancora configurato."""
+    row = db.table("profiles_provider").select("price_list").eq("user_id", provider_id).limit(1).execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="provider_not_found")
+    return (row.data[0].get("price_list") or {}).get("pulizie") or {}
 
 
 @router.post("/pulizie/estimate")
@@ -260,6 +278,23 @@ async def estimate(body: EstimateIn, user=Depends(get_current_user)):
     cfg = body.config.dict()
     cfg["_ricorrenza"] = body.ricorrenza
     fee = await fee_pct()
+
+    if body.provider_id:
+        # Richiesta diretta: il prezzo è quello VERO di quel provider, non
+        # un range calcolato su altri — il binario stesso non è una scelta
+        # del cliente ma quello già impostato dal provider nel suo listino
+        # (vedi anche create_richiesta, stessa fonte, stesso motivo).
+        lst = _provider_pulizie_listino(body.provider_id)
+        prov_binario = lst.get("binario")
+        if not prov_binario:
+            raise HTTPException(status_code=400, detail="provider_listino_not_configured")
+        price = price_breakdown(lst, cfg, prov_binario, fee)["total_client"]
+        return {
+            "recommended_hours": C.recommended_hours(cfg.get("mq_band"), cfg.get("tipo_pulizia")),
+            "fee_pct": fee, "provider_binario": prov_binario,
+            "ranges": {prov_binario: {"providers": 1, "min": price, "max": price}},
+        }
+
     result = {}
     for binario in ("impresa", "persona_lf"):
         provs = _compatible_providers(binario, cfg, body.lat, body.lng)
@@ -276,13 +311,38 @@ async def estimate(body: EstimateIn, user=Depends(get_current_user)):
 # ---------------- richiesta CRUD ----------------
 @router.post("/pulizie/richieste")
 async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
-    if body.binario not in ("impresa", "persona_lf"):
-        raise HTTPException(status_code=400, detail="invalid_binario")
     cfg = body.config.dict()
     cfg["_ricorrenza"] = body.ricorrenza
 
+    # BLOCCO 9 (fix "mi chiede impresa/collaboratore anche se ho scelto un
+    # professionista specifico dalla mappa"): per una richiesta DIRETTA il
+    # binario non è (e non deve essere) una scelta del cliente — è quello
+    # che il provider scelto ha già impostato nel proprio Listino Pulizie.
+    # body.binario viene qui IGNORATO quando c'è un provider_id (anche se il
+    # frontend lo manda ancora, es. il default mai toccato dallo step
+    # "track" che ora per una richiesta diretta non viene più mostrato) e
+    # ricavato da qui — stessa fonte già usata da /pulizie/estimate sopra,
+    # cosi' il prezzo mostrato al cliente coincide sempre con quello
+    # effettivamente applicato.
+    prov_check = None
+    resolved_binario = body.binario
+    if body.provider_id:
+        prov_check = (
+            db.table("profiles_provider").select("user_id, price_list, users!inner(status)")
+            .eq("user_id", body.provider_id).limit(1).execute()
+        )
+        if not prov_check.data or prov_check.data[0]["users"]["status"] != "active":
+            raise HTTPException(status_code=404, detail="provider_not_found")
+        prov_listino = (prov_check.data[0].get("price_list") or {}).get("pulizie") or {}
+        resolved_binario = prov_listino.get("binario")
+        if not resolved_binario:
+            raise HTTPException(status_code=400, detail="provider_listino_not_configured")
+
+    if resolved_binario not in ("impresa", "persona_lf"):
+        raise HTTPException(status_code=400, detail="invalid_binario")
+
     brief = {
-        "binario": body.binario, "config": cfg,
+        "binario": resolved_binario, "config": cfg,
         "flessibilita": body.flessibilita, "ricorrenza": body.ricorrenza,
         "giorni_preferiti": body.giorni_preferiti, "durata_ore": cfg.get("durata_ore"),
         "note": body.note, "foto": body.foto, "parcheggio": body.parcheggio,
@@ -292,24 +352,22 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
         "pagamento_fee": {"stato": "authorized" if body.publish else "none"},
         "pagamento_lavoro": {"stato": "none"},
         "recensione": None,
+        # BLOCCO 9 (richiesta utente: distinguere chiaramente in UI le
+        # richieste dirette dalle generiche, sia lato cliente che provider —
+        # vedi frontend/app/pulizie/[id].tsx e routers/richieste.py::incoming).
+        "diretta": bool(body.provider_id),
     }
     if body.publish:
         brief["scade_at"] = (now_utc() + timedelta(hours=C.PROPOSAL_WINDOW_HOURS)).isoformat()
         if body.provider_id:
-            # Richiesta diretta a un professionista scelto dal cliente sulla
-            # mappa: invitiamo SOLO lui, saltando il filtro automatico
-            # raggio/binario/listino di _compatible_providers — la scelta
-            # esplicita del cliente prevale sui criteri di auto-match (che
-            # restano usati solo per il "pubblica senza scegliere nessuno").
-            prov_check = (
-                db.table("profiles_provider").select("user_id, users!inner(status)")
-                .eq("user_id", body.provider_id).limit(1).execute()
-            )
-            if not prov_check.data or prov_check.data[0]["users"]["status"] != "active":
-                raise HTTPException(status_code=404, detail="provider_not_found")
+            # Richiesta diretta: invitiamo SOLO il provider scelto, saltando
+            # il filtro automatico raggio/binario/listino di
+            # _compatible_providers — la scelta esplicita del cliente
+            # prevale sui criteri di auto-match (che restano usati solo per
+            # il "pubblica senza scegliere nessuno").
             brief["provider_invitati"] = [{"provider_id": body.provider_id, "at": now_iso(), "status": "invited", "auto": False}]
         else:
-            provs = _compatible_providers(body.binario, cfg, body.lat, body.lng)
+            provs = _compatible_providers(resolved_binario, cfg, body.lat, body.lng)
             brief["provider_invitati"] = [{"provider_id": pp["provider_id"], "at": now_iso(), "status": "invited", "auto": True} for pp in provs]
 
     row = {
@@ -851,5 +909,12 @@ async def provider_jobs(user=Depends(get_current_user)):
             "is_chosen": is_chosen, "my_proposal": bool(mine),
             "pagamento": brief.get("pagamento_lavoro") or brief.get("pagamento"),
             "cliente_nome": name_by_client.get(row.get("client_id")),
+            # BLOCCO 9 (richiesta utente: distinguere in "Richieste in
+            # arrivo" le richieste dirette dalle generiche). Per ora
+            # popolato solo per Pulizie (unica verticale con il concetto di
+            # richiesta diretta a un provider scelto sulla mappa, vedi
+            # create_richiesta sopra) — per le altre 3 verticali resta
+            # sempre False finché non viene implementato lo stesso flusso.
+            "diretta": bool(brief.get("diretta")),
         })
     return out

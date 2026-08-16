@@ -22,6 +22,19 @@ function StatusPill({ status }: { status: string }) {
   return <View style={[styles.pill, { backgroundColor: c + "22" }]}><Text style={[styles.pillText, { color: c }]}>{label}</Text></View>;
 }
 
+// BLOCCO 9 (richiesta utente: distinguere chiaramente le richieste dirette
+// [cliente ha scelto un professionista specifico dalla mappa] da quelle
+// generiche [auto-abbinate] sia nella lista del cliente sia in quella del
+// professionista). Per ora popolato solo per Pulizie — vedi backend.
+function KindBadge({ diretta }: { diretta: boolean }) {
+  const { t } = useLang();
+  return (
+    <View style={[styles.pill, { backgroundColor: diretta ? colors.brand + "22" : colors.muted + "22" }]}>
+      <Text style={[styles.pillText, { color: diretta ? colors.brand : colors.muted }]}>{diretta ? t("directBadge") : t("genericBadge")}</Text>
+    </View>
+  );
+}
+
 function CustomerRequests() {
   const { lang, t } = useLang();
   const router = useRouter();
@@ -120,7 +133,7 @@ function CustomerRequests() {
       <View style={{ flex: 1 }}>
         <Text style={styles.cardTitle}>{t("cleaning")} · {r.binario === "impresa" ? t("trackImpresa") : t("trackLF")}</Text>
         <Text style={styles.cardSub}>{r.config?.mq_band?.replace("_", "–")} m² · {r.config?.durata_ore}h · {(r.proposte || []).length} {t("proposalsLabel")}</Text>
-        <View style={{ marginTop: 6 }}><StatusPill status={r.stato} /></View>
+        <View style={{ marginTop: 6, flexDirection: "row", gap: 6 }}><StatusPill status={r.stato} /><KindBadge diretta={!!r.diretta} /></View>
       </View>
       {r.prezzo_finale ? <Text style={styles.cardPrice}>€{r.prezzo_finale.toFixed(2)}</Text> : null}
     </Pressable>
@@ -406,7 +419,7 @@ function ProviderJobs() {
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle} numberOfLines={1}>{title(j)}{j.urgente ? " ⚡" : ""}</Text>
               <Text style={styles.cardSub}>{when(j)}{j.is_chosen ? ` · ${j.cliente_nome || t("clientLabel")}` : j.my_proposal ? ` · ${t("proposalSent")}` : ""}</Text>
-              <View style={{ marginTop: 6 }}><StatusPill status={j.stato} /></View>
+              <View style={{ marginTop: 6, flexDirection: "row", gap: 6 }}><StatusPill status={j.stato} />{j.cat === "pulizie" ? <KindBadge diretta={!!j.diretta} /> : null}</View>
             </View>
             <View style={{ alignItems: "flex-end", gap: 4 }}>
               {price(j) != null ? <Text style={styles.cardPrice}>€{Number(price(j)).toFixed(2)}</Text> : null}
