@@ -89,7 +89,16 @@ export default function BusinessRequestScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSuccess(true);
     } catch (e: any) {
-      if (String(e?.message).includes("insufficient_wallet")) Alert.alert(t("insufficientWallet"));
+      const m = String(e?.message || "");
+      // BLOCCO 9 (stesso fix di pulizie/[id].tsx e affini: qui l'ordine a
+      // un'attività di prossimità falliva con questi due dettagli se
+      // manca l'onboarding Stripe del business o la carta salvata del
+      // cliente, e prima non veniva mostrato NESSUN messaggio — il
+      // pulsante "ordina" sembrava non fare nulla).
+      if (m.includes("insufficient_wallet")) Alert.alert(t("insufficientWallet"));
+      else if (m.includes("provider_not_onboarded")) Alert.alert(t("error"), t("providerNotOnboardedMsg"));
+      else if (m.includes("client_payment_method_missing")) Alert.alert(t("error"), t("paymentMethodMissingMsg"), [{ text: t("cancel") || "Annulla", style: "cancel" }, { text: t("addCardAction"), onPress: () => router.push("/payments-settings") }]);
+      else Alert.alert(t("error"));
       setSubmitting(false);
     }
   };

@@ -36,9 +36,8 @@ export default function PaymentsSettings() {
   const [pm, setPm] = useState<any>(null);
   const [bank, setBank] = useState<any>(null);
   const [wallets, setWallets] = useState<any[]>([]);
-  const [cardOpen, setCardOpen] = useState(false);
   const [bankOpen, setBankOpen] = useState(false);
-  const [card, setCard] = useState({ card_holder: "", card_last4: "", expiry: "", cvv: "" });
+  const [cardBusy, setCardBusy] = useState(false);
   const [iban, setIban] = useState({ account_holder: "", iban: "" });
   const [paypalEmail, setPaypalEmail] = useState("");
   const [paypalOpen, setPaypalOpen] = useState(false);
@@ -86,14 +85,38 @@ export default function PaymentsSettings() {
     try { const r = await api.setPaypalEmail(paypalEmail.trim()); setPaypalEmail(r.paypal_email); setPaypalOpen(false); Haptics.selectionAsync().catch(() => {}); } catch {}
   };
 
-  const saveCard = async () => {
+  // BLOCCO 10 (fix "flusso di conferma con modifica prezzo non funziona"):
+  // il vecchio saveCard() chiamava PUT /wallet/payment-method, endpoint
+  // RITIRATO (routers/wallet.py, non più montato su server.py) — il
+  // cliente non riusciva mai a salvare davvero una carta, quindi confirm()
+  // falliva sempre con client_payment_method_missing per il binario
+  // "impresa". Qui usiamo il vero flusso Stripe SetupIntent già esposto
+  // da routers/stripe_connect.py (POST /pay/setup-card + GET
+  // /pay/setup-card/status/{id}), identico al pattern di
+  // startStripeOnboarding() sopra.
+  const startCardSetup = async () => {
+    setCardBusy(true);
+    Haptics.selectionAsync().catch(() => {});
     try {
-      const r = await api.setPaymentMethod({ ...card, card_brand: "visa", card_last4: card.card_last4.slice(-4) });
-      setPm(r.payment_method); setCardOpen(false); setCard({ card_holder: "", card_last4: "", expiry: "", cvv: "" });
-      Haptics.selectionAsync().catch(() => {});
+      const origin = Platform.OS === "web" && typeof window !== "undefined"
+        ? window.location.origin
+        : (process.env.EXPO_PUBLIC_BACKEND_URL || "");
+      const { url, session_id } = await api.setupCard(origin);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = url;
+      } else {
+        await WebBrowser.openBrowserAsync(url);
+        const s = await api.setupCardStatus(session_id);
+        if (s.saved) {
+          setPm(s.payment_method);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          Alert.alert(t("cardSaved"));
+        }
+        await load();
+      }
     } catch (e: any) {
       if (String(e?.message) !== "unauthorized") Alert.alert(t("error"));
-    }
+    } finally { setCardBusy(false); }
   };
   const saveBank = async () => {
     try { const r = await api.setBankAccount(iban); setBank(r.bank_account); setBankOpen(false); Haptics.selectionAsync().catch(() => {}); }
@@ -132,24 +155,13 @@ export default function PaymentsSettings() {
         <Text style={styles.title}>{t("paymentsSettings")}</Text>
         <Text style={styles.desc}>{isProvider ? t("payoutDesc") : t("clientPayoutDesc")}</Text>
 
-        {/* Card */}
+        {/* Card (vero Stripe SetupIntent — vedi startCardSetup) */}
         <Text style={styles.section}>{t("paymentMethod")}</Text>
-        <Pressable style={[styles.setupRow, shadow.card]} testID="payment-method-row" onPress={() => setCardOpen((v) => !v)}>
+        <Pressable style={[styles.setupRow, shadow.card, { opacity: cardBusy ? 0.6 : 1 }]} testID="payment-method-row" disabled={cardBusy} onPress={startCardSetup}>
           <Ionicons name="card" size={22} color={colors.blue} />
-          <Text style={styles.setupText}>{pm ? `${(pm.card_brand || "").toUpperCase()} •••• ${pm.card_last4}` : t("notSet")}</Text>
+          <Text style={styles.setupText}>{pm ? t("cardSaved") : t("notSet")}</Text>
           <Text style={styles.setupAction}>{t("addCard")}</Text>
         </Pressable>
-        {cardOpen ? (
-          <View style={styles.form}>
-            <TextInput testID="card-holder" style={styles.input} placeholder="Card holder" placeholderTextColor={colors.muted} value={card.card_holder} onChangeText={(v) => setCard({ ...card, card_holder: v })} />
-            <TextInput testID="card-number" style={styles.input} placeholder="Card number" placeholderTextColor={colors.muted} keyboardType="number-pad" value={card.card_last4} onChangeText={(v) => setCard({ ...card, card_last4: v })} />
-            <View style={styles.row2}>
-              <TextInput testID="card-expiry" style={[styles.input, { flex: 1 }]} placeholder="MM/YY" placeholderTextColor={colors.muted} value={card.expiry} onChangeText={(v) => setCard({ ...card, expiry: v })} />
-              <TextInput testID="card-cvv" style={[styles.input, { flex: 1 }]} placeholder="CVV" placeholderTextColor={colors.muted} keyboardType="number-pad" secureTextEntry maxLength={4} value={card.cvv} onChangeText={(v) => setCard({ ...card, cvv: v })} />
-            </View>
-            <Pressable testID="save-card" style={styles.saveBtn} onPress={saveCard}><Text style={styles.saveText}>{t("save")}</Text></Pressable>
-          </View>
-        ) : null}
 
         {/* Payout / withdrawal methods (client & provider) */}
         {user ? (

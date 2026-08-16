@@ -38,6 +38,12 @@ export default function BabysittingDetail() {
       if (m.includes("insufficient_wallet")) Alert.alert("Fondi insufficienti", "Ricarica il portafoglio per confermare: l'importo viene bloccato a garanzia.", [{ text: "Annulla", style: "cancel" }, { text: "Ricarica", onPress: () => router.push("/wallet") }]);
       else if (m.includes("lf_insufficient")) Alert.alert(t("error"), "Borsellino LF insufficiente");
       else if (m.includes("invalid_code")) Alert.alert(t("otpInvalid"));
+      // BLOCCO 9 (stesso fix di pulizie/[id].tsx: confirm() sul binario
+      // 'impresa' rifiuta con questi dettagli se manca l'onboarding Stripe
+      // del provider o la carta salvata del cliente — prima ricadeva nel
+      // t("error") generico, sembrava che "conferma" non facesse nulla).
+      else if (m.includes("provider_not_onboarded")) Alert.alert(t("error"), t("providerNotOnboardedMsg"));
+      else if (m.includes("client_payment_method_missing")) Alert.alert(t("error"), t("paymentMethodMissingMsg"), [{ text: t("cancel") || "Annulla", style: "cancel" }, { text: t("addCardAction"), onPress: () => router.push("/payments-settings") }]);
       else Alert.alert(t("error"));
     } finally { setBusy(false); }
   };

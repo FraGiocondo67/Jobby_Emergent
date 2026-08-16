@@ -63,6 +63,14 @@ export default function RichiestaDetail() {
       const m = String(e?.message);
       if (m.includes("lf_insufficient")) Alert.alert(t("lfInsufficient"), t("lfTopupNeeded"));
       else if (m.includes("insufficient_wallet")) Alert.alert("Fondi insufficienti", "Ricarica il portafoglio per confermare: l'importo viene bloccato a garanzia.", [{ text: "Annulla", style: "cancel" }, { text: "Ricarica", onPress: () => router.push("/wallet") }]);
+      // BLOCCO 9 (fix "il cliente vede il prezzo proposto ma non può
+      // confermare"): per il binario 'impresa' (Stripe Connect reale)
+      // confirm() rifiuta con questi due dettagli se il provider non ha
+      // completato l'onboarding pagamenti o il cliente non ha una carta
+      // salvata — prima finivano entrambi nel generico t("error") senza
+      // dire perché, quindi sembrava che "confermare" non facesse nulla.
+      else if (m.includes("provider_not_onboarded")) Alert.alert(t("error"), t("providerNotOnboardedMsg"));
+      else if (m.includes("client_payment_method_missing")) Alert.alert(t("error"), t("paymentMethodMissingMsg"), [{ text: t("cancel") || "Annulla", style: "cancel" }, { text: t("addCardAction"), onPress: () => router.push("/payments-settings") }]);
       else Alert.alert(t("error"));
     }
     finally { setBusy(false); }

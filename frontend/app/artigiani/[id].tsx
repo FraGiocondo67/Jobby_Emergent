@@ -45,6 +45,11 @@ export default function ArtigianiDetail() {
     try { await fn(); await load(); after?.(); } catch (e: any) {
       const m = String(e?.message || "");
       if (m.includes("insufficient_wallet")) Alert.alert("Fondi insufficienti", "Ricarica il portafoglio per confermare: l'importo viene bloccato a garanzia.", [{ text: "Annulla", style: "cancel" }, { text: "Ricarica", onPress: () => router.push("/wallet") }]);
+      // BLOCCO 9 (stesso fix di pulizie/[id].tsx: confirm() sul binario
+      // 'impresa' rifiuta con questi dettagli se manca l'onboarding Stripe
+      // del provider o la carta salvata del cliente).
+      else if (m.includes("provider_not_onboarded")) Alert.alert(t("error"), t("providerNotOnboardedMsg"));
+      else if (m.includes("client_payment_method_missing")) Alert.alert(t("error"), t("paymentMethodMissingMsg"), [{ text: t("cancel") || "Annulla", style: "cancel" }, { text: t("addCardAction"), onPress: () => router.push("/payments-settings") }]);
       else Alert.alert(t("error"), m.includes("expired") ? t("artQuoteExpired") : "");
     } finally { setBusy(false); }
   };
