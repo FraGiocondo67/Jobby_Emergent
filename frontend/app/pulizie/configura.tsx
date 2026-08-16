@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { useLang } from "@/src/context/LanguageContext";
@@ -17,6 +17,11 @@ export default function PulizieConfigura() {
   const { lang, t } = useLang();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // BLOCCO 9 (fix "richiesta diretta dalla mappa non arriva al
+  // professionista scelto"): app/provider/[id].tsx passa ?provider=<id>
+  // quando il cliente sceglie esplicitamente un professionista dalla mappa
+  // — prima ignorato qui, il submit finiva sempre nell'auto-match generico.
+  const { provider } = useLocalSearchParams<{ provider?: string }>();
   const [cfgMeta, setCfgMeta] = useState<any>(null);
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -91,6 +96,7 @@ export default function PulizieConfigura() {
         binario, config, indirizzo: address, lat: c.lat, lng: c.lng,
         data_ora: `${date} ${time}`, flessibilita, ricorrenza,
         note, parcheggio, publish: true,
+        ...(provider ? { provider_id: provider } : {}),
       });
       router.replace(`/pulizie/${r.richiesta_id}?new=1`);
     } catch { setLoading(false); }

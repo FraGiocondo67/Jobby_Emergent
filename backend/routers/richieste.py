@@ -98,6 +98,18 @@ class RichiestaIn(BaseModel):
     foto: List[str] = []
     parcheggio: str = ""
     publish: bool = True
+    # BLOCCO 9 (fix "seleziono un professionista da 'cerca intorno a te' e
+    # richiedo il servizio, ma la richiesta non arriva a lui"): app/provider/
+    # [id].tsx (openConfig()) passa da sempre `?provider=<id>` come query
+    # param quando il cliente sceglie ESPLICITAMENTE un professionista dalla
+    # mappa, ma questo configuratore (frontend/app/pulizie/configura.tsx) lo
+    # ignorava del tutto — il submit finiva sempre nel path di auto-match
+    # generico, identico in tutto e per tutto a una richiesta pubblicata
+    # senza scegliere nessuno. Il provider scelto sulla mappa non veniva mai
+    # invitato più di un provider qualunque (anzi: spesso NON veniva
+    # invitato affatto, se non rientrava nei criteri automatici raggio/
+    # binario/listino) — la "richiesta diretta" di fatto non esisteva.
+    provider_id: Optional[str] = None
 
 
 class ProposeIn(BaseModel):
@@ -283,8 +295,22 @@ async def create_richiesta(body: RichiestaIn, user=Depends(get_current_user)):
     }
     if body.publish:
         brief["scade_at"] = (now_utc() + timedelta(hours=C.PROPOSAL_WINDOW_HOURS)).isoformat()
-        provs = _compatible_providers(body.binario, cfg, body.lat, body.lng)
-        brief["provider_invitati"] = [{"provider_id": pp["provider_id"], "at": now_iso(), "status": "invited", "auto": True} for pp in provs]
+        if body.provider_id:
+            # Richiesta diretta a un professionista scelto dal cliente sulla
+            # mappa: invitiamo SOLO lui, saltando il filtro automatico
+            # raggio/binario/listino di _compatible_providers — la scelta
+            # esplicita del cliente prevale sui criteri di auto-match (che
+            # restano usati solo per il "pubblica senza scegliere nessuno").
+            prov_check = (
+                db.table("profiles_provider").select("user_id, users!inner(status)")
+                .eq("user_id", body.provider_id).limit(1).execute()
+            )
+            if not prov_check.data or prov_check.data[0]["users"]["status"] != "active":
+                raise HTTPException(status_code=404, detail="provider_not_found")
+            brief["provider_invitati"] = [{"provider_id": body.provider_id, "at": now_iso(), "status": "invited", "auto": False}]
+        else:
+            provs = _compatible_providers(body.binario, cfg, body.lat, body.lng)
+            brief["provider_invitati"] = [{"provider_id": pp["provider_id"], "at": now_iso(), "status": "invited", "auto": True} for pp in provs]
 
     row = {
         "client_id": user["id"], "category_id": _category_id(),
