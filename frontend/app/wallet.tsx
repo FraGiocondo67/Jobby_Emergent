@@ -38,13 +38,19 @@ export default function Wallet() {
   const load = useCallback(async () => {
     try {
       const w = await api.wallet();
-      setBalance(w.total_balance ?? w.balance);
-      setAvailable(w.available_balance ?? w.balance);
+      setBalance(w.total_balance ?? w.balance ?? 0);
+      setAvailable(w.available_balance ?? w.balance ?? 0);
       setPending(w.pending_balance ?? 0);
       setHolds(w.holds || []);
       setHasBank(!!w.bank_account);
       setHasCrypto((w.crypto_wallets || []).length > 0);
-      setTxs(w.transactions);
+      // BLOCCO 9 (fix "PORTAFOGLIO va in crash" per tutti i profili): GET
+      // /wallet (routers/app_home.py, placeholder onesto per il modello
+      // Stripe-Connect-only) non ha mai restituito `transactions` — qui
+      // finiva undefined, e più sotto `txs.length` va in crash su
+      // undefined ("Cannot read property 'length' of undefined") non
+      // appena si apre questa schermata, per chiunque.
+      setTxs(w.transactions || []);
     } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));

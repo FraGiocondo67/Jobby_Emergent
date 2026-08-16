@@ -79,7 +79,16 @@ export default function ProfileDetails() {
 
   const save = async () => {
     setLoading(true);
-    const payload: any = { address, phone };
+    // BLOCCO 9 (fix "Dettagli personali... ogni modifica non viene
+    // memorizzata"): `preferences` era in state (TextInput sotto) ma non
+    // veniva mai incluso nel payload — le modifiche sparivano in
+    // silenzio, nessuna colonna la riceveva comunque prima di questo fix
+    // (vedi backend/routers/profile.py). `email` resta volontariamente
+    // fuori: cambiarlo scriverebbe solo su public.users.email senza
+    // toccare l'email vera di Supabase Auth, disallineando login e
+    // profilo — serve il flusso dedicato di cambio email di Supabase
+    // Auth, non una PATCH generica come questa.
+    const payload: any = { address, phone, preferences };
     if (address.trim()) {
       const c = await resolveCoords();
       if (c) { payload.lat = c.lat; payload.lng = c.lng; }

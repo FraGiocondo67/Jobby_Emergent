@@ -41,6 +41,18 @@ class ProfilePatchIn(BaseModel):
     # (routers/geo.py) lato frontend.
     lat: Optional[float] = None
     lng: Optional[float] = None
+    # BLOCCO 9 (fix "Dettagli personali... ogni modifica non viene
+    # memorizzata"): app/profile-details.tsx ha da sempre un campo
+    # "Preferenze" (TextInput libero) che non è mai stato incluso nel
+    # payload inviato né supportato qui — le modifiche a quel campo
+    # venivano scartate in silenzio (nessuna colonna, nessun errore).
+    # Colonna nuova su public.users (vale per client e provider, il campo
+    # non è vincolato al ruolo). NB: il campo "Email" della stessa
+    # schermata resta volutamente non collegato — cambiarlo scriverebbe
+    # solo su public.users.email senza toccare l'email vera di Supabase
+    # Auth, disallineando login e profilo; serve il flusso dedicato di
+    # cambio email di Supabase Auth, non una PATCH generica come questa.
+    preferences: Optional[str] = None
     # profiles_provider
     bio: Optional[str] = None
     hourly_rate: Optional[float] = None
@@ -99,6 +111,8 @@ async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
         user_updates["phone"] = body.phone or None
     if body.preferred_lang is not None:
         user_updates["preferred_lang"] = body.preferred_lang
+    if body.preferences is not None:
+        user_updates["preferences"] = body.preferences
     if user_updates:
         db.table("users").update(user_updates).eq("id", user_id).execute()
 
@@ -107,7 +121,23 @@ async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
         if body.address is not None:
             cp_updates["address"] = body.address
         if body.search_radius_km is not None:
-            cp_updates["search_radius_km"] = body.search_radius_km
+            # BLOCCO 9 (fix "attività non salvate", 500 su PUT /profile —
+            # visto live nei log Render: postgrest.exceptions.APIError
+            # 'invalid input syntax for type integer: "10.0"'):
+            # search_radius_km/operational_radius_km sono colonne
+            # `integer` in Postgres, ma qui sopra sono dichiarate
+            # `Optional[float]` (per accettare anche un eventuale valore
+            # decimale dal client) — pydantic quindi le passa a supabase-py
+            # come float Python (es. 10.0), che PostgREST prova a castare
+            # con un bind testuale ('10.0'::integer), NON ammesso da
+            # Postgres (serve un numero intero letterale, non una stringa
+            # con virgola). Ogni salvataggio del raggio falliva quindi con
+            # un 500 — activities.tsx interrompeva save() prima di
+            # refresh()/router.back(), quindi SEMBRAVA che "nessuna
+            # modifica" venisse salvata anche per gli altri campi nello
+            # stesso payload (services). round()+int() qui risolve alla
+            # radice, senza dover toccare il tipo dichiarato sopra.
+            cp_updates["search_radius_km"] = int(round(body.search_radius_km))
         if body.preferred_categories is not None:
             cp_updates["preferred_categories"] = body.preferred_categories
         if body.lat is not None and body.lng is not None:
@@ -125,10 +155,12 @@ async def update_profile(body: ProfilePatchIn, user=Depends(get_current_user)):
             pp_updates["skills"] = body.skills
         elif body.services is not None:
             pp_updates["skills"] = body.services
+        # BLOCCO 9: stesso bug di search_radius_km sopra —
+        # operational_radius_km è anch'essa `integer` su Postgres.
         if body.operational_radius_km is not None:
-            pp_updates["operational_radius_km"] = body.operational_radius_km
+            pp_updates["operational_radius_km"] = int(round(body.operational_radius_km))
         elif body.radius_km is not None:
-            pp_updates["operational_radius_km"] = body.radius_km
+            pp_updates["operational_radius_km"] = int(round(body.radius_km))
         if body.availability_status is not None:
             if body.availability_status not in ("online", "offline", "busy"):
                 raise HTTPException(status_code=400, detail="invalid_availability_status")

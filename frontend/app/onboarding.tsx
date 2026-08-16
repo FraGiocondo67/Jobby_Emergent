@@ -8,7 +8,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useAuth } from "@/src/context/AuthContext";
-import { useLang } from "@/src/context/LanguageContext";
+import { useLang, SUPPORTED_LANGS } from "@/src/context/LanguageContext";
 import { colors, spacing, radius, font, fsize } from "@/src/theme";
 import { Button } from "@/src/components/UI";
 
@@ -92,13 +92,17 @@ export default function Onboarding() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]} testID="onboarding-screen">
-      <View style={[styles.langRow, { top: insets.top + spacing.sm }]}>
-        {(["it", "en"] as const).map((l) => (
+      {/* BLOCCO 9 (richiesta utente: aggiungere Cinese/Russo/Tedesco/
+          Spagnolo/Francese): con 7 lingue la riga fissa in alto a destra
+          non ci stava più su schermo — ora scorre orizzontalmente invece
+          di traboccare fuori dallo schermo. */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.langRow, { top: insets.top + spacing.sm }]} contentContainerStyle={{ gap: spacing.xs }}>
+        {SUPPORTED_LANGS.map((l) => (
           <Pressable key={l} testID={`lang-${l}`} onPress={() => setLang(l)} style={[styles.langChip, lang === l && styles.langChipActive]}>
             <Text style={[styles.langText, lang === l && styles.langTextActive]}>{l.toUpperCase()}</Text>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>

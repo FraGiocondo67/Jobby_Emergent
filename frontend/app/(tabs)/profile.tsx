@@ -6,7 +6,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/src/context/AuthContext";
-import { useLang } from "@/src/context/LanguageContext";
+import { useLang, SUPPORTED_LANGS } from "@/src/context/LanguageContext";
 import { api } from "@/src/api";
 import { colors, spacing, radius, font, fsize, shadow } from "@/src/theme";
 import { Stars } from "@/src/components/UI";
@@ -341,15 +341,20 @@ export default function ProfileTab() {
         </Pressable>
 
         {/* Language */}
-        <View style={styles.section}>
+        {/* BLOCCO 9 (richiesta utente: aggiungere Cinese/Russo/Tedesco/
+            Spagnolo/Francese): con 7 lingue non ci stavano più in riga
+            accanto all'etichetta (styles.section è "space-between" per 2
+            elementi) — ora l'etichetta sta sopra e i chip scorrono
+            orizzontalmente sotto. */}
+        <View style={[styles.section, { flexDirection: "column", alignItems: "stretch", gap: spacing.sm }]}>
           <Text style={styles.settingLabel}>{t("language")}</Text>
-          <View style={styles.langRow}>
-            {(["it", "en"] as const).map((l) => (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.langRow}>
+            {SUPPORTED_LANGS.map((l) => (
               <Pressable key={l} testID={`profile-lang-${l}`} onPress={() => setLang(l)} style={[styles.langChip, lang === l && styles.langChipActive]}>
                 <Text style={[styles.langText, lang === l && styles.langTextActive]}>{l.toUpperCase()}</Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         </View>
 
         <Pressable testID="logout-button" style={styles.logoutRow} onPress={onLogout}>

@@ -23,6 +23,8 @@ placeholder onesti (null/vuoto) qui sotto - servono una decisione di prodotto
 su cosa sostituisce quella UI nel nuovo modello Stripe-Connect-only, non
 solo una riscrittura tecnica: NON coperte da questo fix, segnalate
 all'utente a parte."""
+from typing import Optional
+
 from fastapi import APIRouter, Depends
 
 from core_pg import db
@@ -31,6 +33,97 @@ from deps_pg import get_current_user
 router = APIRouter()
 
 ACTIVE_REL_STATES = ("confermata", "in_corso", "completata", "recensita")
+
+
+@router.get("/providers/nearby")
+async def providers_nearby(lat: float, lng: float, category: Optional[str] = None,
+                            radius: Optional[float] = None, user=Depends(get_current_user)):
+    """BLOCCO 9 (fix "cerca attorno a te... non rileva nessun provider o
+    attività di prossimità"): app/map.tsx chiama questa route da sempre, ma
+    esisteva solo nel motore di matching generico Mongo-based (routers/
+    missions.py), RITIRATO nel Blocco 5 e mai importato da questo server —
+    404 garantito, ingoiato dal catch{} della mappa, quindi "nessun
+    risultato" indipendentemente da quanti provider/attività online ci
+    fossero davvero nel raggio.
+
+    Usa la funzione SQL `nearby_providers` già presente nel progetto
+    Supabase (PostGIS ST_Distance/ST_DWithin su profiles_provider.location,
+    filtro kyc_status='approved' incluso nella funzione stessa) invece di
+    ricalcolare la distanza in Python: a differenza delle 4 verticali dedicate
+    (Pulizie/Babysitting/Driver/Artigiani, che usano ancora l'haversine
+    Python di core_pg.py perché operano su missions.location non sempre
+    popolata), qui la posizione del provider è proprio il dato che stiamo
+    cercando quindi ha senso appoggiarsi a PostGIS. Non filtra per
+    availability_status nella RPC stessa (restituisce anche gli offline):
+    filtrato qui perché la vecchia semantica Mongo (routers/missions.py)
+    mostrava solo provider online, stessa aspettativa della UI (legenda
+    mappa: "provider online")."""
+    radius_km = radius if radius is not None else 10
+    try:
+        res = db.rpc("nearby_providers", {
+            "p_lat": lat, "p_lng": lng, "p_radius_km": radius_km, "p_skill": category,
+        }).execute()
+    except Exception:
+        return []
+    rows = [r for r in (res.data or []) if r.get("availability_status") == "online"]
+    if not rows:
+        return []
+    ids = [r["user_id"] for r in rows]
+    extra = db.table("profiles_provider").select("user_id, is_proximity_business, business_data").in_("user_id", ids).execute()
+    extra_map = {e["user_id"]: e for e in (extra.data or [])}
+    out = []
+    for r in rows:
+        e = extra_map.get(r["user_id"]) or {}
+        is_biz = bool(e.get("is_proximity_business"))
+        biz = e.get("business_data") or {}
+        out.append({
+            "user_id": r["user_id"],
+            "role": "business" if is_biz else "provider",
+            "name": r.get("full_name") or "",
+            "business_name": (biz.get("business_name") or "") if is_biz else None,
+            "picture": (biz.get("photo") if is_biz else None) or r.get("avatar_url"),
+            "lat": r.get("latitude"), "lng": r.get("longitude"),
+            "distance_km": round(r.get("distance_km") or 0, 1),
+            "services": r.get("skills") or [],
+            "rating": r.get("avg_rating") or 0,
+            "trust_score": r.get("trust_score") or 0,
+            "hourly_rate": r.get("hourly_rate") or 0,
+            # La RPC filtra già kyc_status='approved' nella WHERE — chi
+            # arriva qui è per definizione approvato.
+            "online": True,
+            "approval_status": "approved",
+        })
+    return out
+
+
+@router.get("/trust")
+async def trust_score(user=Depends(get_current_user)):
+    """BLOCCO 9 (fix card "Affidabilità" sempre vuota in Profilo): stessa
+    causa dei fix sopra — GET /trust esisteva solo in routers/bookings.py,
+    RITIRATO nel Blocco 5 insieme a missions.py, mai importato da questo
+    server (404 sempre, osservato live nei log Render). I punteggi reali
+    esistono già come colonne su profiles_client/profiles_provider (scritte
+    da trust.py legacy Mongo mai riportato qui, o dai default della riga) —
+    questo endpoint si limita a esporle in lettura nella forma che
+    app/(tabs)/profile.tsx si aspetta ({provider_score,provider_subscores,
+    client_score,client_subscores}), non le ricalcola."""
+    cp = db.table("profiles_client").select(
+        "trust_score, trust_score_identity, trust_score_education, "
+        "trust_score_brief_accuracy, trust_score_payment_punctuality, "
+        "trust_score_cancellation, trust_score_tips, trust_score_reviews"
+    ).eq("user_id", user["id"]).limit(1).execute()
+    pp = db.table("profiles_provider").select(
+        "trust_score, trust_score_kyc, trust_score_punctuality, "
+        "trust_score_quality, trust_score_communication, trust_score_cancellation"
+    ).eq("user_id", user["id"]).limit(1).execute()
+    c = cp.data[0] if cp.data else {}
+    p = pp.data[0] if pp.data else {}
+    return {
+        "client_score": c.get("trust_score") or 0,
+        "client_subscores": {k: v for k, v in c.items() if k != "trust_score" and v is not None},
+        "provider_score": p.get("trust_score") or 0,
+        "provider_subscores": {k: v for k, v in p.items() if k != "trust_score" and v is not None},
+    }
 
 
 @router.get("/wallet")

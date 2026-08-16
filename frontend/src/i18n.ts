@@ -1,6 +1,13 @@
-export type Lang = "it" | "en";
+// BLOCCO 9 (richiesta utente: aggiungere Cinese, Russo, Tedesco, Spagnolo e
+// Francese): le 5 nuove lingue vivono in file separati (i18n_zh.ts/i18n_ru.ts/
+// i18n_de.ts/i18n_es.ts/i18n_fr.ts, uno per lingua) invece che qui dentro,
+// solo per tenere questo file — già grande — gestibile. `baseStrings`
+// sotto resta it/en esattamente come prima (nessuna riga toccata):
+// `strings`, l'export finale usato da tutta l'app, li unisce alle 5 nuove
+// lingue in fondo al file.
+export type Lang = "it" | "en" | "zh" | "ru" | "de" | "es" | "fr";
 
-export const strings = {
+const baseStrings = {
   it: {
     appTagline: "Il lavoro si adatta alla vita, non la vita al lavoro.",
     continueGoogle: "Continua con Google",
@@ -1323,4 +1330,24 @@ export const strings = {
   },
 };
 
-export type StringKey = keyof typeof strings["en"];
+export type StringKey = keyof typeof baseStrings["en"];
+
+// Import qui in fondo (non in cima al file) solo per leggibilità — ognuno di
+// questi 5 file importa `StringKey` da qui con `import type`, che non crea
+// una dipendenza circolare a runtime (viene rimosso in compilazione), solo
+// un controllo dei tipi: ogni traduzione DEVE coprire esattamente le stesse
+// chiavi di baseStrings.en, altrimenti tsc segnala le chiavi mancanti.
+import { zhStrings } from "./i18n_zh";
+import { ruStrings } from "./i18n_ru";
+import { deStrings } from "./i18n_de";
+import { esStrings } from "./i18n_es";
+import { frStrings } from "./i18n_fr";
+
+export const strings: Record<Lang, Record<StringKey, string>> = {
+  ...baseStrings,
+  zh: zhStrings,
+  ru: ruStrings,
+  de: deStrings,
+  es: esStrings,
+  fr: frStrings,
+};

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, Pressable, TextInput, Modal, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, font, fsize } from "@/src/theme";
+import type { Lang } from "@/src/i18n";
 
 const MONTHS = {
   it: ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"],
@@ -24,7 +25,7 @@ function daysInMonth(y: number, m: number) {
 
 export function DateField({
   value, onChange, testID, lang = "it", placeholder = "YYYY-MM-DD",
-}: { value: string; onChange: (v: string) => void; testID?: string; lang?: "it" | "en"; placeholder?: string }) {
+}: { value: string; onChange: (v: string) => void; testID?: string; lang?: Lang; placeholder?: string }) {
   const [open, setOpen] = useState(false);
   const base = parseDate(value) || new Date();
   const [viewY, setViewY] = useState(base.getFullYear());
@@ -84,7 +85,11 @@ export function DateField({
               <Pressable testID="cal-prev" onPress={() => changeMonth(-1)} hitSlop={10} style={styles.navBtn}>
                 <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
               </Pressable>
-              <Text style={styles.calTitle}>{MONTHS[lang][viewM]} {viewY}</Text>
+              {/* BLOCCO 9: MONTHS ha solo it/en — per le 5 nuove lingue
+                  (zh/ru/de/es/fr) mostra i nomi mese in inglese finché non
+                  vengono aggiunte traduzioni dedicate qui, invece di andare
+                  in errore/undefined. */}
+              <Text style={styles.calTitle}>{(MONTHS[lang as "it" | "en"] || MONTHS.en)[viewM]} {viewY}</Text>
               <Pressable testID="cal-next" onPress={() => changeMonth(1)} hitSlop={10} style={styles.navBtn}>
                 <Ionicons name="chevron-forward" size={22} color={colors.onSurface} />
               </Pressable>
