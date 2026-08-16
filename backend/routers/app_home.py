@@ -96,6 +96,82 @@ async def providers_nearby(lat: float, lng: float, category: Optional[str] = Non
     return out
 
 
+@router.get("/providers/{provider_id}/public")
+async def provider_public(provider_id: str, user=Depends(get_current_user)):
+    """BLOCCO 9 (fix "seleziono un provider da 'cerca intorno a te' -> pagina
+    bianca con 'Errore'"): app/provider/[id].tsx chiama api.providerPublic()
+    da sempre (src/api.ts: GET /providers/{id}/public), ma la route esisteva
+    SOLO nel motore Mongo-based di routers/missions.py — stesso file RITIRATO
+    nel Blocco 5 di /providers/nearby (vedi sopra) e mai importato da questo
+    server: 404 garantito, ingoiato dal catch{} dello useEffect, p resta
+    null -> `if (!p) return ... {t("error")}` -> esattamente lo schermo
+    bianco con "Errore" segnalato. Bug presente per QUALSIASI provider
+    selezionato dalla mappa (non solo per "pulizie"), perché la route
+    mancava a monte per tutti.
+
+    Ricostruita sullo schema Postgres corrente: profiles_provider ha già
+    tutti i campi che la card provider legge (bio/skills/hourly_rate/
+    avg_rating/kyc_status/is_proximity_business/business_data); le
+    recensioni vengono dalla tabella `reviews` (scritta da review() nelle 4
+    verticali Pulizie/Babysitting/Driver/Artigiani, vedi routers/
+    richieste.py) filtrate per reviewee_id, stesso pattern già in uso per
+    l'admin (routers/spec4.py, admin_reviews_pending). `categoria` per
+    singola recensione (presente nella vecchia risposta Mongo) omesso: non
+    esiste un join diretto recensione->categoria nello schema Postgres
+    attuale (reviews non ha una colonna categoria, solo mission_id) e la UI
+    (app/provider/[id].tsx) già gestisce la sua assenza (mostra la stella
+    senza il tag categoria)."""
+    urow = db.table("users").select("id, full_name, avatar_url, role").eq("id", provider_id).limit(1).execute()
+    if not urow.data:
+        raise HTTPException(status_code=404, detail="provider_not_found")
+    u = urow.data[0]
+
+    pp_row = db.table("profiles_provider").select(
+        "bio, skills, hourly_rate, availability_status, avg_rating, trust_score, "
+        "kyc_status, is_proximity_business, business_data"
+    ).eq("user_id", provider_id).limit(1).execute()
+    if not pp_row.data:
+        raise HTTPException(status_code=404, detail="provider_not_found")
+    pp = pp_row.data[0]
+
+    is_biz = bool(pp.get("is_proximity_business"))
+    biz = pp.get("business_data") or {}
+
+    reviews_res = (
+        db.table("reviews")
+        .select("rating, comment, reply, created_at")
+        .eq("reviewee_id", provider_id)
+        .order("created_at", desc=True)
+        .limit(50)
+        .execute()
+    )
+    reviews = [
+        {"rating": r.get("rating"), "comment": r.get("comment"), "reply": r.get("reply"), "at": r.get("created_at")}
+        for r in (reviews_res.data or [])
+        if r.get("rating")
+    ]
+
+    return {
+        "user_id": provider_id,
+        "name": u.get("full_name") or "",
+        "business_name": (biz.get("business_name") or "") if is_biz else "",
+        "picture": (biz.get("photo") if is_biz else None) or u.get("avatar_url") or "",
+        "role": "business" if is_biz else "provider",
+        "bio": pp.get("bio") or "",
+        "address": biz.get("address") or "",
+        "services": pp.get("skills") or [],
+        "rating": pp.get("avg_rating") or 0,
+        "reviews_count": len(reviews),
+        "reviews": reviews,
+        "trust_score": pp.get("trust_score") or 0,
+        "hourly_rate": pp.get("hourly_rate") or 0,
+        "online": pp.get("availability_status") == "online",
+        "verified": pp.get("kyc_status") == "approved",
+        "approval_status": pp.get("kyc_status") or "approved",
+        "business_photos": biz.get("photos") or [],
+    }
+
+
 @router.get("/trust")
 async def trust_score(user=Depends(get_current_user)):
     """BLOCCO 9 (fix card "Affidabilità" sempre vuota in Profilo): stessa

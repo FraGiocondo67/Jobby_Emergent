@@ -19,9 +19,28 @@ const MODES = [
 ] as const;
 
 // Categorie che hanno sottocategorie da configurare (mestieri / tipi corsa).
-const SUBCONFIG: Record<string, { route: string; titleKey: string }> = {
+// BLOCCO 9 (fix "richiesta Pulizie inserita ma nessun provider con
+// l'attività pulizie la vede, entro il raggio"): selezionare "pulizie" tra
+// le attività qui sopra (skills + operational_radius_km) NON basta a farsi
+// trovare — il matching reale (RPC pulizie_compatible_providers, vedi
+// backend/routers/richieste.py::_compatible_providers) richiede ANCHE che
+// il provider abbia configurato il proprio Listino Pulizie
+// (profiles_provider.price_list->'pulizie': tariffe, binario
+// impresa/persona_lf, e un `raggio_km` SEPARATO da operational_radius_km)
+// tramite la schermata /pulizie/listino. Quella schermata esiste già ed è
+// raggiungibile da Profilo (row "Listino Pulizie", condizionale su
+// services.includes("pulizie")), ma qui — a differenza di artigiani/driver,
+// che mostrano subito un pulsante "Configura" dopo la selezione — pulizie
+// non era in questa mappa: nessun invito a completarla appena scelta
+// l'attività. Confermato in produzione: OGNI richiesta Pulizie mai creata
+// aveva 0 provider invitati, incluso un provider con skills=[pulizie] e
+// raggio 50km praticamente sovrapposto all'indirizzo del cliente, solo
+// perché price_list->pulizie era null (mai aperto questo listino). Aggiunta
+// qui la stessa scorciatoia "Configura" già esistente per artigiani/driver.
+const SUBCONFIG: Record<string, { route: string; titleKey: string; descKey?: string }> = {
   artigiani: { route: "/artigiani/listino", titleKey: "artConfigMestieri" },
   driver: { route: "/driver/listino", titleKey: "drvConfigTipi" },
+  pulizie: { route: "/pulizie/listino", titleKey: "listinoTitle", descKey: "listinoSub" },
 };
 
 export default function Activities() {
@@ -101,7 +120,7 @@ export default function Activities() {
             <Ionicons name="options-outline" size={20} color={colors.brand} />
             <View style={{ flex: 1 }}>
               <Text style={styles.configTitle}>{t(cfg.titleKey as any)}</Text>
-              <Text style={styles.configSub}>{t("configureSubcatsDesc")}</Text>
+              <Text style={styles.configSub}>{t((cfg.descKey || "configureSubcatsDesc") as any)}</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.muted} />
           </Pressable>
