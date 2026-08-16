@@ -12,15 +12,15 @@ type LangState = {
 const LangContext = createContext<LangState>({} as LangState);
 export const useLang = () => useContext(LangContext);
 
-// BLOCCO 9 (richiesta utente: aggiungere Cinese, Russo, Tedesco, Spagnolo,
-// Francese): elenco centralizzato delle lingue supportate, usato sia per
-// validare il valore salvato (sotto) sia dal selettore lingua in
-// app/(tabs)/profile.tsx — un solo posto da aggiornare se in futuro se ne
-// aggiungono altre.
-export const SUPPORTED_LANGS: Lang[] = ["it", "en", "zh", "ru", "de", "es", "fr"];
+// BLOCCO 9 (richiesta utente: aggiungere Cinese, Tedesco, Spagnolo, Francese
+// — Russo tolto su richiesta esplicita dopo un crash riportato su iOS):
+// elenco centralizzato delle lingue supportate, usato sia per validare il
+// valore salvato (sotto) sia dal selettore lingua in app/(tabs)/profile.tsx
+// e app/onboarding.tsx — un solo posto da aggiornare se in futuro cambiano.
+export const SUPPORTED_LANGS: Lang[] = ["it", "en", "zh", "de", "es", "fr"];
 
 // Lingua di default dal locale del device: prima solo it/en (default a
-// inglese per chiunque altro); ora riconosce anche le 5 nuove lingue se il
+// inglese per chiunque altro); ora riconosce anche le nuove lingue se il
 // device è impostato in una di quelle, altrimenti inglese come prima.
 function deviceLang(): Lang {
   try {

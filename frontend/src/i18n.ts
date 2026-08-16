@@ -1,11 +1,14 @@
-// BLOCCO 9 (richiesta utente: aggiungere Cinese, Russo, Tedesco, Spagnolo e
-// Francese): le 5 nuove lingue vivono in file separati (i18n_zh.ts/i18n_ru.ts/
-// i18n_de.ts/i18n_es.ts/i18n_fr.ts, uno per lingua) invece che qui dentro,
-// solo per tenere questo file — già grande — gestibile. `baseStrings`
-// sotto resta it/en esattamente come prima (nessuna riga toccata):
-// `strings`, l'export finale usato da tutta l'app, li unisce alle 5 nuove
-// lingue in fondo al file.
-export type Lang = "it" | "en" | "zh" | "ru" | "de" | "es" | "fr";
+// BLOCCO 9 (richiesta utente: aggiungere Cinese, Tedesco, Spagnolo e
+// Francese — il Russo è stato tolto su richiesta esplicita dopo un crash
+// riportato su iOS, vedi sotto): le nuove lingue vivono in file separati
+// (i18n_zh.ts/i18n_de.ts/i18n_es.ts/i18n_fr.ts, uno per lingua) invece che
+// qui dentro, solo per tenere questo file — già grande — gestibile.
+// `baseStrings` sotto resta it/en esattamente come prima (nessuna riga
+// toccata): `strings`, l'export finale usato da tutta l'app, le unisce in
+// fondo al file. i18n_ru.ts resta sul disco ma non è più importato da
+// nessuna parte (quindi Metro non lo include nel bundle) — pronto se in
+// futuro si vuole reintrodurre il Russo.
+export type Lang = "it" | "en" | "zh" | "de" | "es" | "fr";
 
 const baseStrings = {
   it: {
@@ -1333,12 +1336,12 @@ const baseStrings = {
 export type StringKey = keyof typeof baseStrings["en"];
 
 // Import qui in fondo (non in cima al file) solo per leggibilità — ognuno di
-// questi 5 file importa `StringKey` da qui con `import type`, che non crea
-// una dipendenza circolare a runtime (viene rimosso in compilazione), solo
-// un controllo dei tipi: ogni traduzione DEVE coprire esattamente le stesse
+// questi file importa `StringKey` da qui con `import type`, che non crea una
+// dipendenza circolare a runtime (viene rimosso in compilazione), solo un
+// controllo dei tipi: ogni traduzione DEVE coprire esattamente le stesse
 // chiavi di baseStrings.en, altrimenti tsc segnala le chiavi mancanti.
+// i18n_ru.ts NON è importato (Russo tolto su richiesta dopo un crash su iOS).
 import { zhStrings } from "./i18n_zh";
-import { ruStrings } from "./i18n_ru";
 import { deStrings } from "./i18n_de";
 import { esStrings } from "./i18n_es";
 import { frStrings } from "./i18n_fr";
@@ -1346,7 +1349,6 @@ import { frStrings } from "./i18n_fr";
 export const strings: Record<Lang, Record<StringKey, string>> = {
   ...baseStrings,
   zh: zhStrings,
-  ru: ruStrings,
   de: deStrings,
   es: esStrings,
   fr: frStrings,
