@@ -940,6 +940,8 @@ export const frStrings: Record<StringKey, string> = {
   delegaSigned: "Délégation signée",
   signDelegaFirst: "Signe d'abord la délégation",
   inpsGuided: "Nous te guiderons dans l'inscription auprès de l'INPS avec le SPID. Tu peux terminer ton inscription maintenant : tu pourras recevoir des demandes une fois l'inscription INPS confirmée.",
+  inpsRegisteredLabel: "Inscrit à l'INPS (Libretto Famiglia)",
+  inpsRegisteredDesc: "Obligatoire pour recevoir des demandes sur le mode Collaborateur/trice. À activer seulement après avoir terminé l'inscription INPS.",
   availabilityTitle: "Disponibilité",
   availabilitySub: "Sélectionne tes disponibilités",
   slot_morning: "Matin",

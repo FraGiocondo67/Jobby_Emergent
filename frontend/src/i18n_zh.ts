@@ -940,6 +940,8 @@ export const zhStrings: Record<StringKey, string> = {
   delegaSigned: "授权书已签署",
   signDelegaFirst: "请先签署授权书",
   inpsGuided: "我们将引导你通过 SPID 完成 INPS 注册。你可以现在完成入驻流程,待 INPS 注册确认后即可开始接单。",
+  inpsRegisteredLabel: "已完成 INPS 登记(家庭用工手册)",
+  inpsRegisteredDesc: "以\"协作者\"模式接单必须开启此项。请仅在完成 INPS 登记后再开启。",
   availabilityTitle: "可服务时间",
   availabilitySub: "选择你的可服务时间",
   slot_morning: "上午",

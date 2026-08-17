@@ -940,6 +940,8 @@ export const ruStrings: Record<StringKey, string> = {
   delegaSigned: "Доверенность подписана",
   signDelegaFirst: "Сначала подпишите доверенность",
   inpsGuided: "Мы поможем вам зарегистрироваться на сайте INPS через SPID. Вы можете завершить регистрацию сейчас: получать запросы сможете после подтверждения регистрации в INPS.",
+  inpsRegisteredLabel: "Зарегистрирован в INPS (Libretto Famiglia)",
+  inpsRegisteredDesc: "Обязательно для получения запросов по тарифу «Сотрудник». Включайте только после завершения регистрации в INPS.",
   availabilityTitle: "Доступность",
   availabilitySub: "Укажите, когда вы доступны",
   slot_morning: "Утро",

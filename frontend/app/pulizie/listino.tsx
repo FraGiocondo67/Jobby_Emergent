@@ -22,10 +22,26 @@ export default function Listino() {
   const [binario, setBinario] = useState("impresa");
   const [f, setF] = useState<any>(DEFAULT);
   const [busy, setBusy] = useState(false);
+  // BLOCCO 10 (fix "provider nel raggio non vede le richieste generiche
+  // persona_lf"): pulizie_compatible_providers (RPC) richiede
+  // documents.lf_inps_registered=true per il binario persona_lf, ma prima
+  // d'ora l'unico punto dell'app che scriveva questo campo lo fissava per
+  // sempre a false durante l'onboarding (routers/provider_onboarding.py,
+  // POST /onboarding/lf/inps) — nessuna schermata permetteva di aggiornarlo
+  // in seguito. Aggiunto qui, unico posto sensato (stessa schermata del
+  // binario a cui il flag si applica).
+  const [inpsRegistered, setInpsRegistered] = useState(false);
+  const [inpsBusy, setInpsBusy] = useState(false);
 
   useEffect(() => { (async () => {
     try { const r = await api.getListino(); if (r.pulizie_binario) setBinario(r.pulizie_binario); if (r.listino) setF({ ...DEFAULT, ...r.listino, extra: { ...DEFAULT.extra, ...(r.listino.extra || {}) } }); } catch {}
+    try { const s = await api.providerStatus(); setInpsRegistered(!!s.lf_inps_registered); } catch {}
   })(); }, []);
+
+  const toggleInps = async (v: boolean) => {
+    setInpsRegistered(v); setInpsBusy(true);
+    try { await api.setInps(v); } catch { setInpsRegistered(!v); Alert.alert(t("error")); } finally { setInpsBusy(false); }
+  };
 
   const setNum = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v === "" ? "" : Number(v) }));
   const setExtra = (k: string, v: string) => setF((p: any) => ({ ...p, extra: { ...p.extra, [k]: v === "" ? "" : Number(v) } }));
@@ -69,6 +85,16 @@ export default function Listino() {
               </Pressable>))}
           </View>
 
+          {binario === "persona_lf" ? (
+            <Pressable testID="inps-toggle" style={[styles.numRow, { opacity: inpsBusy ? 0.6 : 1 }]} disabled={inpsBusy} onPress={() => toggleInps(!inpsRegistered)}>
+              <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                <Text style={styles.numLabel}>{t("inpsRegisteredLabel")}</Text>
+                <Text style={styles.inpsDesc}>{t("inpsRegisteredDesc")}</Text>
+              </View>
+              <Ionicons name={inpsRegistered ? "checkbox" : "square-outline"} size={24} color={inpsRegistered ? colors.brand : colors.muted} />
+            </Pressable>
+          ) : null}
+
           <Text style={styles.section}>{t("hourlyRates")}</Text>
           <NumRow label={t("tipo_ordinaria")} k="tariffa_ordinaria" />
           <NumRow label={t("tipo_afondo")} k="tariffa_afondo" />
@@ -110,6 +136,7 @@ const styles = StyleSheet.create({
   trackTextOn: { color: colors.onBrandTertiary },
   numRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
   numLabel: { fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurface, flex: 1 },
+  inpsDesc: { fontSize: fsize.sm, fontFamily: font.regular, color: colors.muted, marginTop: 2 },
   numInputWrap: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md },
   euro: { fontSize: fsize.base, color: colors.muted, fontFamily: font.regular },
   numInput: { width: 64, paddingVertical: spacing.sm, textAlign: "right", fontSize: fsize.base, fontFamily: font.medium, color: colors.onSurface },

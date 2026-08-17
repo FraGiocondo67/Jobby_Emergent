@@ -940,6 +940,8 @@ export const deStrings: Record<StringKey, string> = {
   delegaSigned: "Vollmacht unterschrieben",
   signDelegaFirst: "Unterschreibe zuerst die Vollmacht",
   inpsGuided: "Wir begleiten dich durch die INPS-Registrierung mit SPID. Du kannst das Onboarding jetzt abschließen; sobald die INPS-Registrierung bestätigt ist, kannst du Anfragen erhalten.",
+  inpsRegisteredLabel: "Bei INPS registriert (Libretto Famiglia)",
+  inpsRegisteredDesc: "Erforderlich, um Anfragen im Modus \"Mitarbeiter\" zu erhalten. Erst aktivieren, wenn die INPS-Registrierung abgeschlossen ist.",
   availabilityTitle: "Verfügbarkeit",
   availabilitySub: "Wähle aus, wann du verfügbar bist",
   slot_morning: "Vormittag",
