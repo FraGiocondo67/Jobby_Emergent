@@ -580,6 +580,7 @@ export const zhStrings: Record<StringKey, string> = {
   yourProposal: "你的报价",
   proposalSent: "报价已发送",
   acceptRequest: "按标价接受",
+  listinoPricePreview: "标价",
   proposeVariation: "提出调价建议",
   lfInsufficient: "INPS 钱包余额不足",
   lfTopupNeeded: "请充值钱包以确认",

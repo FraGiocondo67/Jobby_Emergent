@@ -580,6 +580,7 @@ export const esStrings: Record<StringKey, string> = {
   yourProposal: "Tu propuesta",
   proposalSent: "Propuesta enviada",
   acceptRequest: "Aceptar al precio de lista",
+  listinoPricePreview: "Precio de lista",
   proposeVariation: "Proponer variación de precio",
   lfInsufficient: "Bolsillo INPS insuficiente",
   lfTopupNeeded: "Recarga el bolsillo para confirmar",

@@ -580,6 +580,7 @@ export const deStrings: Record<StringKey, string> = {
   yourProposal: "Dein Angebot",
   proposalSent: "Angebot gesendet",
   acceptRequest: "Zum Listenpreis annehmen",
+  listinoPricePreview: "Listenpreis",
   proposeVariation: "Preisänderung vorschlagen",
   lfInsufficient: "INPS-Guthaben nicht ausreichend",
   lfTopupNeeded: "Lade das Konto auf, um zu bestätigen",

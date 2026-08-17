@@ -492,6 +492,25 @@ async def my_richieste(user=Depends(get_current_user)):
     return [_richiesta_out(r) for r in (res.data or [])]
 
 
+def _preview_driver_price(brief: dict, uid: str) -> Optional[float]:
+    """Stesso identico calcolo di propose() (vedi sopra) ma usato per
+    mostrare al provider invitato-non-ancora-proposto il prezzo PRIMA che
+    prema "Accetta al prezzo di listino" (BLOCCO 10: segnalato dall'utente,
+    stesso bug di richieste.py — il provider doveva accettare alla cieca)."""
+    if brief.get("tipo") == "ncc":
+        prov_row = db.table("profiles_provider").select("price_list").eq("user_id", uid).limit(1).execute()
+        pdata = prov_row.data[0] if prov_row.data else {}
+        price_list = pdata.get("price_list")
+        drv = price_list.get("driver", {}) if isinstance(price_list, dict) else {}
+        lst = drv.get("listino") or {}
+        if not lst:
+            return None
+        classe = brief.get("classe", "standard")
+        pickup = _parse(brief.get("pickup_at", ""))
+        return ncc_price(lst, classe, brief.get("route", {}), pickup, brief.get("ritorno"))
+    return brief.get("taxi_estimate")
+
+
 @router.get("/driver/richieste/{rid}")
 async def get_richiesta(rid: str, user=Depends(get_current_user)):
     res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
@@ -507,6 +526,13 @@ async def get_richiesta(rid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="forbidden")
     out = _richiesta_out(row)
     out["role"] = "client" if is_owner else "provider"
+    if not is_owner:
+        already_proposed = uid in [p.get("provider_id") for p in brief.get("proposte", [])]
+        if not already_proposed and brief.get("stato") in STATI_APERTI:
+            try:
+                out["prezzo_listino"] = _preview_driver_price(brief, uid)
+            except Exception:
+                out["prezzo_listino"] = None
     return out
 
 

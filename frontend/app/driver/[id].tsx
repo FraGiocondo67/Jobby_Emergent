@@ -102,6 +102,14 @@ export default function DriverDetail() {
               <Text style={styles.sectionH}>{t("drvConfirmTrip")}</Text>
               {!showPrice ? (
                 <>
+                  {/* BLOCCO 10: segnalato dall'utente — il provider doveva
+                      accettare "al prezzo di listino" alla cieca, senza
+                      vedere alcun prezzo. Anteprima calcolata dal backend
+                      (get_richiesta -> prezzo_listino), stessa formula di
+                      propose(). */}
+                  {typeof r.prezzo_listino === "number" ? (
+                    <Text style={[styles.priceLine, { marginBottom: spacing.sm }]}>€{r.prezzo_listino.toFixed(2)}</Text>
+                  ) : null}
                   <Button testID="drv-accept-trip" label={t("drvConfirmTripBtn")} icon="checkmark-circle" loading={busy} onPress={() => act(() => api.drvPropose(id, { accept: true }))} />
                   <Button testID="drv-modify-price" label={t("drvModifyPrice")} variant="secondary" onPress={() => setShowPrice(true)} style={{ marginTop: spacing.sm, height: 46 }} />
                   {r.cliente_id ? <Button testID="drv-chat-client" label={`💬 ${t("chat")}`} variant="secondary" onPress={() => router.push(`/chat/${r.cliente_id}`)} style={{ marginTop: spacing.sm, height: 46 }} /> : null}

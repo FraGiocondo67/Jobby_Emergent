@@ -580,6 +580,7 @@ export const ruStrings: Record<StringKey, string> = {
   yourProposal: "Ваше предложение",
   proposalSent: "Предложение отправлено",
   acceptRequest: "Принять по цене прайс-листа",
+  listinoPricePreview: "Цена по прайс-листу",
   proposeVariation: "Предложить изменение цены",
   lfInsufficient: "Недостаточно средств в кошельке INPS",
   lfTopupNeeded: "Пополните кошелёк для подтверждения",

@@ -580,6 +580,7 @@ export const frStrings: Record<StringKey, string> = {
   yourProposal: "Ta proposition",
   proposalSent: "Proposition envoyée",
   acceptRequest: "Accepter au prix du tarif",
+  listinoPricePreview: "Prix du tarif",
   proposeVariation: "Proposer une variation de prix",
   lfInsufficient: "Portefeuille INPS insuffisant",
   lfTopupNeeded: "Recharge le portefeuille pour confirmer",

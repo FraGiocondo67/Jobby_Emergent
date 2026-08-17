@@ -199,6 +199,17 @@ export default function RichiestaDetail() {
               <Text style={styles.propMeta}>{t("proposalSent")} · €{r.proposte[r.proposte.length - 1].price?.toFixed(2)}</Text>
             ) : (
               <>
+                {/* BLOCCO 10: segnalato dall'utente — il provider doveva
+                    accettare "al prezzo di listino" alla cieca, senza vedere
+                    alcun prezzo. Mostriamo qui l'anteprima calcolata dal
+                    backend (get_richiesta -> prezzo_listino) con lo stesso
+                    listino/formula che userebbe propose(). */}
+                {typeof r.prezzo_listino === "number" ? (
+                  <View style={styles.listinoPreview}>
+                    <Text style={styles.propMeta}>{t("listinoPricePreview")}</Text>
+                    <Text style={styles.propPrice}>€{r.prezzo_listino.toFixed(2)}</Text>
+                  </View>
+                ) : null}
                 <Button testID="accept-btn" label={t("acceptRequest")} loading={busy} onPress={() => act(() => api.proposeRichiesta(id as string, { accept: true }))} />
                 <Pressable testID="propose-var-btn" style={styles.varLink} onPress={openPropose}><Text style={styles.varLinkText}>{t("proposeVariation")}</Text></Pressable>
                 <Pressable testID="decline-btn" style={styles.declineLink} onPress={() => act(() => api.proposeRichiesta(id as string, { accept: false }))}><Text style={styles.declineText}>{t("decline")}</Text></Pressable>
@@ -288,6 +299,7 @@ const styles = StyleSheet.create({
   propName: { fontSize: fsize.lg, fontFamily: font.bold, color: colors.onSurface },
   propPrice: { fontSize: fsize.xl, fontFamily: font.bold, color: colors.brand },
   propMeta: { fontSize: fsize.base, fontFamily: font.regular, color: colors.muted },
+  listinoPreview: { alignItems: "center", marginBottom: spacing.md },
   propVar: { fontSize: fsize.sm, fontFamily: font.medium, color: colors.warning },
   propMsg: { fontSize: fsize.base, fontFamily: font.regular, color: colors.onSurfaceTertiary, fontStyle: "italic" },
   waiting: { alignItems: "center", gap: spacing.sm, padding: spacing.xl },

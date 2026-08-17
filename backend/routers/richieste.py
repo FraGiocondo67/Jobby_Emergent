@@ -400,6 +400,22 @@ async def my_richieste(user=Depends(get_current_user)):
     return [_richiesta_out(r) for r in (res.data or [])]
 
 
+async def _preview_listino_price(brief: dict, uid: str) -> Optional[float]:
+    """Prezzo di listino calcolato con il listino DEL provider che sta
+    guardando la richiesta — stessa identica formula di propose() (vedi
+    sopra, fee compresa) — usato per mostrarglielo PRIMA che prema
+    "Accetta la richiesta" (BLOCCO 10: segnalato dall'utente, il provider
+    doveva accettare alla cieca, senza vedere alcun prezzo)."""
+    prov_row = db.table("profiles_provider").select("price_list").eq("user_id", uid).limit(1).execute()
+    pdata = prov_row.data[0] if prov_row.data else {}
+    price_list = pdata.get("price_list")
+    lst = price_list.get("pulizie", {}) if isinstance(price_list, dict) else {}
+    if not lst:
+        return None
+    fee = await fee_pct()
+    return price_breakdown(lst, brief.get("config", {}), brief.get("binario", "impresa"), fee)["total_client"]
+
+
 @router.get("/pulizie/richieste/{rid}")
 async def get_richiesta(rid: str, user=Depends(get_current_user)):
     res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
@@ -416,6 +432,12 @@ async def get_richiesta(rid: str, user=Depends(get_current_user)):
     out["role"] = "client" if is_owner else "provider"
     if not is_owner:
         out.pop("indirizzo", None)
+        already_proposed = uid in [p.get("provider_id") for p in brief.get("proposte", [])]
+        if not already_proposed and brief.get("stato") in STATI_APERTI:
+            try:
+                out["prezzo_listino"] = await _preview_listino_price(brief, uid)
+            except Exception:
+                out["prezzo_listino"] = None
     return out
 
 
