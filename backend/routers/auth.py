@@ -24,6 +24,7 @@ Cosa NON è stato portato in questo blocco (deliberatamente, da riprendere):
   client/provider/both). Da ricollegare quando quel modulo verrà riscritto.
 """
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from core_pg import db
 from deps_pg import get_current_user
@@ -124,6 +125,23 @@ async def me(user=Depends(get_current_user)):
         # app ha gia' un fallback a coordinate di default quando mancano.
 
     return {**flat, "user": base, "client_profile": cp, "provider_profile": pp}
+
+
+class QrConfirmIn(BaseModel):
+    enabled: bool
+
+
+@router.post("/profile/qr-confirm")
+async def set_qr_confirm(body: QrConfirmIn, user=Depends(get_current_user)):
+    """BLOCCO 10 (fix "attivo QR Code nel Profilo -> errore"): mai migrato da
+    Mongo a Postgres (vedi nota nel docstring di modulo) — public.users non
+    aveva la colonna qr_confirm_enabled che app/(tabs)/profile.tsx si
+    aspettava, quindi POST /profile/qr-confirm 404ava sempre. Aggiunta la
+    colonna (migrazione add_qr_confirm_enabled_to_users) ed esposto qui
+    l'endpoint mancante — stessa preferenza cliente che verrà letta dal
+    flusso di conferma QR a fine servizio (Blocco 10, in corso)."""
+    db.table("users").update({"qr_confirm_enabled": body.enabled}).eq("id", user["id"]).execute()
+    return {"qr_confirm_enabled": body.enabled}
 
 
 @router.post("/auth/logout")

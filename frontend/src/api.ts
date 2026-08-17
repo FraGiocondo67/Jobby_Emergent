@@ -172,10 +172,25 @@ export const api = {
     request(`/pulizie/richieste/${id}/confirm`, { method: "POST", body: JSON.stringify({ provider_id }) }),
   startRichiesta: (id: string) => request(`/pulizie/richieste/${id}/start`, { method: "POST" }),
   completeRichiesta: (id: string) => request(`/pulizie/richieste/${id}/complete`, { method: "POST" }),
+  // BLOCCO 10 (fix "recensione va in errore" su Pulizie): mancava il
+  // prefisso "/pulizie" — babysitting/driver/artigiani hanno le loro
+  // bsReview/drvReview/artReview già corrette, Pulizie invece passava da
+  // qui e chiamava un path "/richieste/{id}/review" mai esistito sul
+  // backend (review() vive solo sotto /pulizie/richieste/{id}/review in
+  // routers/richieste.py) -> 404 sempre.
   reviewRichiesta: (id: string, rating: number, comment: string) =>
-    request(`/richieste/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
-  // Spec 4 — generic engine (all categories)
-  cancelPolicy: (id: string) => request(`/richieste/${id}/cancel-policy`),
+    request(`/pulizie/richieste/${id}/review`, { method: "POST", body: JSON.stringify({ rating, comment }) }),
+  // Spec 4 — generic engine (all categories). cancelPolicy/rateClient/
+  // getClientRating vivono in routers/spec4.py sotto /missions/{id}/... ,
+  // non /richieste/{id}/... (fix BLOCCO 10, stesso tipo di bug della
+  // review qui sopra). providerCancel/reportNoShow/reportDelay/
+  // pauseRecurrence/resumeRecurrence/deleteReview/replyReview invece NON
+  // hanno alcun endpoint sul backend attuale: rimossi deliberatamente da
+  // spec4.py (vedi il docstring di quel modulo, "TOLTO... fuori scope,
+  // decisione utente") — lasciati qui solo perché ancora chiamati da un
+  // paio di bottoni in pulizie/[id].tsx, che quindi vanno ancora in
+  // errore se premuti (segnalato all'utente, non nascosto silenziosamente).
+  cancelPolicy: (id: string) => request(`/missions/${id}/cancel-policy`),
   providerCancel: (id: string, reason: string = "") => request(`/richieste/${id}/provider-cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   reportNoShow: (id: string, against: "client" | "provider") => request(`/richieste/${id}/no-show`, { method: "POST", body: JSON.stringify({ against }) }),
   reportDelay: (id: string, minutes: number) => request(`/richieste/${id}/report-delay`, { method: "POST", body: JSON.stringify({ minutes }) }),
@@ -185,8 +200,8 @@ export const api = {
   replyReview: (id: string, reply: string) => request(`/richieste/${id}/review/reply`, { method: "POST", body: JSON.stringify({ reply }) }),
   providerReviews: (providerId: string) => request(`/providers/${providerId}/reviews`),
   providerPublic: (providerId: string) => request(`/providers/${providerId}/public`),
-  rateClient: (id: string, rating: number, flags: string[], note: string) => request(`/richieste/${id}/rate-client`, { method: "POST", body: JSON.stringify({ rating, flags, note }) }),
-  getClientRating: (id: string) => request(`/richieste/${id}/client-rating`),
+  rateClient: (id: string, rating: number, flags: string[], note: string) => request(`/missions/${id}/rate-client`, { method: "POST", body: JSON.stringify({ rating, flags, note }) }),
+  getClientRating: (id: string) => request(`/missions/${id}/rate-client`),
   pulizieIncoming: () => request("/pulizie/incoming"),
   proposeRichiesta: (id: string, data: { accept: boolean; variation_reason?: string | null; variation_price?: number | null; message?: string }) =>
     request(`/pulizie/richieste/${id}/propose`, { method: "POST", body: JSON.stringify(data) }),
