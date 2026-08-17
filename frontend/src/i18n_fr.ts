@@ -1007,6 +1007,7 @@ export const frStrings: Record<StringKey, string> = {
   inactive: "Inactif",
   reviewsLabel: "avis",
   productsSection: "Produits",
+  priceListSection: "Liste des prix",
   reviewsSection: "Avis",
   noReviews: "Aucun avis pour le moment",
   viewAndOrder: "Voir les produits et commander",

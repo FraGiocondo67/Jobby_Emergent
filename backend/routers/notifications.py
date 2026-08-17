@@ -56,7 +56,18 @@ async def list_notifications(limit: int = 100, unread: bool = False, user=Depend
         db.table("notifications").select("id", count="exact")
         .eq("user_id", user["id"]).eq("is_read", False).execute()
     )
-    return {"items": res.data or [], "unread": unread_res.count or 0}
+    # BLOCCO 10 (segnalato dall'utente: "le notifiche sono visibili ma non
+    # sono selezionabili e non è possibile segnarle come lette"): il
+    # docstring del modulo AMMETTEVA la differenza di nomi campo (id/is_read
+    # Postgres vs notif_id/read Mongo) ma non la riconciliava mai — le righe
+    # venivano restituite grezze. app/notifications.tsx legge n.notif_id
+    # (sempre undefined -> key React undefined, PATCH /notifications/
+    # undefined/read che non trova mai nulla) e n.read (sempre undefined ->
+    # ogni notifica appariva sempre "non letta", pallino rosso incluso, anche
+    # dopo "segna tutte come lette" perché il campo letto dal frontend non
+    # cambiava mai). Normalizzato qui allo shape atteso dal frontend.
+    items = [{**n, "notif_id": n.get("id"), "read": bool(n.get("is_read"))} for n in (res.data or [])]
+    return {"items": items, "unread": unread_res.count or 0}
 
 
 @router.delete("/notifications/{notif_id}")

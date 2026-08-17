@@ -194,7 +194,14 @@ export default function RichiestaDetail() {
           <View style={[styles.card, shadow.card]}>
             <Text style={styles.sectionLabel}>{t("yourProposal")}</Text>
             {r.proposte?.find((p: any) => p.provider_nome) && r.provider_scelto ? (
-              <Text style={styles.propMeta}>{t("confirmed")}</Text>
+              <>
+                <Text style={styles.propMeta}>{t("confirmed")}</Text>
+                {/* BLOCCO 10: segnalato dall'utente — una volta confermata la
+                    richiesta il professionista non vedeva più alcun prezzo
+                    (e il cliente vedeva un €0.00 fisso, r.prezzo_finale non
+                    era mai valorizzato dal backend). Vedi _richiesta_out(). */}
+                {typeof r.prezzo_finale === "number" ? <Text style={styles.propPrice}>€{r.prezzo_finale.toFixed(2)}</Text> : null}
+              </>
             ) : r.proposte?.length ? (
               <Text style={styles.propMeta}>{t("proposalSent")} · €{r.proposte[r.proposte.length - 1].price?.toFixed(2)}</Text>
             ) : (

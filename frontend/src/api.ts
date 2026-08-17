@@ -167,7 +167,11 @@ export const api = {
   createRichiesta: (data: any) => request("/pulizie/richieste", { method: "POST", body: JSON.stringify(data) }),
   myRichieste: () => request("/pulizie/richieste"),
   getRichiesta: (id: string) => request(`/pulizie/richieste/${id}`),
-  cancelRichiesta: (id: string, reason: string = "") => request(`/richieste/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  // BLOCCO 10 (fix "annulla richiesta non funziona anche se nessuno ha
+  // ancora accettato"): stesso identico bug di reviewRichiesta sopra —
+  // mancava il prefisso "/pulizie" (cancel_richiesta vive solo sotto
+  // /pulizie/richieste/{id}/cancel in routers/richieste.py) -> 404 sempre.
+  cancelRichiesta: (id: string, reason: string = "") => request(`/pulizie/richieste/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   confirmRichiesta: (id: string, provider_id: string) =>
     request(`/pulizie/richieste/${id}/confirm`, { method: "POST", body: JSON.stringify({ provider_id }) }),
   startRichiesta: (id: string) => request(`/pulizie/richieste/${id}/start`, { method: "POST" }),

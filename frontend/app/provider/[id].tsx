@@ -137,6 +137,48 @@ export default function ProviderDetail() {
         {p.bio ? <Text style={styles.bio}>{p.bio}</Text> : null}
         {p.address ? <Text style={styles.address}>📍 {p.address}</Text> : null}
 
+        {/* BLOCCO 10 (segnalato dall'utente: da "cerca attorno a te", una
+            volta selezionato un professionista deve essere possibile
+            vedere i prezzi dei servizi/eventuali extra, non solo scheda e
+            recensioni): listino sintetico per verticale, letto da
+            p.price_list (ora esposto da GET /providers/{id}/public). Vale
+            sia per provider standard sia per attività di prossimità che
+            offrono un servizio standard (es. NCC) oltre ai prodotti. */}
+        {(p.price_list?.pulizie || p.price_list?.babysitting || p.price_list?.artigiani) ? (
+          <View style={{ marginTop: spacing.xl }}>
+            <Text style={styles.section}>💶 {t("priceListSection")}</Text>
+            {p.price_list?.pulizie ? (
+              <View style={styles.prodRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.prodName}>{catLabel("pulizie")}</Text>
+                  <Text style={styles.prodMeta}>
+                    {t("tipo_ordinaria")} €{Number(p.price_list.pulizie.tariffa_ordinaria || 0).toFixed(0)}/h
+                    {p.price_list.pulizie.tariffa_afondo ? ` · ${t("tipo_afondo")} €${Number(p.price_list.pulizie.tariffa_afondo).toFixed(0)}/h` : ""}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+            {p.price_list?.babysitting?.listino ? (
+              <View style={styles.prodRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.prodName}>{catLabel("babysitting")}</Text>
+                  <Text style={styles.prodMeta}>{t("bsRateHourly")} €{Number(p.price_list.babysitting.listino.tariffa_oraria || 0).toFixed(0)}/h</Text>
+                </View>
+              </View>
+            ) : null}
+            {p.price_list?.artigiani ? Object.entries(p.price_list.artigiani).map(([mestiere, lst]: [string, any]) => (
+              lst?.tariffa_oraria ? (
+                <View key={mestiere} style={styles.prodRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.prodName}>{mestiere}</Text>
+                    <Text style={styles.prodMeta}>€{Number(lst.tariffa_oraria).toFixed(0)}/h</Text>
+                  </View>
+                </View>
+              ) : null
+            )) : null}
+          </View>
+        ) : null}
+
         {/* Products (business, solo quando non è un servizio standard richiesto) */}
         {showOrder ? (
           <View style={{ marginTop: spacing.xl }}>

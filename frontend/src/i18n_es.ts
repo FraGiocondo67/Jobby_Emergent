@@ -1007,6 +1007,7 @@ export const esStrings: Record<StringKey, string> = {
   inactive: "Inactivo",
   reviewsLabel: "reseñas",
   productsSection: "Productos",
+  priceListSection: "Lista de precios",
   reviewsSection: "Reseñas",
   noReviews: "Aún no hay reseñas",
   viewAndOrder: "Ver productos y pedir",

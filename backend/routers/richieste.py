@@ -225,6 +225,20 @@ def _compatible_providers(binario: str, config: dict, lat: Optional[float], lng:
 def _richiesta_out(row: dict) -> dict:
     brief = row.get("brief_answers") or {}
     out = dict(brief)
+    # BLOCCO 10 (segnalato dall'utente: "il professionista non vede il
+    # prezzo a cui è stato chiesto il servizio, appare a zero" — e lo
+    # stesso valeva per il cliente, che vedeva un €0.00 fisso): una volta
+    # confermata la richiesta né confirm() né nessun altro punto scriveva
+    # mai un campo prezzo_finale in brief_answers, ma pulizie/[id].tsx lo
+    # legge (r.prezzo_finale) per la card "Confermato" — undefined/0
+    # sempre. Calcolato qui dalla proposta del provider scelto, unica
+    # fonte di verità già presente per il prezzo pattuito.
+    provider_scelto = brief.get("provider_scelto")
+    prezzo_finale = None
+    if provider_scelto:
+        prop = next((p for p in brief.get("proposte", []) if p.get("provider_id") == provider_scelto), None)
+        if prop:
+            prezzo_finale = prop.get("price")
     out.update({
         "richiesta_id": row["id"],
         "cliente_id": row["client_id"],
@@ -233,6 +247,7 @@ def _richiesta_out(row: dict) -> dict:
         "indirizzo": row.get("address"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
+        "prezzo_finale": prezzo_finale,
     })
     return out
 
@@ -767,6 +782,41 @@ async def review(rid: str, body: ReviewIn, user=Depends(get_current_user)):
     return brief["recensione"]
 
 
+class ReviewReplyIn(BaseModel):
+    reply: str
+
+
+@router.post("/pulizie/richieste/{rid}/review/reply")
+async def review_reply(rid: str, body: ReviewReplyIn, user=Depends(get_current_user)):
+    """BLOCCO 10 (segnalato dall'utente: "la recensione non funziona per il
+    professionista, solo per il cliente"): il frontend (pulizie/[id].tsx,
+    bottone "submit-reply") chiama questo path da sempre, ma nessun endpoint
+    lo serviva — spec4.py dichiarava (erroneamente) che la reply fosse "già
+    gestita da review()", che invece permette solo al CLIENTE di creare la
+    recensione iniziale, non al provider di rispondere. 404 sempre."""
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    if brief.get("provider_scelto") != user["id"]:
+        raise HTTPException(status_code=403, detail="forbidden")
+    recensione = brief.get("recensione")
+    if not recensione:
+        raise HTTPException(status_code=400, detail="no_review")
+    if recensione.get("reply"):
+        raise HTTPException(status_code=400, detail="already_replied")
+
+    recensione["reply"] = body.reply
+    recensione["reply_at"] = now_iso()
+    brief["recensione"] = recensione
+    db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+
+    await notify(row["client_id"], "richiesta_completata", "Risposta alla recensione",
+                "Il professionista ha risposto alla tua recensione.", "richiesta", rid)
+    return recensione
+
+
 # ---------------- Libretto Famiglia borsellino (Blocco 3 — registro, non wallet) ----------------
 @router.get("/pulizie/lf/borsellino")
 async def lf_borsellino(user=Depends(get_current_user)):
@@ -972,3 +1022,47 @@ async def provider_jobs(user=Depends(get_current_user)):
             "diretta": bool(brief.get("diretta")),
         })
     return out
+
+
+@router.get("/earnings")
+async def earnings(user=Depends(get_current_user)):
+    """BLOCCO 10 (segnalato dall'utente: "i dati del TOTALE guadagno,
+    profilo professionista, in attività, non si aggiornano"): il frontend
+    chiama da sempre GET /earnings (api.earnings(), (tabs)/richieste.tsx
+    ProviderJobs — l'hero "Totale guadagnato"/jobs/completati/in attesa),
+    ma l'unico endpoint con questo path viveva in routers/bookings.py,
+    RITIRATO nel Blocco 5 (motore di matching generico pre-Blocco2) e mai
+    più montato su server.py -> 404 sempre, ignorato in silenzio dal
+    Promise.allSettled del frontend, card sempre a €0.00. Ricostruito qui su
+    Postgres, stesso pattern cross-categoria di /provider/jobs qui sopra —
+    missions.price_agreed/provider_payout sono colonne reali scritte da ogni
+    verticale al confirm (vedi richieste.py/driver.py/babysitting.py/
+    artigiani.py), quindi affidabili senza dover riparsare brief_answers."""
+    empty = {"total_earned": 0, "jobs_count": 0, "completed_count": 0, "pending": 0}
+    if user.get("role") not in ("provider", "both"):
+        return empty
+    uid = user["id"]
+    cat_res = db.table("service_categories").select("id").in_("slug", list(_CROSS_CATEGORY_SLUGS)).execute()
+    cat_ids = [c["id"] for c in (cat_res.data or [])]
+    if not cat_ids:
+        return empty
+    res = (
+        db.table("missions").select("brief_answers, price_agreed, provider_payout")
+        .in_("category_id", cat_ids).eq("provider_id", uid).execute()
+    )
+    rows = res.data or []
+    total_earned = 0.0
+    pending = 0.0
+    completed_count = 0
+    for row in rows:
+        stato = (row.get("brief_answers") or {}).get("stato")
+        amount = float(row.get("provider_payout") or row.get("price_agreed") or 0)
+        if stato in ("completata", "recensita"):
+            total_earned += amount
+            completed_count += 1
+        elif stato in ("confermata", "in_corso"):
+            pending += amount
+    return {
+        "total_earned": round(total_earned, 2), "jobs_count": len(rows),
+        "completed_count": completed_count, "pending": round(pending, 2),
+    }

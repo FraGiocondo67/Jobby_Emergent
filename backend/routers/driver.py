@@ -775,7 +775,14 @@ async def confirm(rid: str, body: ConfirmIn, user=Depends(get_current_user)):
         # NCC: prezzo noto ora, si blocca subito.
         amount = float(proposal.get("prezzo") or 0)
         brief = await _add_hold(rid, brief, "corsa", amount, user, provider_id)
-    # TAXI: nessun hold qui — il tassametro decide l'importo a fine corsa (vedi /pay).
+        # BLOCCO 10 (stesso bug segnalato per Pulizie: "il prezzo appare a
+        # zero anche dopo l'accettazione"): nulla scriveva mai
+        # brief_answers.prezzo_finale, letto sia dal frontend (driver/[id].tsx
+        # righe 174/217) sia da cancel_richiesta() qui sotto (calcolo penale
+        # cancellazione, sempre a 0 di conseguenza).
+        brief["prezzo_finale"] = amount
+    # TAXI: nessun hold qui — il tassametro decide l'importo a fine corsa (vedi /pay),
+    # prezzo_finale viene scritto lì (taxi_meter_finale) una volta noto.
     brief["stato"] = "confermata"
     db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
 
@@ -930,6 +937,7 @@ async def complete(rid: str, body: CompleteIn, user=Depends(get_current_user)):
         if body.meter_amount is None or body.meter_amount <= 0:
             raise HTTPException(status_code=400, detail="meter_amount_required")
         brief["taxi_meter_finale"] = round(float(body.meter_amount), 2)
+        brief["prezzo_finale"] = brief["taxi_meter_finale"]
         brief["stato"] = "in_pagamento"
         await notify(row["client_id"], "driver_completata", "Corsa terminata",
                     f"Importo tassametro: €{brief['taxi_meter_finale']:.2f}. Completa il pagamento.", "driver", rid)

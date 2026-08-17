@@ -19,11 +19,17 @@ from routers import generic_requests
 from routers import profile
 from routers import app_home
 from routers import delivery
+from routers import dashboard_pg
 # BLOCCO 10: confirm_delivery.py (root, Mongo-based) sostituito da
 # routers/delivery.py + delivery_pg.py — vedi docstring di delivery_pg.py
 # per il perché (MONGO_URL non configurato su questo deploy, ogni sua query
 # si bloccava/falliva pur essendo montato). File storico lasciato nel repo
 # come riferimento, non più importato qui.
+# BLOCCO 10: dashboard.py (root del blocco RITIRATI qui sotto) sostituito da
+# routers/dashboard_pg.py — stesso motivo (Mongo-based, mai portato a
+# Postgres, mai montato -> /wallet/dashboard, /provider/dashboard,
+# /wallet/external-usage, /provider/dnd sempre 404). Vedi docstring di
+# dashboard_pg.py per il dettaglio della ricostruzione.
 
 # BLOCCO 7 (migrazione Emergent -> Supabase/Render): 8 router Mongo-based mai
 # migrati RITIRATI su conferma esplicita dell'utente (stesso trattamento già
@@ -59,6 +65,7 @@ api.include_router(categories.router)
 api.include_router(generic_requests.router)
 api.include_router(profile.router)
 api.include_router(app_home.router)
+api.include_router(dashboard_pg.router)
 # missions.py/bookings.py (motore di matching generico pre-Blocco2, con
 # provider "bot" simulati) RITIRATI nel Blocco 5 — decisione esplicita
 # dell'utente: le 4 verticali (Pulizie/Artigiani/Babysitting/Driver, Blocco

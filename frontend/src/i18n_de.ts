@@ -1007,6 +1007,7 @@ export const deStrings: Record<StringKey, string> = {
   inactive: "Nicht aktiv",
   reviewsLabel: "Bewertungen",
   productsSection: "Produkte",
+  priceListSection: "Preisliste",
   reviewsSection: "Bewertungen",
   noReviews: "Noch keine Bewertungen",
   viewAndOrder: "Produkte ansehen & bestellen",

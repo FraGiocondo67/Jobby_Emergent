@@ -1007,6 +1007,7 @@ export const ruStrings: Record<StringKey, string> = {
   inactive: "Неактивно",
   reviewsLabel: "отзывов",
   productsSection: "Товары",
+  priceListSection: "Прайс-лист",
   reviewsSection: "Отзывы",
   noReviews: "Пока нет отзывов",
   viewAndOrder: "Смотреть товары и заказать",

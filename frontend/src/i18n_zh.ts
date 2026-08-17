@@ -1007,6 +1007,7 @@ export const zhStrings: Record<StringKey, string> = {
   inactive: "未启用",
   reviewsLabel: "条评价",
   productsSection: "商品",
+  priceListSection: "价目表",
   reviewsSection: "评价",
   noReviews: "暂无评价",
   viewAndOrder: "查看商品并下单",

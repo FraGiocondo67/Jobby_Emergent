@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Modal, TextInput, Switch, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Modal, TextInput, Switch, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -43,7 +43,8 @@ function ClientWallet() {
   const saveExternal = async () => {
     const amt = parseFloat(extAmount.replace(",", "."));
     if (!amt || amt <= 0) { Alert.alert(t("wExternalSave"), "€ > 0"); return; }
-    try { await api.addExternalUsage(amt, extName.trim()); setExtOpen(false); setExtAmount(""); setExtName(""); load(); } catch {}
+    try { await api.addExternalUsage(amt, extName.trim()); setExtOpen(false); setExtAmount(""); setExtName(""); load(); }
+    catch { Alert.alert(t("error")); }
   };
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>;
@@ -156,16 +157,28 @@ function ClientWallet() {
         </View>
       </ScrollView>
 
+      {/* BLOCCO 10 (segnalato dall'utente: "la digitazione di un importo è
+          malfunzionante, non è possibile spostarsi nei campi e confermare,
+          unica via d'uscita chiudere la app"): il modale non aveva alcuna
+          gestione della tastiera — su iOS in particolare la tastiera
+          copriva il secondo campo e/o il bottone Salva (il modale è
+          ancorato in basso, justifyContent:"flex-end", quindi la tastiera
+          si sovrapponeva direttamente ai controlli senza spostarli).
+          Aggiunta KeyboardAvoidingView, stesso pattern già in uso in
+          pulizie/listino.tsx. Il Salva restava comunque silenziosamente
+          rotto in ogni caso perché POST /wallet/external-usage non aveva
+          alcun endpoint reale dietro (dashboard.py RITIRATO) — vedi
+          routers/dashboard_pg.py, ricostruito in questa stessa sessione. */}
       <Modal visible={extOpen} transparent animationType="slide" onRequestClose={() => setExtOpen(false)}>
-        <View style={styles.modalBg}>
+        <KeyboardAvoidingView style={styles.modalBg} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.lg }]}>
             <Text style={styles.blockTitle}>{t("wExternalAdd")}</Text>
-            <TextInput testID="ext-amount" style={styles.input} keyboardType="numeric" placeholder="€" placeholderTextColor={colors.muted} value={extAmount} onChangeText={setExtAmount} />
-            <TextInput testID="ext-name" style={styles.input} placeholder={t("wPerColl")} placeholderTextColor={colors.muted} value={extName} onChangeText={setExtName} />
+            <TextInput testID="ext-amount" style={styles.input} keyboardType="numeric" returnKeyType="next" placeholder="€" placeholderTextColor={colors.muted} value={extAmount} onChangeText={setExtAmount} />
+            <TextInput testID="ext-name" style={styles.input} returnKeyType="done" placeholder={t("wPerColl")} placeholderTextColor={colors.muted} value={extName} onChangeText={setExtName} onSubmitEditing={saveExternal} />
             <Pressable testID="ext-save" style={styles.primaryBtn} onPress={saveExternal}><Text style={styles.primaryBtnTxt}>{t("wExternalSave")}</Text></Pressable>
             <Pressable style={styles.linkRow} onPress={() => setExtOpen(false)}><Text style={styles.link}>{t("cancel") || "Annulla"}</Text></Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

@@ -35,6 +35,32 @@ router = APIRouter()
 ACTIVE_REL_STATES = ("confermata", "in_corso", "completata", "recensita")
 
 
+def _estimate_hourly_rate(price_list) -> float:
+    """BLOCCO 10 (segnalato dall'utente: "il listino prezzi del
+    professionista non è visibile, in 'cerca attorno a te' appare a
+    zero"): la RPC nearby_providers legge profiles_provider.hourly_rate,
+    una colonna piatta separata dal vero listino — MAI scritta da nessuna
+    delle 4 schermate "Listino" (pulizie/babysitting/artigiani/driver
+    salvano tutte in profiles_provider.price_list, un JSONB strutturato per
+    verticale, non in questa colonna). Risultato: hourly_rate resta sempre
+    NULL anche per un provider con un listino reale e completo, mostrato
+    come "€0/h" sulla mappa. Stima qui una tariffa oraria rappresentativa
+    dal price_list reale invece di fidarsi della colonna morta."""
+    if not isinstance(price_list, dict):
+        return 0.0
+    pulizie = price_list.get("pulizie") or {}
+    if pulizie.get("tariffa_ordinaria"):
+        return float(pulizie["tariffa_ordinaria"])
+    bs = (price_list.get("babysitting") or {}).get("listino") or {}
+    if bs.get("tariffa_oraria"):
+        return float(bs["tariffa_oraria"])
+    art = price_list.get("artigiani") or {}
+    for lst in art.values():
+        if isinstance(lst, dict) and lst.get("tariffa_oraria"):
+            return float(lst["tariffa_oraria"])
+    return 0.0
+
+
 @router.get("/providers/nearby")
 async def providers_nearby(lat: float, lng: float, category: Optional[str] = None,
                             radius: Optional[float] = None, user=Depends(get_current_user)):
@@ -69,7 +95,7 @@ async def providers_nearby(lat: float, lng: float, category: Optional[str] = Non
     if not rows:
         return []
     ids = [r["user_id"] for r in rows]
-    extra = db.table("profiles_provider").select("user_id, is_proximity_business, business_data").in_("user_id", ids).execute()
+    extra = db.table("profiles_provider").select("user_id, is_proximity_business, business_data, price_list").in_("user_id", ids).execute()
     extra_map = {e["user_id"]: e for e in (extra.data or [])}
     out = []
     for r in rows:
@@ -87,7 +113,7 @@ async def providers_nearby(lat: float, lng: float, category: Optional[str] = Non
             "services": r.get("skills") or [],
             "rating": r.get("avg_rating") or 0,
             "trust_score": r.get("trust_score") or 0,
-            "hourly_rate": r.get("hourly_rate") or 0,
+            "hourly_rate": r.get("hourly_rate") or _estimate_hourly_rate(e.get("price_list")),
             # La RPC filtra già kyc_status='approved' nella WHERE — chi
             # arriva qui è per definizione approvato.
             "online": True,
@@ -128,7 +154,7 @@ async def provider_public(provider_id: str, user=Depends(get_current_user)):
 
     pp_row = db.table("profiles_provider").select(
         "bio, skills, hourly_rate, availability_status, avg_rating, trust_score, "
-        "kyc_status, is_proximity_business, business_data"
+        "kyc_status, is_proximity_business, business_data, price_list"
     ).eq("user_id", provider_id).limit(1).execute()
     if not pp_row.data:
         raise HTTPException(status_code=404, detail="provider_not_found")
@@ -169,6 +195,17 @@ async def provider_public(provider_id: str, user=Depends(get_current_user)):
         "verified": pp.get("kyc_status") == "approved",
         "approval_status": pp.get("kyc_status") or "approved",
         "business_photos": biz.get("photos") or [],
+        # BLOCCO 10 (segnalato dall'utente: da "cerca attorno a te", una
+        # volta selezionato un professionista/attività deve essere
+        # possibile vedere i prezzi dei servizi ed eventuali extra, non solo
+        # la scheda/recensioni): price_list non veniva mai esposto qui —
+        # app/provider/[id].tsx mostra già i "prodotti" delle attività di
+        # prossimità (api.businessListino), ma nessun provider "standard"
+        # (Pulizie/Babysitting/Artigiani/Driver) aveva un listino visibile
+        # prima di aprire il configuratore. Grezzo qui, formattato lato
+        # frontend per verticale (stessa struttura già usata da
+        # pulizie/listino.tsx ecc.).
+        "price_list": pp.get("price_list") or {},
     }
 
 
