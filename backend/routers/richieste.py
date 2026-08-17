@@ -44,6 +44,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
+import delivery_pg as D
 import lf_pg as LF
 import richieste_config as C
 import spec4_pg as S4
@@ -626,19 +627,17 @@ async def start(rid: str, user=Depends(get_current_user)):
     return {"stato": "in_corso"}
 
 
-@router.post("/pulizie/richieste/{rid}/complete")
-async def complete(rid: str, user=Depends(get_current_user)):
+async def _release_pulizie(rid: str) -> None:
+    """Rilascio effettivo (bonifico Stripe se binario impresa, nessuna
+    azione gateway se persona_lf) — invocato da delivery_pg SOLO dopo che
+    il professionista ha scansionato il QR/digitato il codice del cliente
+    (BLOCCO 10, QR obbligatorio). Stessa identica logica che prima viveva
+    direttamente in complete(), solo spostata qui e chiamata dal gate."""
     res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="not_found")
     row = res.data[0]
     brief = row.get("brief_answers") or {}
-    uid = user["id"]
-    if uid not in (row["client_id"], brief.get("provider_scelto")):
-        raise HTTPException(status_code=404, detail="not_found")
-    if brief.get("stato") != "in_corso":
-        raise HTTPException(status_code=400, detail="not_in_progress")
-
     binario = brief.get("binario", "impresa")
     if binario == "impresa":
         pagamento = brief.get("pagamento_lavoro") or {}
@@ -660,12 +659,45 @@ async def complete(rid: str, user=Depends(get_current_user)):
     # persona_lf: nessuna azione gateway — l'uso è già stato registrato al confirm
 
     brief["stato"] = "completata"
+    brief["conferma_pending"] = False
     db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
     await notify(row["client_id"], "richiesta_completata", "Lavoro completato",
                 "Il lavoro è stato segnato come completato.", "richiesta", rid)
     if brief.get("provider_scelto"):
         await notify(brief["provider_scelto"], "richiesta_completata", "Lavoro completato",
                     "Hai completato il lavoro.", "richiesta", rid)
+
+
+D.register_releaser("pulizie", _release_pulizie)
+
+
+@router.post("/pulizie/richieste/{rid}/complete")
+async def complete(rid: str, user=Depends(get_current_user)):
+    res = db.table("missions").select("*").eq("id", rid).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = res.data[0]
+    brief = row.get("brief_answers") or {}
+    uid = user["id"]
+    if uid not in (row["client_id"], brief.get("provider_scelto")):
+        raise HTTPException(status_code=404, detail="not_found")
+    if brief.get("stato") != "in_corso":
+        raise HTTPException(status_code=400, detail="not_in_progress")
+    if brief.get("binario", "impresa") == "impresa" and (brief.get("pagamento_lavoro") or {}).get("stato") != "held":
+        raise HTTPException(status_code=400, detail="payment_not_held")
+
+    # BLOCCO 10 (attivazione QR obbligatorio — Pulizie è tra le attività
+    # decise dall'utente): il pagamento non si libera più al tap di
+    # "Completa" — viene ARMATO (delivery_pg.arm_or_release, mandatory=True)
+    # e liberato solo quando il professionista scansiona il QR (o digita il
+    # codice a 6 cifre) mostrato dal cliente. Frontend già pronto e
+    # collegato (ClientDeliveryQR/EarnerConfirm in pulizie/[id].tsx, gate
+    # già esistente su r.conferma_pending) — nessuna modifica necessaria lì.
+    res2 = await D.arm_or_release("pulizie", rid, row["client_id"], brief.get("provider_scelto"), "Pulizie", mandatory=True)
+    if res2["armed"]:
+        brief["conferma_pending"] = True
+        db.table("missions").update({"brief_answers": brief}).eq("id", rid).execute()
+        return {"stato": brief.get("stato"), "conferma_pending": True}
     return {"stato": "completata"}
 
 

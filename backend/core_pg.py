@@ -108,6 +108,8 @@ def haversine(lat1, lng1, lat2, lng2) -> float:
 # messaggio vero e proprio resta in chiaro in title/body; `data` porta il
 # tipo Mongo originale così il frontend può comunque distinguere i casi.
 _NOTIF_TYPE_MAP = {
+    "consegna_conferma": "mission_request",
+    "consegna_confermata": "mission_completed",
     "nuova_richiesta": "mission_request",
     "artigiani_invito": "mission_request",
     "artigiani_proposta": "mission_request",

@@ -1,4 +1,13 @@
-"""QR / 6-digit "consegna verificata" confirmation layer.
+"""RITIRATO nel Blocco 10 — non più importato/esposto da server.py.
+
+Mongo-based (from core import db — MONGO_URL non configurato su questo
+deploy Render, vedi core.py): ogni query di questo modulo si bloccava o
+falliva, pur essendo montato. Sostituito da delivery_pg.py +
+routers/delivery.py (stesso design, layer dati Postgres, rilascio
+delegato alle funzioni già esistenti di ciascuna verticale invece di
+wallet_escrow.py). File lasciato nel repo come riferimento storico.
+
+QR / 6-digit "consegna verificata" confirmation layer.
 
 Optional guarantee the CLIENT enables in the profile (users.qr_confirm_enabled). When on, the
 release of a completed service / delivered order is ARMED instead of executed: the client shows

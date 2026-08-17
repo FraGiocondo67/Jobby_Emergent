@@ -18,7 +18,12 @@ from routers import categories
 from routers import generic_requests
 from routers import profile
 from routers import app_home
-import confirm_delivery
+from routers import delivery
+# BLOCCO 10: confirm_delivery.py (root, Mongo-based) sostituito da
+# routers/delivery.py + delivery_pg.py — vedi docstring di delivery_pg.py
+# per il perché (MONGO_URL non configurato su questo deploy, ogni sua query
+# si bloccava/falliva pur essendo montato). File storico lasciato nel repo
+# come riferimento, non più importato qui.
 
 # BLOCCO 7 (migrazione Emergent -> Supabase/Render): 8 router Mongo-based mai
 # migrati RITIRATI su conferma esplicita dell'utente (stesso trattamento già
@@ -47,7 +52,7 @@ api.include_router(artigiani.router)
 api.include_router(spec4.router)
 api.include_router(listino.router)
 api.include_router(geo.router)
-api.include_router(confirm_delivery.router)
+api.include_router(delivery.router)
 api.include_router(provider_onboarding.router)
 api.include_router(admin_users.router)
 api.include_router(categories.router)
